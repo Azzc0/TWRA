@@ -1,0 +1,19 @@
+## Interface: 11200
+## Title: Turtlewow Raid Assignments
+## Notes: Announce assigns (and active tanks) in game from a spreadsheet
+## Dependencies: 
+## Version: 0.1
+## Author: Azzco
+## SavedVariables: TWRA_SavedVariables
+Bindings.xml
+Example.lua
+Debug.lua
+Base64.lua
+UIUtils.lua
+Sync.lua
+AutoNavigate.lua
+Options.lua
+Bindings.lua
+TWRA.lua
+Frame.lua
+OSD.lua

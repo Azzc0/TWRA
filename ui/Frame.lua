@@ -1,0 +1,1246 @@
+TWRA = TWRA or {}
+
+-- Store original functions
+TWRA.originalFunctions = {}
+
+-- Check if we're dealing with example data
+function TWRA:IsExampleData(data)
+    return data == self.EXAMPLE_DATA
+end
+
+-- Get player status (in raid and online status)
+function TWRA:GetPlayerStatus(name)
+    if self.usingExampleData then
+        if not name or name == "" then return false, nil end
+        if self.EXAMPLE_PLAYERS[name] then
+            local isOffline = string.find(self.EXAMPLE_PLAYERS[name], "OFFLINE")
+            return true, not isOffline
+        end
+        return false, nil
+    end
+    
+    -- Default behavior for real raid data
+    if not name or name == "" then return false, nil end
+    for i = 1, GetNumRaidMembers() do
+        local raidName, _, _, _, _, _, online = GetRaidRosterInfo(i)
+        if raidName == name then
+            return true, online
+        end
+    end
+    return false, nil
+end
+
+-- Get class for a player
+function TWRA:GetPlayerClass(name)
+    if self.usingExampleData and self.EXAMPLE_PLAYERS[name] then
+        return string.gsub(self.EXAMPLE_PLAYERS[name], "|OFFLINE", "")
+    end
+    
+    -- Default behavior for real raid data
+    for i = 1, GetNumRaidMembers() do
+        local raidName, _, _, _, _, class = GetRaidRosterInfo(i)
+        if raidName == name then
+            return class
+        end
+    end
+    return nil
+end
+
+-- Override class check for example data
+function TWRA:HasClassInRaid(className)
+    -- If using example data, check against EXAMPLE_PLAYERS
+    if self.usingExampleData then
+        for _, classInfo in pairs(self.EXAMPLE_PLAYERS) do
+            local playerClass = string.gsub(classInfo, "|OFFLINE", "")
+            if string.upper(className) == playerClass then
+                return true
+            end
+        end
+        return false
+    end
+    
+    -- Default behavior for real raid data
+    for i = 1, GetNumRaidMembers() do
+        local _, _, _, _, _, class = GetRaidRosterInfo(i)
+        if string.upper(class) == string.upper(className) then
+            return true
+        end
+    end
+    return false
+end
+
+-- UI-specific functions
+TWRA.currentView = "main"  -- Either "main" or "options"
+
+-- Helper function to close dropdown menu
+function TWRA:CloseDropdownMenu()
+    if self.navigation and self.navigation.dropdownMenu and self.navigation.dropdownMenu:IsShown() then
+        self.navigation.dropdownMenu:Hide()
+    end
+end
+
+-- Enhance CreateMainFrame to add ESC key functionality
+function TWRA:CreateMainFrame()
+    self.navigation = { handlers = {}, currentIndex = 1 }
+    self.mainFrame = CreateFrame("Frame", "TWRAMainFrame", UIParent)
+    self.mainFrame:SetWidth(800)
+    self.mainFrame:SetHeight(300)
+    self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    
+    -- Fix the backdrop by adding a complete backdrop definition
+    self.mainFrame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+
+    -- Add the frame to UISpecialFrames so it can be closed with Escape key
+    tinsert(UISpecialFrames, "TWRAMainFrame")
+
+    self.mainFrame:SetMovable(true)
+    self.mainFrame:EnableMouse(true)
+    self.mainFrame:RegisterForDrag("LeftButton")
+    self.mainFrame:SetScript("OnDragStart", function() self.mainFrame:StartMoving() end)
+    self.mainFrame:SetScript("OnDragStop", function() self.mainFrame:StopMovingOrSizing() end)
+
+    local titleText = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    titleText:SetPoint("TOP", 0, -15)
+    titleText:SetText("Raid Assignments")
+
+    -- Options button
+    local optionsButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
+    optionsButton:SetWidth(60)
+    optionsButton:SetHeight(20)
+    optionsButton:SetPoint("TOPRIGHT", -20, -15)
+    optionsButton:SetText("Options")
+    optionsButton:SetScript("OnClick", function() 
+        if self.currentView == "options" then
+            self:ShowMainView()
+            optionsButton:SetText("Options")
+        else
+            TWRA:ClearRows()
+            self:ShowOptionsView()
+            optionsButton:SetText("Back")
+        end
+    end)
+    self.optionsButton = optionsButton
+
+    local announceButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
+    announceButton:SetWidth(80)
+    announceButton:SetHeight(20)
+    announceButton:SetPoint("TOPRIGHT", optionsButton, "TOPLEFT", -10, 0)
+    announceButton:SetText("Announce")  -- Shorter text
+    announceButton:SetScript("OnClick", function() 
+        -- Close dropdown when announcing
+        self:CloseDropdownMenu()
+        TWRA:AnnounceAssignments() 
+    end)
+    self.announceButton = announceButton  -- Store reference
+
+    -- Create Update Tanks button
+    local updateTanksButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
+    updateTanksButton:SetWidth(100)
+    updateTanksButton:SetHeight(20)
+    updateTanksButton:SetPoint("TOPRIGHT", announceButton, "TOPLEFT", -10, 0)
+    updateTanksButton:SetText("Update Tanks")
+    
+    updateTanksButton:SetScript("OnClick", function()
+        -- Close dropdown when updating tanks
+        self:CloseDropdownMenu()
+        TWRA:UpdateTanks()
+    end)
+    self.updateTanksButton = updateTanksButton  -- Store reference
+
+    -- Create navigation container - moved down
+    local navContainer = CreateFrame("Frame", nil, self.mainFrame)
+    navContainer:SetHeight(20)
+    navContainer:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 20, -35)  -- Moved down
+    navContainer:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, -35)
+    
+    -- Previous button
+    local prevButton = CreateFrame("Button", nil, navContainer, "UIPanelButtonTemplate")
+    prevButton:SetWidth(24)
+    prevButton:SetHeight(20)
+    prevButton:SetPoint("LEFT", 0, 0)
+    prevButton:SetText("<")
+    prevButton:SetScript("OnClick", function() 
+        -- Close dropdown when navigating
+        self:CloseDropdownMenu()
+        self:NavigateHandler(-1) 
+    end)
+    
+    -- Next button
+    local nextButton = CreateFrame("Button", nil, navContainer, "UIPanelButtonTemplate")
+    nextButton:SetWidth(24)
+    nextButton:SetHeight(20)
+    nextButton:SetPoint("RIGHT", 0, 0)
+    nextButton:SetText(">")
+    nextButton:SetScript("OnClick", function() 
+        -- Close dropdown when navigating
+        self:CloseDropdownMenu()
+        self:NavigateHandler(1) 
+    end)
+    
+    -- Create section menu button
+    local menuButton = CreateFrame("Button", nil, navContainer)
+    menuButton:SetPoint("LEFT", prevButton, "RIGHT", 5, 0)
+    menuButton:SetPoint("RIGHT", nextButton, "LEFT", -5, 0)
+    menuButton:SetHeight(20)
+    
+    -- Add background to menu button
+    local menuBg = menuButton:CreateTexture(nil, "BACKGROUND")
+    menuBg:SetAllPoints()
+    menuBg:SetTexture(0.1, 0.1, 0.1, 0.7)
+    
+    -- Menu button text
+    local menuText = menuButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    menuText:SetPoint("LEFT", 8, 0)
+    menuText:SetPoint("RIGHT", -16, 0)  -- Leave room for dropdown arrow
+    menuText:SetJustifyH("CENTER")
+    
+    -- Dropdown arrow indicator
+    local dropdownArrow = menuButton:CreateTexture(nil, "OVERLAY")
+    dropdownArrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+    dropdownArrow:SetWidth(16)
+    dropdownArrow:SetHeight(16)
+    dropdownArrow:SetPoint("RIGHT", -2, 0)
+    
+    -- Update navigation references
+    self.navigation.prevButton = prevButton
+    self.navigation.nextButton = nextButton
+    self.navigation.handlerText = menuText  -- Use the same reference name for compatibility
+
+    -- Create the dropdown menu
+    local dropdownMenu = CreateFrame("Frame", nil, self.mainFrame) 
+    dropdownMenu:SetFrameStrata("DIALOG")
+    dropdownMenu:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 32,
+        edgeSize = 16,
+        insets = { left = 5, right = 5, top = 5, bottom = 5 }
+    })
+    dropdownMenu:Hide()
+    self.navigation.dropdownMenu = dropdownMenu
+    dropdownMenu.buttons = {}
+    
+    -- Create simple dropdown functionality
+    menuButton:SetScript("OnClick", function()
+        -- Toggle the dropdown menu
+        if dropdownMenu:IsShown() then
+            dropdownMenu:Hide()
+            return
+        end
+        
+        -- Clear previous menu items
+        for i = 1, table.getn(dropdownMenu.buttons or {}) do
+            if dropdownMenu.buttons[i] then
+                dropdownMenu.buttons[i]:Hide()
+            end
+        end
+        dropdownMenu.buttons = {}
+        
+        -- Position menu
+        dropdownMenu:ClearAllPoints()
+        dropdownMenu:SetPoint("TOP", menuButton, "BOTTOM", 0, -2)
+        dropdownMenu:SetWidth(menuButton:GetWidth())
+        
+        -- Calculate menu height
+        local buttonHeight = 20
+        local padding = 10  -- 5px top and bottom
+        local menuHeight = (buttonHeight * table.getn(self.navigation.handlers)) + padding
+        dropdownMenu:SetHeight(menuHeight)
+        
+        -- Create menu items
+        for i = 1, table.getn(self.navigation.handlers) do
+            local handler = self.navigation.handlers[i]
+            
+            -- Create button
+            local button = CreateFrame("Button", nil, dropdownMenu)
+            button:SetHeight(buttonHeight)
+            button:SetPoint("TOPLEFT", dropdownMenu, "TOPLEFT", 5, -5 - ((i-1) * buttonHeight))
+            button:SetPoint("TOPRIGHT", dropdownMenu, "TOPRIGHT", -5, -5 - ((i-1) * buttonHeight))
+            
+            -- Highlight texture
+            button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+            
+            -- Button text
+            local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            buttonText:SetPoint("LEFT", 5, 0)
+            buttonText:SetPoint("RIGHT", -5, 0)
+            buttonText:SetText(handler)
+            buttonText:SetJustifyH("LEFT")
+            
+            -- Indicate current selection
+            if i == self.navigation.currentIndex then
+                button:SetNormalTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                local normalTex = button:GetNormalTexture()
+                normalTex:SetVertexColor(1, 0.82, 0, 0.4)
+            end
+            
+            -- Click handler for dropdown menu items
+            button:SetScript("OnClick", function()
+                -- Update text immediately
+                menuText:SetText(handler)
+                
+                -- Find the correct index for this handler
+                for idx = 1, table.getn(self.navigation.handlers) do
+                    if self.navigation.handlers[idx] == handler then
+                        -- Use the centralized NavigateToSection function that handles syncing
+                        self:NavigateToSection(idx)
+                        break
+                    end
+                end
+                
+                -- Hide the dropdown
+                dropdownMenu:Hide()
+            end)
+            
+            table.insert(dropdownMenu.buttons, button)
+        end
+        
+        dropdownMenu:Show()
+    end)
+    
+    -- Close dropdown when clicking elsewhere
+    self.mainFrame:SetScript("OnMouseDown", function()
+        if dropdownMenu:IsShown() then
+            dropdownMenu:Hide()
+        end
+    end)
+    
+    -- Prevent clicks on the dropdown from closing it
+    dropdownMenu:SetScript("OnMouseDown", function(self, button)
+        -- This stops the click from propagating to the parent frame
+        return
+    end)
+
+    -- After creating all UI elements, load data
+    if TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
+        self.fullData = TWRA_SavedVariables.assignments.data
+        
+        -- Update navigation handlers
+        self.navigation.handlers = {}
+        local seenSections = {}
+        
+        for i = 1, table.getn(self.fullData) do
+            local sectionName = self.fullData[i][1]
+            if sectionName and not seenSections[sectionName] then
+                seenSections[sectionName] = true
+                table.insert(self.navigation.handlers, sectionName)
+            end
+        end
+
+        -- Restore saved section index
+        if TWRA_SavedVariables.assignments.currentSection then
+            self.navigation.currentIndex = TWRA_SavedVariables.assignments.currentSection
+        else
+            self.navigation.currentIndex = 1
+        end
+        
+        -- Update menu button text
+        if self.navigation.handlerText and self.navigation.handlers[self.navigation.currentIndex] then
+            self.navigation.handlerText:SetText(self.navigation.handlers[self.navigation.currentIndex])
+        end
+        
+        -- Update display
+        self:DisplayCurrentSection()
+    end
+end
+
+-- Helper function for handler management
+local function getUniqueHandlers(data)
+    local handlers = {}
+    local seen = {}
+    for i = 2, table.getn(data) do  -- Start from row 2 (skip only header)
+        if data[i][1] and not seen[data[i][1]] then
+            -- Skip empty or special rows
+            if data[i][1] ~= "" and data[i][1] ~= "Warning" and data[i][1] ~= "Note" then
+                seen[data[i][1]] = true
+                table.insert(handlers, data[i][1])
+            end
+        end
+    end
+    return handlers
+end
+
+-- Enhanced navigation handler that respects current view
+function TWRA:NavigateHandler(delta)
+    -- Ensure navigation exists
+    if not self.navigation then
+        self.navigation = { handlers = {}, currentIndex = 1 }
+    end
+    
+    local nav = self.navigation
+    
+    -- Safety check for handlers
+    if not nav.handlers or table.getn(nav.handlers) == 0 then
+        return
+    end
+    
+    local newIndex = nav.currentIndex + delta
+    
+    if newIndex < 1 then 
+        newIndex = table.getn(nav.handlers)
+    elseif newIndex > table.getn(nav.handlers) then
+        newIndex = 1
+    end
+    
+    -- Use NavigateToSection which now correctly handles UI updates
+    self:NavigateToSection(newIndex)
+end
+
+-- New function to display section name overlay when navigating with window closed
+function TWRA:ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
+    -- Create the overlay frame if it doesn't exist
+    if not self.sectionOverlay then
+        self.sectionOverlay = CreateFrame("Frame", "TWRA_SectionOverlay", UIParent)
+        self.sectionOverlay:SetFrameStrata("DIALOG")
+        self.sectionOverlay:SetWidth(400)
+        self.sectionOverlay:SetHeight(60)
+        self.sectionOverlay:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+        
+        -- Add background
+        local bg = self.sectionOverlay:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture(0, 0, 0, 0.7)
+        
+        -- Add border
+        local border = CreateFrame("Frame", nil, self.sectionOverlay)
+        border:SetPoint("TOPLEFT", -2, 2)
+        border:SetPoint("BOTTOMRIGHT", 2, -2)
+        border:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        
+        -- Section name text
+        self.sectionOverlayText = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        self.sectionOverlayText:SetPoint("TOP", self.sectionOverlay, "TOP", 0, -10)
+        self.sectionOverlayText:SetTextColor(1, 0.82, 0)
+        
+        -- Section count text
+        self.sectionOverlayCount = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        self.sectionOverlayCount:SetPoint("BOTTOM", self.sectionOverlay, "BOTTOM", 0, 10)
+        self.sectionOverlayCount:SetTextColor(1, 1, 1)
+    end
+    
+    -- Update the text
+    self.sectionOverlayText:SetText(sectionName)
+    self.sectionOverlayCount:SetText("Section " .. currentIndex .. " of " .. totalSections)
+    
+    -- Show the overlay
+    self.sectionOverlay:Show()
+    
+    -- Hide after 2 seconds
+    if self.sectionOverlayTimer then
+        self:CancelTimer(self.sectionOverlayTimer)
+    end
+    
+    self.sectionOverlayTimer = self:ScheduleTimer(function()
+        if self.sectionOverlay then
+            self.sectionOverlay:Hide()
+        end
+    end, 2)
+end
+
+-- Add the Timer functionality if it doesn't exist yet
+if not TWRA.ScheduleTimer then
+    function TWRA:ScheduleTimer(func, delay)
+        local timer = CreateFrame("Frame")
+        timer.start = GetTime()
+        timer.delay = delay
+        timer.func = func
+        timer:SetScript("OnUpdate", function()
+            if GetTime() >= timer.start + timer.delay then
+                timer:SetScript("OnUpdate", nil)
+                timer.func()
+            end
+        end)
+        return timer
+    end
+
+    function TWRA:CancelTimer(timer)
+        if timer then
+            timer:SetScript("OnUpdate", nil)
+        end
+    end
+end
+
+-- Update the FilterAndDisplayHandler function to ignore GUID rows
+
+function TWRA:FilterAndDisplayHandler(currentHandler)
+    -- Create filtered data structure
+    local filteredData = {}
+    local maxColumns = 2
+    
+    -- First, find the header row for this specific section
+    local headerRow = nil
+    for i = 1, table.getn(self.fullData) do
+        if self.fullData[i][1] == currentHandler and self.fullData[i][2] == "Icon" then
+            headerRow = self.fullData[i]
+            break
+        end
+    end
+    
+    -- If no section-specific header found, use the global header (first row)
+    if not headerRow then
+        for i = 1, table.getn(self.fullData) do
+            if self.fullData[i][2] == "Icon" then
+                headerRow = self.fullData[i]
+                break
+            end
+        end
+    end
+    
+    -- Add header row first and determine max columns from it
+    if headerRow then
+        -- Always use the full width of the header row
+        maxColumns = table.getn(headerRow)
+        table.insert(filteredData, headerRow)
+    end
+    
+    -- Add data rows for current handler (excluding Notes, Warnings, and GUIDs by icon)
+    for i = 1, table.getn(self.fullData) do
+        if self.fullData[i][1] == currentHandler and 
+           self.fullData[i][2] ~= "Icon" and
+           self.fullData[i][2] ~= "GUID" and  -- Skip GUID rows
+           self.fullData[i][2] ~= "Note" and
+           self.fullData[i][2] ~= "Warning" then
+            
+            -- Ensure all rows have the same number of columns as the header
+            local paddedRow = {}
+            for j = 1, maxColumns do
+                paddedRow[j] = self.fullData[i][j] or ""
+            end
+            table.insert(filteredData, paddedRow)
+        end
+    end
+    
+    -- Update column count and create rows
+    self.headerColumns = maxColumns
+    self:ClearRows()
+    self:CreateRows(filteredData, true)
+    
+    -- Create footers after rows
+    self:CreateFooters(currentHandler)
+end
+
+-- Simplify CreateRows to focus only on row creation
+function TWRA:CreateRows(data, forceHeader)
+    if not data or table.getn(data) == 0 then
+        return
+    end
+    
+    -- Initialize row frames array if needed
+    if not self.rowFrames then
+        self.rowFrames = {}
+    end
+    
+    -- Create rows based on data
+    for i = 1, table.getn(data) do
+        self.rowFrames[i] = self:CreateRow(i, data[i])
+    end
+end
+
+function TWRA:ClearRows()
+    -- Initialize rowHighlights if it doesn't exist
+    if not self.rowHighlights then
+        self.rowHighlights = {}
+    end
+    
+    -- Clear existing highlights
+    for _, highlight in pairs(self.rowHighlights) do
+        highlight:Hide()
+        highlight:SetParent(nil)
+    end
+    self.rowHighlights = {}
+
+    -- Clear existing row frames
+    if self.rowFrames then
+        for _, row in pairs(self.rowFrames) do
+            for _, cell in pairs(row) do
+                for _, element in pairs({"text", "bg", "icon"}) do
+                    if cell[element] then 
+                        cell[element]:Hide()
+                        cell[element]:SetParent(nil)
+                    end
+                end
+            end
+        end
+        self.rowFrames = {}
+    end
+    
+    -- Add this to also clear footers
+    self:ClearFooters()
+    
+    self.headerColumns = nil
+end
+
+-- Row creation with proper formatting
+function TWRA:CreateRow(rowNum, data)
+    local rowFrames = {}
+    local yOffset = -40 - (rowNum * 20)
+    local fontStyle = rowNum == 1 and "GameFontNormalLarge" or "GameFontNormal"
+    local isHeader = rowNum == 1
+    local isSpecialRow = data[1] == "Warning" or data[1] == "Note"
+    
+    -- Player row highlighting logic
+    if not isHeader then
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        playerClass = string.upper(playerClass)
+        
+        local isPlayerRow = false
+        for _, cellData in ipairs(data) do
+            if cellData == playerName or (TWRA.CLASS_GROUP_NAMES[cellData] and 
+               string.upper(TWRA.CLASS_GROUP_NAMES[cellData]) == playerClass) then
+                isPlayerRow = true
+                break
+            end
+        end
+        
+        if isPlayerRow then
+            local highlight = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, -2)
+            highlight:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 22, yOffset + 1)
+            highlight:SetPoint("BOTTOMRIGHT", self.mainFrame, "TOPRIGHT", -22, yOffset - 15)
+            highlight:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "REPEAT", "REPEAT")
+            highlight:SetTexCoord(0.05, 0.95, 0.1, 0.9)
+            highlight:SetBlendMode("ADD")
+            highlight:SetVertexColor(1, 1, 0.5, 0.2)
+            table.insert(self.rowHighlights, highlight)
+        end
+    end
+    
+    -- For special rows (Notes and Warnings) - handle differently with full width span
+    if isSpecialRow then
+        -- Calculate the full available width of the frame
+        local totalWidth = self.mainFrame:GetWidth() - 40  -- 20px padding on each side
+        
+        -- Create background for special row - spans full width
+        local bg = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
+        bg:SetPoint("TOPLEFT", 20, yOffset)
+        bg:SetWidth(totalWidth)
+        bg:SetHeight(14)
+        bg:SetVertexColor(0.1, 0.1, 0.1, 0.3)
+        
+        -- Create icon for special rows - positioned at far left
+        local iconTexture = nil
+        if data[2] and TWRA.ICONS[data[2]] then
+            iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+            iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
+            iconTexture:SetWidth(12)
+            iconTexture:SetHeight(12)
+            local iconInfo = TWRA.ICONS[data[2]]
+            iconTexture:SetTexture(iconInfo[1])
+            iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+        end
+        
+        -- Create text that spans full width
+        local cell = self.mainFrame:CreateFontString(nil, "OVERLAY", fontStyle)
+        
+        -- Position text with icon consideration and set width to fill the remaining space
+        local iconPadding = iconTexture and 20 or 8  -- More space when icon exists
+        cell:SetPoint("TOPLEFT", 20 + iconPadding, yOffset)
+        cell:SetWidth(totalWidth - iconPadding - 4)  -- Full width minus icon space and padding
+        cell:SetText(data[3] or "")
+        cell:SetJustifyH("LEFT")
+        
+        -- Use a different color for Notes vs Warnings
+        if data[1] == "Warning" then
+            cell:SetTextColor(1, 0.7, 0.7)  -- Light red for warnings
+        else
+            cell:SetTextColor(0.9, 0.9, 1)  -- Light blue-white for notes
+        end
+        
+        rowFrames[1] = {text = cell, bg = bg, icon = iconTexture}
+        return rowFrames
+    end
+    
+    -- For normal rows - handle all columns consistently
+    -- Calculate column widths - we'll combine columns 1 & 2 (Section & Icon)
+    -- and treat column 3 (Target) as the first visible column
+    local numColumns = self.headerColumns or table.getn(data)
+    local visibleColumns = numColumns - 2  -- Skip section and icon columns
+    
+    -- Calculate total available width
+    local totalAvailableWidth = self.mainFrame:GetWidth() - 40
+
+    -- Use a fixed width for target column that fits "Grand Widow Faerlina"
+    local fixedTargetWidth = 170 -- Fixed width for target column
+    local remainingWidth = totalAvailableWidth - fixedTargetWidth
+    local standardColumnWidth = math.floor(remainingWidth / math.max(1, visibleColumns - 1))
+
+    -- Ensure minimum width for standard columns to fit player names
+    local minStandardWidth = 100 -- Minimum width for player columns
+    if standardColumnWidth < minStandardWidth and visibleColumns > 1 then
+        -- If standard columns would be too narrow, adjust proportionally
+        standardColumnWidth = minStandardWidth
+        
+        -- If we can't fit everything, reduce target column width (but preserve minimum)
+        if (standardColumnWidth * (visibleColumns - 1)) > remainingWidth then
+            local minTargetWidth = 140 -- Minimum for target column
+            local totalNeeded = (standardColumnWidth * (visibleColumns - 1))
+            
+            -- Check if we can reduce target column
+            if totalNeeded <= (totalAvailableWidth - minTargetWidth) then
+                fixedTargetWidth = totalAvailableWidth - totalNeeded
+            else
+                -- Last resort - proportionally reduce all columns
+                local totalColumns = visibleColumns
+                local widthPerColumn = math.floor(totalAvailableWidth / totalColumns)
+                fixedTargetWidth = widthPerColumn
+                standardColumnWidth = widthPerColumn
+            end
+        end
+    end
+    
+    local xOffset = 20 -- Starting offset
+    
+    -- Process all visible columns (starting from column 3)
+    for i = 3, numColumns do
+        local displayIndex = i - 2  -- Adjust index (1 = target, 2 = first role, etc.)
+        local cellWidth = (i == 3) and fixedTargetWidth or standardColumnWidth
+        local cellData = data[i] or ""
+        
+        -- Create cell background (except for header row)
+        local bg = nil
+        if not isHeader then
+            bg = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
+            bg:SetPoint("TOPLEFT", xOffset, yOffset)
+            bg:SetWidth(cellWidth)
+            bg:SetHeight(14)
+            
+            -- Alternate background shading
+            local isEven = (i / 2) == math.floor(i / 2)
+            bg:SetVertexColor(0.1, 0.1, 0.1, isEven and 0.3 or 0.1)
+        end
+        
+        -- Create cell text
+        local cell = self.mainFrame:CreateFontString(nil, "OVERLAY", fontStyle)
+        
+        -- Prepare icon for this cell
+        local iconTexture = nil
+        
+        -- Target column (column 3) - use raid target icon if available
+        if i == 3 and not isHeader and data[2] and TWRA.ICONS[data[2]] then
+            iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+            iconTexture:SetPoint("LEFT", bg or self.mainFrame, "LEFT", xOffset - 16, 0)
+            iconTexture:SetWidth(12)
+            iconTexture:SetHeight(12)
+            local iconInfo = TWRA.ICONS[data[2]]
+            iconTexture:SetTexture(iconInfo[1])
+            iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+        elseif i > 3 and not isHeader then  -- Player columns - use class icon
+            local isClassGroup = TWRA.CLASS_GROUP_NAMES[cellData] and true or false
+            local className = isClassGroup and TWRA.CLASS_GROUP_NAMES[cellData] or nil
+            local inRaid, online = TWRA:GetPlayerStatus(cellData)
+            
+            -- Add class icon for players or class groups
+            if inRaid or isClassGroup or cellData == UnitName("player") then
+                local classToUse = className
+                if not isClassGroup then
+                    if cellData == UnitName("player") then
+                        -- Get actual player class
+                        local _, playerClass = UnitClass("player")
+                        classToUse = playerClass
+                    elseif self.usingExampleData then
+                        -- Get class directly from EXAMPLE_PLAYERS for example data
+                        classToUse = string.gsub(self.EXAMPLE_PLAYERS[cellData] or "", "|OFFLINE", "")
+                    else
+                        -- Find player's class from raid roster
+                        for j = 1, GetNumRaidMembers() do
+                            local name, _, _, _, _, class = GetRaidRosterInfo(j)
+                            if name == cellData then
+                                classToUse = class
+                                break
+                            end
+                        end
+                    end
+                end
+                
+                if classToUse then
+                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                    iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
+                    iconTexture:SetWidth(12)
+                    iconTexture:SetHeight(12)
+                    iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+                    
+                    local coords = TWRA.CLASS_COORDS[string.upper(classToUse)]
+                    if coords then
+                        iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                    end
+                end
+            end
+        end
+        
+        -- Position text with consistent padding - ALWAYS reserve space for an icon
+        -- No matter if there's an icon or not, provide consistent indentation
+        local iconSpace = 18  -- Consistent space for all potential icons
+        cell:SetPoint("TOPLEFT", xOffset + iconSpace, yOffset)
+        cell:SetWidth(cellWidth - iconSpace - 4)
+        cell:SetText(cellData)
+        cell:SetJustifyH("LEFT")
+        
+        -- Set text color based on type and status
+        if isHeader then
+            -- Headers always white for visibility
+            cell:SetTextColor(1, 1, 1)
+        elseif i == 3 then
+            -- Target column always white
+            cell:SetTextColor(1, 1, 1)
+        else
+            -- Player/role columns - color by status
+            TWRA.UI:ApplyClassColoring(cell, cellData)
+        end
+        
+        -- Store cell references
+        rowFrames[displayIndex] = {text = cell, bg = bg, icon = iconTexture}
+        
+        -- Update offset for next column
+        xOffset = xOffset + cellWidth
+    end
+    
+    return rowFrames
+end
+
+-- Add this function to handle footer creation:
+
+-- Creates and displays footer elements for Notes and Warnings
+function TWRA:CreateFooters(currentHandler)
+    -- Clear any existing footers
+    self:ClearFooters()
+    
+    -- Find Notes and Warnings for the current handler
+    local notes = {}
+    local warnings = {}
+    
+    -- Collect all notes and warnings for this handler
+    for i = 1, table.getn(self.fullData) do
+        if i > 1 and self.fullData[i-1][1] == currentHandler then
+            -- Skip GUID rows entirely
+            if self.fullData[i][2] ~= "GUID" then
+                if self.fullData[i][2] == "Note" and self.fullData[i][3] and self.fullData[i][3] ~= "" then
+                    table.insert(notes, {
+                        text = self.fullData[i][3],
+                        icon = self.fullData[i][2]
+                    })
+                elseif self.fullData[i][2] == "Warning" and self.fullData[i][3] and self.fullData[i][3] ~= "" then
+                    table.insert(warnings, {
+                        text = self.fullData[i][3],
+                        icon = self.fullData[i][2]
+                    })
+                end
+            end
+        end
+    end
+    
+    -- If no notes or warnings, just return
+    if table.getn(notes) == 0 and table.getn(warnings) == 0 then
+        return
+    end
+    
+    -- Initialize footer storage if needed
+    if not self.footers then
+        self.footers = {}
+    end
+    
+    -- Calculate positions and dimensions
+    local footerHeight = 28  -- Increased height for each footer element
+    local yOffset = -(40 + (table.getn(self.rowFrames) * 20) + 25)  -- Start below the last row with padding
+    
+    -- Create separator line
+    local separator = self.mainFrame:CreateTexture(nil, "BACKGROUND")
+    separator:SetTexture(0.3, 0.3, 0.3, 1)
+    separator:SetHeight(1)
+    separator:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 20, yOffset)
+    separator:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, yOffset)
+    table.insert(self.footers, {texture = separator})
+    
+    -- Adjust starting position for first footer
+    yOffset = yOffset - 5
+    
+    -- First create warnings (more important)
+    for i = 1, table.getn(warnings) do
+        local warning = warnings[i]
+        local footer = self:CreateFooterElement(warning.text, warning.icon, "Warning", yOffset)
+        table.insert(self.footers, footer)
+        yOffset = yOffset - footerHeight
+    end
+    
+    -- Then create notes
+    for i = 1, table.getn(notes) do
+        local note = notes[i]
+        local footer = self:CreateFooterElement(note.text, note.icon, "Note", yOffset)
+        table.insert(self.footers, footer)
+        yOffset = yOffset - footerHeight
+    end
+    
+    -- Extend frame height if needed to fit footers
+    local totalHeight = 40 +                                    -- Initial offset
+                        (table.getn(self.rowFrames) * 20) +     -- Data rows
+                        25 +                                     -- Padding before separator
+                        1 +                                      -- Separator line
+                        5 +                                      -- Padding after separator
+                        ((table.getn(notes) + table.getn(warnings)) * footerHeight) + -- Footer elements
+                        10                                       -- Bottom padding
+
+    if totalHeight > 300 then  -- 300 is the default frame height
+        self.mainFrame:SetHeight(totalHeight)
+    end
+end
+
+-- Creates a single footer element (Note or Warning)
+function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
+    local footer = {}
+    
+    -- Create background
+    local bg = self.mainFrame:CreateTexture(nil, "BACKGROUND")
+    if footerType == "Warning" then
+        bg:SetTexture(0.3, 0.1, 0.1, 0.15)  -- Subtle red for warnings
+    else
+        bg:SetTexture(0.1, 0.1, 0.3, 0.15)  -- Subtle blue for notes
+    end
+    bg:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 20, yOffset)
+    bg:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, yOffset)
+    bg:SetHeight(26)  -- Larger background height
+    
+    -- Create icon
+    local icon = nil
+    if iconName and TWRA.ICONS[iconName] then
+        icon = self.mainFrame:CreateTexture(nil, "OVERLAY")
+        icon:SetPoint("TOPLEFT", bg, "TOPLEFT", 6, -5)  -- Lower position by 1px
+        icon:SetWidth(18)  -- Larger icon width
+        icon:SetHeight(18)  -- Larger icon height
+        local iconInfo = TWRA.ICONS[iconName]
+        icon:SetTexture(iconInfo[1])
+        icon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    end
+    
+    -- Create text
+    local textElement = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    textElement:SetPoint("TOPLEFT", bg, "TOPLEFT", icon and 32 or 10, -6)  -- More space for larger icon
+    textElement:SetPoint("TOPRIGHT", bg, "TOPRIGHT", -10, -4)
+    textElement:SetText(text)
+    textElement:SetJustifyH("LEFT")
+    
+    -- Set text color based on type
+    if footerType == "Warning" then
+        textElement:SetTextColor(1, 1, 1)  -- White text for warnings
+    else
+        textElement:SetTextColor(0.85, 0.85, 1)  -- Light blue for notes
+    end
+    
+    -- Create a clickable overlay for the entire footer element
+    local clickFrame = CreateFrame("Button", nil, self.mainFrame)
+    clickFrame:SetAllPoints(bg)
+    clickFrame:EnableMouse(true)
+    clickFrame:SetScript("OnEnter", function()
+        -- Highlight on mouseover
+        if footerType == "Warning" then
+            bg:SetTexture(0.5, 0.1, 0.1, 0.25)  -- Brighter red for warnings
+        else
+            bg:SetTexture(0.1, 0.1, 0.5, 0.25)  -- Brighter blue for notes
+        end
+    end)
+    clickFrame:SetScript("OnLeave", function()
+        -- Restore normal color
+        if footerType == "Warning" then
+            bg:SetTexture(0.3, 0.1, 0.1, 0.15)  -- Normal red for warnings
+        else
+            bg:SetTexture(0.1, 0.1, 0.3, 0.15)  -- Normal blue for notes
+        end
+    end)
+    clickFrame:SetScript("OnClick", function()
+        -- Determine which channels to use based on options
+        local messageChannel = "RAID"  -- Default
+        local channelNumber = nil
+        
+        -- Get saved channel preference from options
+        local selectedChannel = TWRA_SavedVariables.options and 
+                              TWRA_SavedVariables.options.announceChannel or 
+                              "GROUP"
+        
+        -- For warnings, use raid warning if player has assist/leader and using GROUP channel
+        local isWarning = (footerType == "Warning")
+        local isOfficer = IsRaidLeader() or IsRaidOfficer()
+        
+        -- Adjust channels based on selection and current group context
+        if selectedChannel == "GROUP" then
+            if GetNumRaidMembers() > 0 then
+                -- In a raid, use raid warning for warnings if player has permission
+                if isWarning and isOfficer then
+                    messageChannel = "RAID_WARNING"
+                else
+                    messageChannel = "RAID"
+                end
+            elseif GetNumPartyMembers() > 0 then
+                -- In a party but not raid, use party
+                messageChannel = "PARTY"
+            else
+                -- Solo, use say
+                messageChannel = "SAY"
+            end
+        elseif selectedChannel == "CHANNEL" then
+            -- Get custom channel name
+            local customChannel = TWRA_SavedVariables.options.customChannel
+            if customChannel and customChannel ~= "" then
+                -- Find the channel number
+                channelNumber = GetChannelName(customChannel)
+                if channelNumber > 0 then
+                    messageChannel = "CHANNEL"
+                else
+                    -- No channel found, fall back to say
+                    messageChannel = "SAY"
+                    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Channel '" .. customChannel .. 
+                                                "' not found, using Say instead")
+                end
+            else
+                -- No custom channel specified, fall back to say
+                messageChannel = "SAY"
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: No custom channel specified, using Say instead")
+            end
+        end
+        
+        -- Prepend warning/note prefix to text
+        -- local prefix = footerType == "Warning" and "Warning: " or "Note: "
+        -- local fullText = prefix .. text
+        
+        -- Send the message to the appropriate channel
+        if messageChannel == "CHANNEL" then
+            SendChatMessage(text, messageChannel, nil, channelNumber)
+        else
+            SendChatMessage(text, messageChannel)
+        end
+        
+        -- Visual feedback for click
+        if footerType == "Warning" then
+            bg:SetTexture(0.7, 0.1, 0.1, 0.3)  -- Very bright red flash
+        else
+            bg:SetTexture(0.1, 0.1, 0.7, 0.3)  -- Very bright blue flash
+        end
+        
+        -- Use our custom timer system for the visual feedback
+        self:ScheduleTimer(function()
+            if footerType == "Warning" then
+                bg:SetTexture(0.3, 0.1, 0.1, 0.15)  -- Back to normal
+            else
+                bg:SetTexture(0.1, 0.1, 0.3, 0.15)  -- Back to normal
+            end
+        end, 0.2)
+    end)
+    
+    -- Store all elements in the footer object
+    footer.bg = bg
+    footer.icon = icon
+    footer.text = textElement
+    footer.type = footerType
+    footer.clickFrame = clickFrame
+    
+    return footer
+end
+
+-- Clears all footer elements
+function TWRA:ClearFooters()
+    if not self.footers then
+        self.footers = {}
+        return
+    end
+    
+    for _, footer in pairs(self.footers) do  -- Changed 'footer in pairs' to 'footer in pairs'
+        -- Special handling for separator which only has a texture
+        if footer.texture then
+            footer.texture:Hide()
+            footer.texture:SetParent(nil)
+        else
+            -- Normal footer with multiple elements
+            if footer.bg then
+                footer.bg:Hide()
+                footer.bg:SetParent(nil)
+            end
+            if footer.icon then
+                footer.icon:Hide()
+                footer.icon:SetParent(nil)
+            end
+            if footer.text then
+                footer.text:Hide()
+                footer.text:SetParent(nil)
+            end
+        end
+    end
+    
+    self.footers = {}
+    
+    -- Reset frame height to default if no footers
+    self.mainFrame:SetHeight(300)
+end
+
+-- Add after other UI functions
+function TWRA:DisplayCurrentSection()
+    -- If we're in options view, don't try to display sections
+    if self.currentView == "options" then
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Skipping display update while in options view")
+        return
+    end
+    
+    -- Make sure we have navigation
+    if not self.navigation or not self.navigation.currentIndex or not self.navigation.handlers then
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Can't display section - navigation not initialized")
+        return
+    end
+    
+    -- Get current handler from navigation
+    local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
+    if not currentHandler then
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Can't display section - invalid current index")
+        return
+    end
+    
+    -- Call the actual display function
+    self:FilterAndDisplayHandler(currentHandler)
+end
+
+-- Add AutoMarker toggle to the options frame (if one exists)
+-- Look for a CreateOptionsFrame function or similar and add:
+
+-- AutoMarker toggle (only shown if SuperWoW is available)
+if TWRA:CheckSuperWoWSupport() then
+    -- Create checkbox for AutoMarker
+    local autoNavigateCheckbox = CreateFrame("CheckButton", "TWRA_AutoMarkerCheckbox", optionsFrame, "UICheckButtonTemplate")
+    autoNavigateCheckbox:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 0, -10)
+    autoNavigateCheckbox:SetChecked(TWRA.AUTONAVIGATE.enabled)
+    
+    -- Set label
+    getglobal(autoNavigateCheckbox:GetName() .. "Text"):SetText("Enable AutoMarker (SuperWoW)")
+    autoNavigateCheckbox.tooltipText = "Automatically switch sections when raid markers are placed on mobs with matching GUIDs"
+    
+    -- Set OnClick handler
+    autoNavigateCheckbox:SetScript("OnClick", function()
+        TWRA:ToggleAutoMarker()
+        this:SetChecked(TWRA.AUTONAVIGATE.enabled)
+    end)
+    
+    -- Update last element reference for positioning
+    lastElement = autoNavigateCheckbox
+    
+    -- Add debug checkbox for development
+    if isGM then  -- Only show to GMs or add a debug mode toggle elsewhere
+        local debugCheckbox = CreateFrame("CheckButton", "TWRA_AutoMarkerDebugCheckbox", optionsFrame, "UICheckButtonTemplate")
+        debugCheckbox:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 20, -5)
+        debugCheckbox:SetChecked(TWRA.AUTONAVIGATE.debug)
+        
+        getglobal(debugCheckbox:GetName() .. "Text"):SetText("Debug mode")
+        debugCheckbox.tooltipText = "Show debug messages for AutoMarker"
+        
+        debugCheckbox:SetScript("OnClick", function()
+            TWRA.AUTONAVIGATE.debug = not TWRA.AUTONAVIGATE.debug
+            this:SetChecked(TWRA.AUTONAVIGATE.debug)
+        end)
+        
+        lastElement = debugCheckbox
+    end
+end
+
+-- Add this function after CreateMainFrame or at the end of the file
+
+-- Improve ShowOptionsView to properly set current view and hide all main view elements
+
+function TWRA:ShowOptionsView()
+    -- Set the view state
+    self.currentView = "options"
+    
+    -- Hide main UI elements
+    if self.navigation then
+        if self.navigation.prevButton then self.navigation.prevButton:Hide() end
+        if self.navigation.nextButton then self.navigation.nextButton:Hide() end
+        if self.navigation.handlerText and self.navigation.handlerText.GetParent then 
+            local menuButton = self.navigation.handlerText:GetParent()
+            if menuButton then menuButton:Hide() end
+        end
+        if self.navigation.dropdownMenu then self.navigation.dropdownMenu:Hide() end
+    end
+    
+    -- Hide rows
+    if self.rowFrames then
+        for _, row in pairs(self.rowFrames) do
+            for _, cell in pairs(row) do
+                if cell.textObj then cell.textObj:Hide() end
+                if cell.iconTexture then cell.iconTexture:Hide() end
+                if cell.frame then cell.frame:Hide() end
+            end
+        end
+    end
+    
+    -- Hide highlights
+    if self.rowHighlights then
+        for _, highlight in pairs(self.rowHighlights) do
+            highlight:Hide()
+        end
+    end
+    
+    -- Hide footers
+    if self.footers then
+        for _, footer in pairs(self.footers) do
+            if footer.bg then footer.bg:Hide() end
+            if footer.icon then footer.icon:Hide() end
+            if footer.text then footer.text:Hide() end
+            if footer.texture then footer.texture:Hide() end
+        end
+    end
+    
+    -- Hide other buttons
+    if self.announceButton then self.announceButton:Hide() end
+    if self.updateTanksButton then self.updateTanksButton:Hide() end
+    
+    -- Create options content directly in the main frame
+    self:CreateOptionsInMainFrame()
+end
+
+-- Fix ShowMainView to properly handle pending navigation and restore UI
+function TWRA:ShowMainView()
+    -- Set the view state
+    self.currentView = "main"
+    
+    -- Hide options elements
+    if self.optionsElements then
+        for _, element in pairs(self.optionsElements) do
+            if element.Hide then  -- Check if the element has a Hide method
+                element:Hide()
+            end
+        end
+        self.optionsElements = {}
+    end
+    
+    -- Show main UI elements
+    if self.navigation then
+        if self.navigation.prevButton then self.navigation.prevButton:Show() end
+        if self.navigation.nextButton then self.navigation.nextButton:Show() end
+        if self.navigation.handlerText and self.navigation.handlerText.GetParent then 
+            local menuButton = self.navigation.handlerText:GetParent()
+            if menuButton then menuButton:Show() end
+        end
+    end
+    
+    -- Show other buttons
+    if self.announceButton then self.announceButton:Show() end
+    if self.updateTanksButton then self.updateTanksButton:Show() end
+    
+    -- Check for pending navigation
+    if self.pendingNavigation then
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Processing pending navigation to section " .. self.pendingNavigation)
+        
+        -- We already updated the navigation index and saved it, just need to display
+        self:DisplayCurrentSection()
+        
+        -- Clear the pending navigation
+        self.pendingNavigation = nil
+    else
+        -- Just display current section
+        self:DisplayCurrentSection()
+    end
+end
