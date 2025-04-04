@@ -241,7 +241,7 @@ function TWRA:Initialize()
     end
 end
 
--- In SaveAssignments function
+-- Fix the SaveAssignments function to properly handle example data
 function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     if not data or not sourceString then return end
     
@@ -257,8 +257,9 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     -- Update our full data in flat format for use in the current session
     self.fullData = data
     
-    -- Check if this is the example data and set the flag accordingly
-    self.usingExampleData = (sourceString == "example_data" or self:IsExampleData(data))
+    -- Check if this is the example data and set the flag correctly
+    local isExampleData = (sourceString == "example_data" or self:IsExampleData(data))
+    self.usingExampleData = isExampleData
     
     -- Save the data, source string, and current section index
     TWRA_SavedVariables.assignments = {
@@ -267,10 +268,10 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         timestamp = timestamp,
         currentSection = currentIndex,
         version = 1,
-        isExample = self.usingExampleData
+        isExample = isExampleData
     }
     
-    -- Rebuild navigation with the new data
+    -- Rebuild navigation
     self:RebuildNavigation()
     
     -- Replace direct message with Debug call
@@ -285,6 +286,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
             self.SYNC.COMMANDS.ANNOUNCE,
             timestamp,
             UnitName("player"))
+        
         self:SendAddonMessage(announceMsg)
     end
 end
@@ -1367,10 +1369,33 @@ function TWRA:ShowOptionsView()
     
     -- Safety: Use pcall to avoid errors
     local success, err = pcall(function()
-                
-        -- Clear any footers and rows
+        -- Hide all section-related content
+        if self.rowFrames then
+            for _, row in pairs(self.rowFrames) do
+                for _, cell in pairs(row) do
+                    if cell.text then cell.text:Hide() end
+                    if cell.bg then cell.bg:Hide() end
+                    if cell.icon then cell.icon:Hide() end
+                end
+            end
+        end
+        
+        -- Clear row highlights - ensure they're completely hidden
+        if self.rowHighlights then
+            for _, highlight in pairs(self.rowHighlights) do
+                highlight:Hide()
+                -- Set alpha to 0 as an extra measure
+                highlight:SetAlpha(0)
+                -- Release parent attachment to ensure it's not visible
+                highlight:ClearAllPoints()
+                highlight:SetParent(nil)
+            end
+            -- Clear the table to ensure no references remain
+            self.rowHighlights = {}
+        end
+        
+        -- Clear any footers
         self:ClearFooters()
-        self:ClearRows()
         
         -- Hide navigation elements
         if self.navigation then
@@ -1403,36 +1428,13 @@ function TWRA:ShowOptionsView()
             self.optionsPanel:Show()
         end
         
-        -- Update current view state
-        self.currentView = "options"
-    end)
-    
-    if not success then
-        self:Error("Error in ShowOptionsView: " .. tostring(err))
-    end
-    
-    self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
-end
-
--- Fix ShowMainView to safely handle view transition
-function TWRA:ShowMainView()
-    -- Check if mainFrame exists
-    if not self.mainFrame then
-        self:CreateMainFrame()
-    end
-    
-    -- Safety: Use pcall to avoid errors
-    local success, err = pcall(function()
-        -- Hide options panel
-        if self.optionsPanel then
-            self.optionsPanel:Hide()
+        -- Update export field with current data if available
+        if self.optionsPanel and self.optionsPanel.exportBox and 
+           TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.source then
+            self.optionsPanel.exportBox.editBox:SetText(TWRA_SavedVariables.assignments.source)
         end
         
-        -- Show navigation elements
-        if self.navigation then
-            if self.navigation.prevButton then self.navigation.prevButton:Show() end
-            if self.navigation.nextButton then self.navigation.nextButton:Show() end
-            if self.navigation.menuButton then self.navigation.menuButton:Show() end
+        -- Update current view state
             if self.navigation.handlerText then self.navigation.handlerText:Show() end
         end
         
@@ -1591,4 +1593,114 @@ function TWRA:ClearData()
     self.usingExampleData = false
     
     self:Debug("data", "Data cleared successfully")
+end
+
+-- Add slash command to test example data status
+SLASH_TWRAEXAMPLE1 = "/twraexample"
+SlashCmdList["TWRAEXAMPLE"] = function(msg)
+    -- Check if example data is currently loaded
+    local isExampleActive = TWRA.usingExampleData or false
+    
+    -- Get the timestamp of current data
+    local timestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or "none"
+    
+    -- Get source of current data
+    local source = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.source and "yes" or "no"
+    
+    -- Check if the source is specifically example data
+    local isExampleFromSource = TWRA_SavedVariables.assignments and 
+                              TWRA_SavedVariables.assignments.isExample
+    
+    -- Print status to chat
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA Example Data Status:")
+    DEFAULT_CHAT_FRAME:AddMessage("- Using example data flag: " .. (isExampleActive and "TRUE" or "FALSE"))
+    DEFAULT_CHAT_FRAME:AddMessage("- Is example from source: " .. (isExampleFromSource and "TRUE" or "FALSE"))
+    DEFAULT_CHAT_FRAME:AddMessage("- Current data timestamp: " .. tostring(timestamp))
+    DEFAULT_CHAT_FRAME:AddMessage("- Has source data: " .. source)
+    
+    -- Count players in EXAMPLE_PLAYERS
+    local playerCount = 0
+    local offlineCount = 0
+    if TWRA.EXAMPLE_PLAYERS then
+        for name, classInfo in pairs(TWRA.EXAMPLE_PLAYERS) do
+            playerCount = playerCount + 1
+            if string.find(classInfo, "|OFFLINE") then
+                offlineCount = offlineCount + 1
+            end
+        end
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("- Example players: " .. playerCount .. " (with " .. offlineCount .. " offline)")
+    
+    -- Check a few specific players as a test
+    local function checkPlayerStatus(name)
+        local inRaid, online = TWRA:GetPlayerStatus(name)
+        local status = (inRaid and (online and "ONLINE" or "OFFLINE") or "NOT IN RAID")
+        DEFAULT_CHAT_FRAME:AddMessage("  - " .. name .. ": " .. status)
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("Player status test:")
+    checkPlayerStatus("Azzco")
+    checkPlayerStatus("Lenato")  -- Should be offline in example data
+    
+    -- Load example data if requested
+    if msg == "load" then
+        TWRA:LoadExampleData()
+        DEFAULT_CHAT_FRAME:AddMessage("Example data loaded!")
+        if TWRA.currentView == "options" then
+            TWRA:ShowMainView()
+        else
+            TWRA:DisplayCurrentSection()
+        end
+    end
+    
+    -- Debug class coloring for a specific player
+    if msg and string.find(msg, "check") then
+        local _, _, playerName = string.find(msg, "check%s+(%S+)")
+        if playerName then
+            local inRaid, online = TWRA:GetPlayerStatus(playerName)
+            local classInfo = TWRA.EXAMPLE_PLAYERS and TWRA.EXAMPLE_PLAYERS[playerName]
+            local class = classInfo and string.gsub(classInfo, "|OFFLINE", "")
+            
+            DEFAULT_CHAT_FRAME:AddMessage("Class coloring check for " .. playerName .. ":")
+            DEFAULT_CHAT_FRAME:AddMessage("  - In raid: " .. tostring(inRaid))
+            DEFAULT_CHAT_FRAME:AddMessage("  - Online: " .. tostring(online))
+            DEFAULT_CHAT_FRAME:AddMessage("  - Class info: " .. tostring(classInfo))
+            DEFAULT_CHAT_FRAME:AddMessage("  - Class: " .. tostring(class))
+            
+            if class then
+                local colorInfo = TWRA.VANILLA_CLASS_COLORS[class]
+                if colorInfo then
+                    DEFAULT_CHAT_FRAME:AddMessage("  - Color: r=" .. colorInfo.r .. 
+                                                " g=" .. colorInfo.g .. " b=" .. colorInfo.b)
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage("  - Color not found for class: " .. class)
+                end
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("Usage: /twraexample check PlayerName")
+        end
+    end
+end
+
+-- Add function to handle example data loading
+function TWRA:LoadExampleDataAndShow()
+    -- Load example data and update UI
+    if self:LoadExampleData() then
+        -- Set flag that we're using example data
+        self.usingExampleData = true
+        
+        -- Switch to main view if in options
+        if self.currentView == "options" then
+            self:ShowMainView()
+        else
+            -- Update display
+            self:DisplayCurrentSection()
+        end
+        
+        -- Show user feedback
+        self:Debug("data", "Example data loaded successfully")
+        return true
+    end
+    
+    return false
 end

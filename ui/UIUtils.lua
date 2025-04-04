@@ -194,13 +194,16 @@ end
 
 -- Apply class coloring to text elements
 function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, isOnline)
-    -- Safe parameter checks
-    if not textObj then return end
+    -- Safety check for text object
+    if not textObj or not textObj.SetTextColor then 
+        TWRA:Debug("error", "Invalid text object in ApplyClassColoring")
+        return
+    end
     
     -- For backward compatibility: if playerName is passed as the only parameter,
-    -- try to determine class and status from the raid roster
+    -- try to determine class and status from the raid roster or example data
     if playerName and not playerClass then
-        -- Check if this is a player name or a class group
+        -- Check if this is a class group name
         local classFromGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[playerName]
         if classFromGroup then
             -- Use direct class coloring for class groups
@@ -208,7 +211,7 @@ function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, 
             isInRaid = true
             isOnline = true
         else
-            -- Use enhanced GetPlayerStatus to handle example data
+            -- Use GetPlayerStatus to handle both real players and example data
             local inRaid, online = TWRA:GetPlayerStatus(playerName)
             isInRaid = inRaid
             isOnline = online
@@ -218,10 +221,14 @@ function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, 
                 -- Extract class from example players
                 local classInfo = TWRA.EXAMPLE_PLAYERS[playerName]
                 if classInfo then
-                    playerClass = string.gsub(classInfo, "|OFFLINE", "")
+                    playerClass = string.gsub(classInfo or "", "|OFFLINE", "")
+                    
+                    -- Add extra debug when using example data
+                    TWRA:Debug("ui", "Example player " .. playerName .. ": class=" .. 
+                              tostring(playerClass) .. ", online=" .. tostring(isOnline))
                 end
             elseif playerName == UnitName("player") then
-                -- Get player class
+                -- Get current player's class
                 local _, class = UnitClass("player")
                 playerClass = class
             else
@@ -247,16 +254,21 @@ function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, 
     elseif not isOnline then
         -- Gray for offline
         r, g, b = 0.5, 0.5, 0.5
-    elseif playerClass and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[string.upper(playerClass)] then
-        -- Class color - properly access the color
-        local color = TWRA.VANILLA_CLASS_COLORS[string.upper(playerClass)]
-        r, g, b = color.r, color.g, color.b
+    elseif playerClass and TWRA.VANILLA_CLASS_COLORS then
+        -- Ensure class name is uppercase for lookup
+        local upperClass = string.upper(playerClass)
+        
+        if TWRA.VANILLA_CLASS_COLORS[upperClass] then
+            -- Class color based on the table
+            local color = TWRA.VANILLA_CLASS_COLORS[upperClass]
+            r, g, b = color.r, color.g, color.b
+        else
+            TWRA:Debug("error", "Unknown class: " .. tostring(playerClass))
+        end
     end
     
-    -- Apply the color to the text element
-    if textObj.SetTextColor then
-        textObj:SetTextColor(r, g, b)
-    end
+    -- Finally apply the color
+    textObj:SetTextColor(r, g, b)
 end
 
 -- Add tooltip to any frame

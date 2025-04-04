@@ -85,7 +85,7 @@ function TWRA:EncodeBase64(data)
     return table.concat(result)
 end
 
--- Improved Base64 decoding function with support for special characters
+-- Improved Base64 decoding function with safety checks
 function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     if not base64Str then 
         self:Error("Decode failed - nil string")
@@ -105,18 +105,25 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     local bits = 0
     local bitCount = 0
     
+    -- Safety check for minimum length
+    if string.len(base64Str) < 4 then
+        self:Error("Decode failed - string too short")
+        return nil
+    end
+    
     for i = 1, string.len(base64Str) do
         local b64char = string.sub(base64Str, i, i)
         local b64value = b64Table[b64char]
         
         if b64value and b64value >= 0 then
             -- Left shift bits by 6 and add new value
-            bits = bits * 64 + b64value
+            bits = (bits * 64) + b64value
             bitCount = bitCount + 6
             
-            -- Extract 8-bit bytes when we have enough bits
-            while bitCount >= 8 do
+            -- If we have at least 8 bits, extract a byte
+            if bitCount >= 8 then
                 bitCount = bitCount - 8
+                
                 -- Extract next byte (shift right)
                 local byte = math.floor(bits / (2^bitCount))
                 -- Keep only the lowest 8 bits by subtracting multiples of 256

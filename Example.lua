@@ -109,6 +109,14 @@ function TWRA:LoadExampleData()
     -- Save the example data with proper isExample flag
     self:SaveAssignments(self.EXAMPLE_DATA, "example_data", nil, true)
     
+    -- Switch to main view if in options and ensure we update the display
+    if self.currentView == "options" then
+        self:ShowMainView()
+    else
+        -- Display the data in current view
+        self:DisplayCurrentSection()
+    end
+    
     self:Debug("data", "Example data loaded with " .. table.getn(self.EXAMPLE_DATA) .. " rows")
     
     return self.EXAMPLE_DATA
