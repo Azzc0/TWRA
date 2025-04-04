@@ -6,12 +6,49 @@ TWRA.UI = TWRA.UI or {}
 -- Apply class coloring to a player's name based on status
 function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, isOnline)
     -- Safe parameter checks
-    if not textObj or not playerName then 
-        return 
+    if not textObj then return end
+    
+    -- For backward compatibility: if playerName is passed as the only parameter,
+    -- try to determine class and status from the raid roster
+    if playerName and not playerClass then
+        -- Check if this is a player name or a class group
+        local classFromGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[playerName]
+        if classFromGroup then
+            -- Use direct class coloring for class groups
+            playerClass = classFromGroup
+            isInRaid = true
+            isOnline = true
+        else
+            -- Try to find player in raid
+            local inRaid, online = false, false
+            
+            -- Check if it's the player first
+            if playerName == UnitName("player") then
+                inRaid = true
+                online = true
+                -- Get player class
+                local _, class = UnitClass("player")
+                playerClass = class
+            else
+                -- Scan raid roster
+                for i = 1, GetNumRaidMembers() do
+                    local name, _, _, _, _, class, _, onlineStatus = GetRaidRosterInfo(i)
+                    if name == playerName then
+                        inRaid = true
+                        online = (onlineStatus ~= 0) -- 0 means offline in vanilla
+                        playerClass = class
+                        break
+                    end
+                end
+            end
+            
+            isInRaid = inRaid
+            isOnline = online
+        end
     end
     
     -- Default colors
-    local r, g, b = 1, 1, 1
+    local r, g, b = 1, 1, 1 -- Default white
     
     -- Apply coloring based on status
     if not isInRaid then
@@ -20,9 +57,9 @@ function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, 
     elseif not isOnline then
         -- Gray for offline
         r, g, b = 0.5, 0.5, 0.5
-    elseif playerClass and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[playerClass] then
-        -- Class color
-        local color = TWRA.VANILLA_CLASS_COLORS[playerClass]
+    elseif playerClass and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[string.upper(playerClass)] then
+        -- Class color - properly access the color
+        local color = TWRA.VANILLA_CLASS_COLORS[string.upper(playerClass)]
         r, g, b = color.r, color.g, color.b
     end
     

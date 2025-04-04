@@ -10,6 +10,7 @@ core\Debug.lua
 core\Constants.lua
 core\Utils.lua
 core\Base64.lua
+Example.lua
 TWRA.lua
 core\Core.lua
 core\DataProcessing.lua
@@ -25,6 +26,7 @@ features\AutoTanks.lua
 features\AutoNavigate.lua
 
 # Utility modules
+util\ItemLink.lua
 sync\SyncHandlers.lua
 sync\ChunkManager.lua
 sync\Sync.lua

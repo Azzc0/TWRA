@@ -8,6 +8,54 @@ function TWRA:IsExampleData(data)
     return data == self.EXAMPLE_DATA
 end
 
+-- Enhanced GetPlayerStatus function to handle example data
+function TWRA:GetPlayerStatus(name)
+    if not name or name == "" then return false, nil end
+    
+    -- Check if this is the current player
+    if UnitName("player") == name then return true, true end
+    
+    -- Check if we're using example data
+    if self.usingExampleData and self.EXAMPLE_PLAYERS then
+        -- Get the player class directly from EXAMPLE_PLAYERS
+        local classInfo = self.EXAMPLE_PLAYERS[name]
+        
+        -- If the player is in our example data
+        if classInfo then
+            -- Check if the player is marked as offline (has |OFFLINE suffix)
+            local isOffline = string.find(classInfo, "|OFFLINE")
+            if isOffline then
+                -- Example player exists but is offline
+                return true, false
+            else
+                -- Example player exists and is online
+                return true, true
+            end
+        end
+    end
+    
+    -- Standard raid roster check for normal operation
+    -- Check raid roster
+    for i = 1, GetNumRaidMembers() do
+        local raidName, _, _, _, _, class, _, online = GetRaidRosterInfo(i)
+        if raidName == name then
+            return true, (online ~= 0)
+        end
+    end
+    
+    -- Check party if not in raid
+    if GetNumRaidMembers() == 0 then
+        if GetNumPartyMembers() > 0 then
+            for i = 1, GetNumPartyMembers() do
+                if UnitName("party"..i) == name then
+                    return true, UnitIsConnected("party"..i)
+                end
+            end
+        end
+    end
+    
+    return false, nil
+end
 
 -- UI-specific functions
 TWRA.currentView = "main"  -- Either "main" or "options"
@@ -64,17 +112,18 @@ function TWRA:CreateMainFrame()
     
     -- Add debugging to the click handler
     optionsButton:SetScript("OnClick", function() 
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Options button clicked, currentView=" .. self.currentView)
+        -- Replace direct chat messages with Debug calls
+        TWRA:Debug("ui", "Options button clicked, currentView=" .. self.currentView)
         
         if self.currentView == "main" then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Will call ShowOptionsView")
+            TWRA:Debug("ui", "Will call ShowOptionsView")
             self:ShowOptionsView()
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Will call ShowMainView")
+            TWRA:Debug("ui", "Will call ShowMainView")
             self:ShowMainView()
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: After options button click, currentView=" .. self.currentView)
+        TWRA:Debug("ui", "After options button click, currentView=" .. self.currentView)
     end)
     self.optionsButton = optionsButton
 
@@ -322,7 +371,6 @@ local function getUniqueHandlers(data)
     return handlers
 end
 
-
 -- Update the FilterAndDisplayHandler function to ignore GUID rows
 
 function TWRA:FilterAndDisplayHandler(currentHandler)
@@ -417,29 +465,36 @@ function TWRA:ClearRows()
         self.rowHighlights = {}
     end
     
-    -- Clear existing highlights
-    for _, highlight in pairs(self.rowHighlights) do
+    -- Clear existing highlights more thoroughly
+    for i, highlight in pairs(self.rowHighlights) do
         highlight:Hide()
-        highlight:SetParent(nil)
+        highlight:SetParent(nil) 
+        highlight:ClearAllPoints()
+        self.rowHighlights[i] = nil
     end
     self.rowHighlights = {}
 
-    -- Clear existing row frames
+    -- Clear existing row frames more thoroughly
     if self.rowFrames then
-        for _, row in pairs(self.rowFrames) do
-            for _, cell in pairs(row) do
+        for i, row in pairs(self.rowFrames) do
+            for j, cell in pairs(row) do
+                -- Hide and remove all elements in the cell
                 for _, element in pairs({"text", "bg", "icon"}) do
                     if cell[element] then 
                         cell[element]:Hide()
                         cell[element]:SetParent(nil)
+                        cell[element]:ClearAllPoints()
+                        cell[element] = nil
                     end
                 end
+                row[j] = nil
             end
+            self.rowFrames[i] = nil
         end
         self.rowFrames = {}
     end
     
-    -- Add this to also clear footers
+    -- Also clear footers
     self:ClearFooters()
     
     self.headerColumns = nil
@@ -599,7 +654,11 @@ function TWRA:CreateRow(rowNum, data, shouldHighlight)
                         classToUse = playerClass
                     elseif self.usingExampleData then
                         -- Get class directly from EXAMPLE_PLAYERS for example data
-                        classToUse = string.gsub(self.EXAMPLE_PLAYERS[cellData] or "", "|OFFLINE", "")
+                        local classInfo = self.EXAMPLE_PLAYERS[cellData]
+                        if classInfo then
+                            -- Strip any |OFFLINE suffix to get just the class
+                            classToUse = string.gsub(classInfo or "", "|OFFLINE", "")
+                        end
                     else
                         -- Find player's class from raid roster
                         for j = 1, GetNumRaidMembers() do
@@ -644,7 +703,52 @@ function TWRA:CreateRow(rowNum, data, shouldHighlight)
             cell:SetTextColor(1, 1, 1)
         else
             -- Player/role columns - color by status
-            TWRA.UI:ApplyClassColoring(cell, cellData)
+            if not cellData or cellData == "" then
+                cell:SetTextColor(1, 1, 1)  -- Empty cells are white
+            else
+                -- Get player status for this cell
+                local inRaid, online = TWRA:GetPlayerStatus(cellData)
+                
+                -- Handle class groups differently
+                local isClassGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellData] and true or false
+                if isClassGroup then
+                    -- For class groups, use the class color directly
+                    local className = TWRA.CLASS_GROUP_NAMES[cellData]
+                    local color = TWRA.VANILLA_CLASS_COLORS[className]
+                    if color then
+                        cell:SetTextColor(color.r, color.g, color.b)
+                    else
+                        cell:SetTextColor(1, 1, 1)  -- Fallback to white
+                    end
+                else
+                    -- Use the proper class coloring for player names
+                    local classToUse = nil
+                    
+                    -- First check if it's the current player
+                    if cellData == UnitName("player") then
+                        local _, playerClass = UnitClass("player")
+                        classToUse = playerClass
+                    elseif self.usingExampleData then
+                        -- Extract class from EXAMPLE_PLAYERS for example data
+                        local classInfo = self.EXAMPLE_PLAYERS[cellData]
+                        if classInfo then
+                            classToUse = string.gsub(classInfo or "", "|OFFLINE", "")
+                        end
+                    else
+                        -- Find player's class from raid roster
+                        for j = 1, GetNumRaidMembers() do
+                            local name, _, _, _, _, class = GetRaidRosterInfo(j)
+                            if name == cellData then
+                                classToUse = class
+                                break
+                            end
+                        end
+                    end
+                    
+                    -- Now call ApplyClassColoring with complete information
+                    TWRA.UI:ApplyClassColoring(cell, cellData, classToUse, inRaid, online)
+                end
+            end
         end
         
         -- Store cell references
@@ -770,11 +874,21 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         icon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
     end
     
+    -- FIXED: Check if text already contains an item link before processing
+    -- Process text to replace item names with proper links
+    local processedText
+    if string.find(text, "|Hitem:") then
+        -- Text already contains item links, don't process further
+        processedText = text
+    else
+        processedText = TWRA.Items and TWRA.Items.ProcessText and TWRA.Items:ProcessText(text) or text
+    end
+    
     -- Create text
     local textElement = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     textElement:SetPoint("TOPLEFT", bg, "TOPLEFT", icon and 32 or 10, -6)  -- More space for larger icon
     textElement:SetPoint("TOPRIGHT", bg, "TOPRIGHT", -10, -4)
-    textElement:SetText(text)
+    textElement:SetText(processedText)
     textElement:SetJustifyH("LEFT")
     
     -- Set text color based on type
@@ -788,6 +902,8 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     local clickFrame = CreateFrame("Button", nil, self.mainFrame)
     clickFrame:SetAllPoints(bg)
     clickFrame:EnableMouse(true)
+    
+    -- Setup mouseover highlighting
     clickFrame:SetScript("OnEnter", function()
         -- Highlight on mouseover
         if footerType == "Warning" then
@@ -795,7 +911,13 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         else
             bg:SetTexture(0.1, 0.1, 0.5, 0.25)  -- Brighter blue for notes
         end
+        
+        -- Add tooltip to show it's clickable
+        GameTooltip:SetOwner(clickFrame, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Click to announce to raid")
+        GameTooltip:Show()
     end)
+    
     clickFrame:SetScript("OnLeave", function()
         -- Restore normal color
         if footerType == "Warning" then
@@ -803,7 +925,12 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         else
             bg:SetTexture(0.1, 0.1, 0.3, 0.15)  -- Normal blue for notes
         end
+        
+        -- Hide tooltip
+        GameTooltip:Hide()
     end)
+    
+    -- Add the click handler to send to chat
     clickFrame:SetScript("OnClick", function()
         -- Determine which channels to use based on options
         local messageChannel = "RAID"  -- Default
@@ -828,15 +955,13 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
                     messageChannel = "RAID"
                 end
             elseif GetNumPartyMembers() > 0 then
-                -- In a party but not raid, use party
                 messageChannel = "PARTY"
             else
-                -- Solo, use say
                 messageChannel = "SAY"
             end
         elseif selectedChannel == "CHANNEL" then
             -- Get custom channel name
-            local customChannel = TWRA_SavedVariables.options.customChannel
+            local customChannel = TWRA_SavedVariables.options and TWRA_SavedVariables.options.customChannel
             if customChannel and customChannel ~= "" then
                 -- Find the channel number
                 channelNumber = GetChannelName(customChannel)
@@ -845,25 +970,28 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
                 else
                     -- No channel found, fall back to say
                     messageChannel = "SAY"
-                    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Channel '" .. customChannel .. 
-                                                "' not found, using Say instead")
+                    self:Debug("ui", "Channel '" .. customChannel .. "' not found, using Say instead")
                 end
             else
                 -- No custom channel specified, fall back to say
                 messageChannel = "SAY"
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: No custom channel specified, using Say instead")
+                self:Debug("ui", "No custom channel specified, using Say instead")
             end
         end
         
-        -- Prepend warning/note prefix to text
-        -- local prefix = footerType == "Warning" and "Warning: " or "Note: "
-        -- local fullText = prefix .. text
+        -- FIXED: Remove prepending of prefixes. We don't want any prefix anymore.
+        local announceText = text
+        
+        -- FIXED: Check if the text already contains an item link
+        if not string.find(announceText, "|Hitem:") and TWRA.Items and TWRA.Items.ProcessText then
+            announceText = TWRA.Items:ProcessText(announceText)
+        end
         
         -- Send the message to the appropriate channel
         if messageChannel == "CHANNEL" then
-            SendChatMessage(text, messageChannel, nil, channelNumber)
+            SendChatMessage(announceText, messageChannel, nil, channelNumber)
         else
-            SendChatMessage(text, messageChannel)
+            SendChatMessage(announceText, messageChannel)
         end
         
         -- Visual feedback for click
@@ -900,7 +1028,7 @@ function TWRA:ClearFooters()
         return
     end
     
-    for _, footer in pairs(self.footers) do  -- Changed 'footer in pairs' to 'footer in pairs'
+    for _, footer in pairs(self.footers) do
         -- Special handling for separator which only has a texture
         if footer.texture then
             footer.texture:Hide()
@@ -919,6 +1047,12 @@ function TWRA:ClearFooters()
                 footer.text:Hide()
                 footer.text:SetParent(nil)
             end
+            -- Also handle the clickable overlay
+            if footer.clickFrame then
+                footer.clickFrame:Hide()
+                footer.clickFrame:EnableMouse(false)
+                footer.clickFrame:SetParent(nil)
+            end
         end
     end
     
@@ -932,20 +1066,20 @@ end
 function TWRA:DisplayCurrentSection()
     -- If we're in options view, don't try to display sections
     if self.currentView == "options" then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Skipping display update while in options view")
+        TWRA:Debug("ui", "Skipping display update while in options view")
         return
     end
     
     -- Make sure we have navigation
     if not self.navigation or not self.navigation.currentIndex or not self.navigation.handlers then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Can't display section - navigation not initialized")
+        TWRA:Debug("error", "Can't display section - navigation not initialized")
         return
     end
     
     -- Get current handler from navigation
     local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
     if not currentHandler then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Can't display section - invalid current index")
+        TWRA:Debug("error", "Can't display section - invalid current index")
         return
     end
     
@@ -953,6 +1087,70 @@ function TWRA:DisplayCurrentSection()
     self:FilterAndDisplayHandler(currentHandler)
 end
 
+-- Modify the GetPlayerRelevantRows function to work with example data
+function TWRA:GetPlayerRelevantRows(sectionData)
+    if not sectionData then return {} end
+    
+    local relevantRows = {}
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    
+    -- Check each row
+    for rowIndex = 1, table.getn(sectionData) do
+        -- Skip the header row
+        if rowIndex > 1 then
+            local row = sectionData[rowIndex]
+            local isRelevantRow = false
+            
+            -- Check each column except section name and icon
+            for colIndex = 3, table.getn(row) do
+                local cellValue = row[colIndex]
+                -- Check if the cell contains player name
+                if cellValue == playerName then
+                    isRelevantRow = true
+                    break
+                end
+                
+                -- Check if the cell is a class group matching player's class
+                local className = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellValue]
+                if className and className == playerClass then
+                    isRelevantRow = true
+                    break
+                end
+                
+                -- Check for group assignments like "Group 1,2"
+                if string.find(cellValue, "Group") then
+                    -- Extract group numbers
+                    local groupNums = {}
+                    for groupNum in string.gmatch(cellValue, "%d+") do
+                        groupNums[tonumber(groupNum)] = true
+                    end
+                    
+                    -- Check if player is in any of these groups
+                    local playerGroup = 0
+                    for i = 1, GetNumRaidMembers() do
+                        local name, _, subgroup = GetRaidRosterInfo(i)
+                        if name == playerName then
+                            playerGroup = subgroup
+                            break
+                        end
+                    end
+                    if playerGroup > 0 and groupNums[playerGroup] then
+                        isRelevantRow = true
+                        break
+                    end
+                end
+            end
+            
+            -- If row is relevant, add to our list
+            if isRelevantRow then
+                table.insert(relevantRows, rowIndex)
+            end
+        end
+    end
+    
+    return relevantRows
+end
 
 -- AutoMarker toggle (only shown if SuperWoW is available)
 if SUPERWOW_VERSION ~= nil then
@@ -983,7 +1181,7 @@ if SUPERWOW_VERSION ~= nil then
         getglobal(debugCheckbox:GetName() .. "Text"):SetText("Debug mode")
         debugCheckbox.tooltipText = "Show debug messages for AutoMarker"
         
-        debugCheckbox:SetScript("OnClick", function()
+        debugCheckbox:SetScript("OnClick", function() 
             TWRA.AUTONAVIGATE.debug = not TWRA.AUTONAVIGATE.debug
             this:SetChecked(TWRA.AUTONAVIGATE.debug)
         end)

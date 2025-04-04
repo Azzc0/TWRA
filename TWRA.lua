@@ -1,11 +1,5 @@
 TWRA_SavedVariables = TWRA_SavedVariables or {
-    assignments = {
-        data = nil,          -- Decoded assignment data
-        source = nil,        -- Original Base64 string
-        timestamp = nil,     -- When the data was last updated
-        version = 1,         -- Data structure version
-        currentSection = 1   -- Currently selected section index
-    }
+    assignments = {}
 }
 TWRA = TWRA or {}
 
@@ -32,7 +26,6 @@ function TWRA:NavigateHandler(delta)
     
     -- Safety check for handlers
     if not nav.handlers or table.getn(nav.handlers) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No sections available to navigate")
         return
     end
     
@@ -68,14 +61,13 @@ function TWRA:RebuildNavigation()
     for i = 1, table.getn(self.fullData) do
         local sectionName = self.fullData[i][1]
         if sectionName and sectionName ~= "" and not seenSections[sectionName] then
-            seenSections[sectionName] = true  -- Mark as seen
-            table.insert(self.navigation.handlers, sectionName)  -- Add to ordered list
+            seenSections[sectionName] = true
+            table.insert(self.navigation.handlers, sectionName)
         end
     end
     
     -- Debug output to verify sections
-    self:Debug("nav", "Built " .. table.getn(self.navigation.handlers) .. " sections: " .. 
-        table.concat(self.navigation.handlers, ", "))
+    self:Debug("nav", "Built " .. table.getn(self.navigation.handlers) .. " sections")
     
     return self.navigation.handlers
 end
@@ -97,11 +89,11 @@ function TWRA:UpdateUI()
     
     -- Try to update any visible UI elements
     if self.mainFrame and self.mainFrame:IsShown() then
-        if self.sectionTitle then
-            self.sectionTitle:SetText(self.navigation.handlers[self.navigation.currentIndex] or "Unknown")
-        end
-        if self.RefreshAssignmentTable then
-            self:RefreshAssignmentTable()
+        -- Update section text
+        if self.navigation and self.navigation.handlerText and 
+           self.navigation.currentIndex and self.navigation.handlers and
+           self.navigation.handlers[self.navigation.currentIndex] then
+            self.navigation.handlerText:SetText(self.navigation.handlers[self.navigation.currentIndex])
         end
     end
 end
@@ -198,7 +190,6 @@ TWRA.ROLE_ICONS = {
     ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01"
 }
 
-
 -- Main initialization - called only once
 function TWRA:Initialize()
     local frame = CreateFrame("Frame")
@@ -209,51 +200,29 @@ function TWRA:Initialize()
     frame:RegisterEvent("UPDATE_BINDINGS")
     
     frame:SetScript("OnEvent", function()
-        local event = event
-        
         if event == "VARIABLES_LOADED" then
-            -- Load saved data or set defaults if none exist
-            if not self:LoadSavedAssignments() then
-                self:LoadExampleData()
+            -- Load saved assignments
+            self:LoadSavedAssignments()
+            
+            -- Initialize debug system
+            if self.InitializeDebug then
+                self:InitializeDebug()
             end
             
-            -- Initialize options
-            if self.InitOptions then self:InitOptions() end
-            
-            -- Initialize keybindings
-            if self.InitializeBindings then self:InitializeBindings() end
-            
-            -- Create main frame but keep it hidden
-            if not self.mainFrame and self.CreateMainFrame then
-                self:CreateMainFrame()
-                self.mainFrame:Hide() -- Ensure it's hidden by default
-            end
-            
-            -- Process any pending navigations
-            if self.pendingNavigation and self.navigation then
-                self:NavigateToSection(self.pendingNavigation)
-                self.pendingNavigation = nil
-            end
-            
-            self:Debug("general", "Addon initialization complete")
-            
-        -- Rest of the function remains unchanged
+            self:Debug("general", "Variables loaded")
         elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
-            -- Handle group composition changes
-            if self.OnGroupChanged then self:OnGroupChanged() end
-            
-            -- Refresh display if needed for highlighting
-            if self.mainFrame and self.mainFrame:IsShown() and self.DisplayCurrentSection then
-                self:DisplayCurrentSection()
+            -- Handle group changes
+            if self.OnGroupChanged then
+                self:OnGroupChanged()
             end
-            
         elseif event == "CHAT_MSG_ADDON" and arg1 == self.SYNC.PREFIX then
             -- Handle addon messages
             self:HandleAddonMessage(arg2, arg3, arg4)
-            
         elseif event == "UPDATE_BINDINGS" then
-            -- Update our binding handlers
-            if self.InitializeBindings then self:InitializeBindings() end
+            -- Handle keybinding updates
+            if self.UpdateBindings then
+                self:UpdateBindings()
+            end
         end
     end)
 
@@ -268,7 +237,6 @@ function TWRA:Initialize()
     
     -- Initialize Debug system (must be early)
     if self.InitDebug then 
-        self:InitDebug() 
         self:Debug("general", "Debug system initialized")
     end
 end
@@ -289,26 +257,34 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     -- Update our full data in flat format for use in the current session
     self.fullData = data
     
+    -- Check if this is the example data and set the flag accordingly
+    self.usingExampleData = (sourceString == "example_data" or self:IsExampleData(data))
+    
     -- Save the data, source string, and current section index
     TWRA_SavedVariables.assignments = {
         data = data,
         source = sourceString,
         timestamp = timestamp,
-        version = 2, -- Increment version to indicate we're using the new format
-        currentSection = currentIndex
+        currentSection = currentIndex,
+        version = 1,
+        isExample = self.usingExampleData
     }
     
     -- Rebuild navigation with the new data
     self:RebuildNavigation()
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assignments saved with timestamp " .. timestamp)
+    -- Replace direct message with Debug call
+    self:Debug("data", "Assignments saved with timestamp " .. timestamp)
     
     -- Skip announcement if noAnnounce is true
     if noAnnounce then return end
     
     -- Announce update to group if we're in one
     if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-        local announceMsg = self.SYNC.COMMANDS.ANNOUNCE .. ":" .. timestamp .. ":" .. sourceString
+        local announceMsg = string.format("%s:%d:%s", 
+            self.SYNC.COMMANDS.ANNOUNCE,
+            timestamp,
+            UnitName("player"))
         self:SendAddonMessage(announceMsg)
     end
 end
@@ -316,7 +292,7 @@ end
 function TWRA:LoadSavedAssignments()
     local saved = TWRA_SavedVariables.assignments
     if not saved or not saved.data then return false end
-
+    
     -- Set the full data directly from saved data
     self.fullData = saved.data
     
@@ -326,18 +302,10 @@ function TWRA:LoadSavedAssignments()
     -- Store and set current section
     local currentSection = saved.currentSection or 1
     if self.navigation then
-        -- Validate section index to ensure it's valid
-        if currentSection > 0 and currentSection <= table.getn(self.navigation.handlers) then
-            self.navigation.currentIndex = currentSection
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Set navigation to index " .. currentSection .. 
-                                         " (" .. self.navigation.handlers[currentSection] .. ")")
-        else
-            self.navigation.currentIndex = 1
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid saved section index, reset to 1")
-        end
+        self.navigation.currentIndex = math.min(currentSection, table.getn(self.navigation.handlers))
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Loaded assignments")
+    self:Debug("data", "Loaded assignments")
     return true
 end
 
@@ -351,16 +319,15 @@ function TWRA:GetPlayerStatus(name)
     for i = 1, GetNumRaidMembers() do
         local raidName, _, _, _, _, _, _, online = GetRaidRosterInfo(i)
         if raidName == name then
-            -- In vanilla, online is 0 when offline
-            return true, (online ~= 0)
+            return true, online
         end
     end
     
     -- Check party if not in raid
     if GetNumRaidMembers() == 0 then
         for i = 1, GetNumPartyMembers() do
-            if UnitName("party"..i) == name then
-                return true, UnitIsConnected("party"..i)
+            if UnitName("party" .. i) == name then
+                return true, UnitIsConnected("party" .. i)
             end
         end
     end
@@ -371,8 +338,7 @@ end
 function TWRA:HasClassInRaid(className)
     for i = 1, GetNumRaidMembers() do
         local _, _, _, _, _, class = GetRaidRosterInfo(i)
-        -- Convert both to uppercase for comparison
-        if string.upper(class) == string.upper(className) then
+        if class == className then
             return true
         end
     end
@@ -407,13 +373,13 @@ function TWRA:UpdateTanks()
     
     -- Check if oRA2 is available
     if not self:IsORA2Available() then
-        self:Warn("tank", "oRA2 is required for tank management")
+        self:Debug("error", "oRA2 is required for tank management")
         return
     end
     
     -- Check if we have data
     if not self.fullData or table.getn(self.fullData) == 0 then
-        self:Warn("tank", "No data to update tanks from")
+        self:Debug("error", "No data to update tanks from")
         return
     end
     
@@ -424,11 +390,11 @@ function TWRA:UpdateTanks()
     end
     
     if not currentSection then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No section selected")
+        self:Debug("error", "No section selected")
         return
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Processing tanks for section " .. currentSection)
+    self:Debug("tank", "Processing tanks for section " .. currentSection)
     
     -- Find header row for column names
     local headerRow = nil
@@ -440,22 +406,21 @@ function TWRA:UpdateTanks()
     end
     
     if not headerRow then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Invalid data format - header row not found")
+        self:Debug("error", "Invalid data format - header row not found")
         return
     end
     
     -- Find tank columns for current section
     local tankColumns = {}
-    -- Find Tank columns in this section's header
     for k = 4, table.getn(headerRow) do
         if headerRow[k] == "Tank" then
+            self:Debug("tank", "Found tank column at index " .. k)
             table.insert(tankColumns, k)
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found tank column at index " .. k)
         end
     end
     
     if table.getn(tankColumns) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No tank columns found in section " .. currentSection)
+        self:Debug("error", "No tank columns found in section " .. currentSection)
         return
     end
     
@@ -468,7 +433,6 @@ function TWRA:UpdateTanks()
                row[2] ~= "Icon" and 
                row[2] ~= "Note" and 
                row[2] ~= "Warning" then
-                
                 if row[columnIndex] and row[columnIndex] ~= "" then
                     local tankName = row[columnIndex]
                     local alreadyAdded = false
@@ -485,7 +449,7 @@ function TWRA:UpdateTanks()
                     if not alreadyAdded and table.getn(uniqueTanks) < 10 then
                         table.insert(uniqueTanks, tankName)
                     end
-                end
+                end 
             end
         end
     end
@@ -499,17 +463,17 @@ function TWRA:UpdateTanks()
     end
     
     -- Second pass: assign tanks in order
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Setting " .. table.getn(uniqueTanks) .. " tanks")
+    self:Debug("tank", "Setting " .. table.getn(uniqueTanks) .. " tanks")
     for i = 1, table.getn(uniqueTanks) do
         local tankName = uniqueTanks[i]
         oRA.maintanktable[i] = tankName
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Set MT" .. i .. " to " .. tankName)
+        self:Debug("tank", "Set MT" .. i .. " to " .. tankName)
         if GetNumRaidMembers() > 0 then
             SendAddonMessage("CTRA", "SET " .. i .. " " .. tankName, "RAID")
         end
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Tank updates completed")
+    self:Debug("tank", "Tank updates completed")
 end
 
 -- Basic function to display section name overlay when navigating with window closed
@@ -580,6 +544,7 @@ function TWRA:ScheduleTimer(func, delay)
     timer.start = GetTime()
     timer.delay = delay
     timer.func = func
+    
     timer:SetScript("OnUpdate", function()
         local elapsed = GetTime() - timer.start
         if elapsed >= timer.delay then
@@ -587,6 +552,7 @@ function TWRA:ScheduleTimer(func, delay)
             timer.func()
         end
     end)
+    
     return timer
 end
 
@@ -596,10 +562,11 @@ function TWRA:CancelTimer(timer)
     end
 end
 
--- Announcement functionality
+-- Announcement functionality - completely rewritten
 function TWRA:AnnounceAssignments()
+    -- Validate we have data
     if not self.fullData or table.getn(self.fullData) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No data to announce")
+        self:Debug("ui", "No assignments data to announce")
         return
     end
     
@@ -610,15 +577,255 @@ function TWRA:AnnounceAssignments()
     end
     
     if not currentSection then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No section selected")
+        self:Debug("ui", "No current section to announce")
         return
     end
     
-    -- Determine which channels to use based on options
-    local headerChannel = "RAID"  -- Default
-    local bodyChannel = "RAID"
-    local warningChannel = "RAID_WARNING" -- Default warning channel
-    local channelNumber = nil
+    self:Debug("ui", "Preparing to announce section: " .. currentSection)
+    
+    -- First pass: collect all the messages we'll send
+    local messageQueue = {}
+    
+    -- Add section header message
+    table.insert(messageQueue, {
+        text = "Raid Assignments: " .. currentSection,
+        type = "header"
+    })
+    
+    -- Find the header row for this section
+    local headerRow = nil
+    for i = 1, table.getn(self.fullData) do
+        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
+            headerRow = self.fullData[i]
+            break
+        end
+    end
+    
+    -- Fallback to global header if needed
+    if not headerRow then
+        for i = 1, table.getn(self.fullData) do
+            if self.fullData[i][2] == "Icon" then
+                headerRow = self.fullData[i]
+                break
+            end
+        end
+    end
+    
+    -- Create column role mapping if we found a header row
+    local columnRoles = {}
+    if headerRow then
+        for i = 3, table.getn(headerRow) do
+            columnRoles[i] = headerRow[i]
+            self:Debug("ui", "Column " .. i .. " role: " .. (headerRow[i] or "nil"))
+        end
+    end
+    
+    -- Collect normal assignment rows
+    for i = 1, table.getn(self.fullData) do
+        -- Only process rows for the current section
+        if self.fullData[i][1] == currentSection then
+            -- Process assignment rows (skipping Icon, Note, Warning, and GUID rows)
+            if self.fullData[i][2] ~= "Icon" and 
+               self.fullData[i][2] ~= "Note" and 
+               self.fullData[i][2] ~= "Warning" and 
+               self.fullData[i][2] ~= "GUID" then
+                local icon = self.fullData[i][2] 
+                local target = self.fullData[i][3] or ""
+                local messageText = ""
+                
+                -- Add colored icon text
+                if icon and TWRA.COLORED_ICONS[icon] then
+                    messageText = TWRA.COLORED_ICONS[icon] .. " " .. target
+                else
+                    messageText = target
+                end
+                
+                -- Group roles by type
+                local roleGroups = {}
+                
+                -- Process each column for roles
+                for j = 4, table.getn(self.fullData[i]) do
+                    local role = self.fullData[i][j]
+                    if role and role ~= "" then
+                        -- Get role name from header
+                        local roleName = columnRoles[j] or "Role" -- Default to "Role" if header not found
+                        
+                        -- Create role group if it doesn't exist
+                        if not roleGroups[roleName] then
+                            roleGroups[roleName] = {}
+                        end
+                        
+                        -- Add to appropriate role group
+                        table.insert(roleGroups[roleName], role)
+                    end
+                end
+                
+                -- Add roles grouped by type
+                local roleAdded = false
+                for roleName, members in pairs(roleGroups) do
+                    if table.getn(members) > 0 then
+                        -- Make Tank/Healer plural if there are multiple members
+                        local displayRoleName = roleName
+                        if (roleName == "Tank" or roleName == "Healer") and table.getn(members) > 1 then
+                            displayRoleName = roleName .. "s"
+                        end
+                        
+                        -- Add role header (e.g., "Tanks: ")
+                        if roleAdded then
+                            messageText = messageText .. " " .. displayRoleName .. ": "
+                        else
+                            messageText = messageText .. " " .. displayRoleName .. ": "
+                            roleAdded = true
+                        end
+                        
+                        -- Add members with comma separation and "and" for last
+                        if table.getn(members) == 1 then
+                            messageText = messageText .. members[1]
+                        elseif table.getn(members) == 2 then
+                            messageText = messageText .. members[1] .. " and " .. members[2]
+                        else
+                            for m = 1, table.getn(members) - 1 do
+                                messageText = messageText .. members[m]
+                                if m < table.getn(members) - 1 then
+                                    messageText = messageText .. ", "
+                                else
+                                    messageText = messageText .. ", and "
+                                end
+                            end
+                            messageText = messageText .. members[table.getn(members)]
+                        end
+                    end
+                end
+                
+                -- Add to message queue
+                table.insert(messageQueue, {
+                    text = messageText,
+                    type = "assignment"
+                })
+                
+                self:Debug("ui", "Assignment message created: " .. messageText)
+            end
+        end
+    end
+    
+    -- Collect warnings for the current section
+    local uniqueWarnings = {}  -- Use a hash table to track unique warnings
+    for i = 1, table.getn(self.fullData) do
+        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Warning" then
+            local warningText = self.fullData[i][3]
+            if warningText and warningText ~= "" then
+                -- Only add this warning if we haven't seen it before
+                -- IMPORTANT: Use the raw text as the key, before any item processing
+                local warningKey = warningText
+                if not uniqueWarnings[warningKey] then
+                    uniqueWarnings[warningKey] = true
+                    -- FIXED: Do NOT add "WARNING:" prefix - use the text as-is
+                    table.insert(messageQueue, {
+                        text = warningText, -- Use raw text without "WARNING:" prefix
+                        type = "warning"
+                    })
+                    self:Debug("ui", "Warning message created: " .. warningText)
+                else
+                    self:Debug("ui", "Skipping duplicate warning: " .. warningText)
+                end
+            end
+        end
+    end
+    
+    -- Debug print of all messages
+    self:Debug("ui", "Announcement message queue prepared with " .. table.getn(messageQueue) .. " messages:")
+    for i, msg in ipairs(messageQueue) do
+        self:Debug("ui", "  [" .. i .. "/" .. table.getn(messageQueue) .. "] (" .. msg.type .. ") " .. msg.text)
+    end
+    
+    -- Now send the messages using a separate function
+    self:SendAnnouncementMessages(messageQueue)
+end
+
+-- New function to handle sending the prepared messages
+function TWRA:SendAnnouncementMessages(messageQueue)
+    if not messageQueue or table.getn(messageQueue) == 0 then
+        self:Debug("ui", "No messages to announce")
+        return
+    end
+    
+    -- Determine which channels to use for different message types
+    local channelInfo = self:GetAnnouncementChannels()
+    
+    -- Debug print of channel configuration
+    self:Debug("ui", "Channel configuration: header=" .. channelInfo.header .. 
+              ", assignment=" .. channelInfo.assignment .. 
+              ", warning=" .. channelInfo.warning)
+    
+    -- Send all messages with throttling
+    local index = 1
+    local messagesToSend = {}
+    
+    -- First pass: prepare all messages with their proper channels
+    for i, msg in ipairs(messageQueue) do
+        local channel = channelInfo.assignment -- Default
+        if msg.type == "header" then
+            channel = channelInfo.header
+        elseif msg.type == "warning" then
+            channel = channelInfo.warning
+        end
+        table.insert(messagesToSend, {
+            text = msg.text,
+            channel = channel,
+            channelNum = channelInfo.channelNum
+        })
+    end
+    
+    -- Debug print of final message queue with channels
+    self:Debug("ui", "Final announcement queue:")
+    for i, msg in ipairs(messagesToSend) do
+        self:Debug("ui", "  [" .. i .. "/" .. table.getn(messagesToSend) .. "] " .. 
+                  msg.text .. " to " .. msg.channel)
+    end
+    
+    -- Send function with proper throttling
+    local function SendNextMessage()
+        if index <= table.getn(messagesToSend) then
+            local msg = messagesToSend[index]
+            
+            self:Debug("ui", "Announcing [" .. index .. "/" .. table.getn(messagesToSend) .. "]: " .. 
+                      msg.text .. " to " .. msg.channel)
+            
+            -- Process item links before sending
+            local processedText = msg.text
+            if TWRA.Items and TWRA.Items.ProcessText then
+                processedText = TWRA.Items:ProcessText(processedText)
+            end
+            
+            -- Send the actual message
+            if msg.channel == "CHANNEL" and msg.channelNum then
+                SendChatMessage(processedText, msg.channel, nil, msg.channelNum)
+            else
+                SendChatMessage(processedText, msg.channel)
+            end
+            
+            -- Increment index for next message
+            index = index + 1
+            
+            -- Only schedule next message if there are more to send
+            if index <= table.getn(messagesToSend) then
+                self:ScheduleTimer(SendNextMessage, 0.3)
+            else
+                self:Debug("ui", "All messages sent successfully")
+            end
+        end
+    end
+    
+    -- Start sending the first message
+    SendNextMessage()
+end
+
+-- Separate function to determine which channels to use
+function TWRA:GetAnnouncementChannels()
+    local headerChannel = "RAID_WARNING"  -- Default for section header
+    local assignmentChannel = "RAID"      -- Default for assignments
+    local warningChannel = "RAID_WARNING" -- Default for warnings
+    local channelNum = nil                -- For custom channel
     
     -- Get saved channel preference
     local selectedChannel = TWRA_SavedVariables.options and 
@@ -628,229 +835,54 @@ function TWRA:AnnounceAssignments()
     -- Adjust channels based on selection and current group context
     if selectedChannel == "GROUP" then
         if GetNumRaidMembers() > 0 then
-            -- In a raid, use raid warning for header if player has permission
-            local isOfficer = IsRaidLeader() or IsRaidOfficer()
-            if isOfficer then
-                headerChannel = "RAID_WARNING"
-                warningChannel = "RAID_WARNING" -- Use RW for warnings if we're an officer
-            else
-                headerChannel = "RAID"
-                warningChannel = "RAID" -- Default to RAID if not officer
-            end
-            bodyChannel = "RAID"
+            -- In a raid - use raid warnings if player has assist
+            headerChannel = "RAID_WARNING"
+            assignmentChannel = "RAID"
+            warningChannel = (IsRaidLeader() or IsRaidOfficer()) and "RAID_WARNING" or "RAID"
         elseif GetNumPartyMembers() > 0 then
-            -- In a party but not raid, use party
+            -- In a party
             headerChannel = "PARTY"
-            bodyChannel = "PARTY"
+            assignmentChannel = "PARTY"
             warningChannel = "PARTY"
         else
-            -- Solo, use say
+            -- Solo
             headerChannel = "SAY"
-            bodyChannel = "SAY"
+            assignmentChannel = "SAY"
             warningChannel = "SAY"
         end
     elseif selectedChannel == "CHANNEL" then
-        -- Get custom channel name
-        local customChannel = TWRA_SavedVariables.options.customChannel
+        -- Custom channel
+        local customChannel = TWRA_SavedVariables.options and TWRA_SavedVariables.options.customChannel
         if customChannel and customChannel ~= "" then
             -- Find the channel number
-            channelNumber = GetChannelName(customChannel)
-            if channelNumber > 0 then
+            channelNum = GetChannelName(customChannel)
+            if channelNum and channelNum > 0 then
                 headerChannel = "CHANNEL"
-                bodyChannel = "CHANNEL"
-                warningChannel = "CHANNEL" -- Use same channel for warnings
+                assignmentChannel = "CHANNEL"
+                warningChannel = "CHANNEL"
             else
-                -- No channel found, fall back to say
+                -- Fall back to SAY if channel not found
                 headerChannel = "SAY"
-                bodyChannel = "SAY"
+                assignmentChannel = "SAY"
                 warningChannel = "SAY"
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Channel '" .. customChannel .. 
-                                             "' not found, using Say instead")
+                self:Debug("ui", "Custom channel not found, falling back to SAY")
             end
         else
-            -- No custom channel specified, fall back to say
+            -- No custom channel specified
             headerChannel = "SAY"
-            bodyChannel = "SAY"
+            assignmentChannel = "SAY"
             warningChannel = "SAY"
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: No custom channel specified, using Say instead")
+            self:Debug("ui", "No custom channel specified, using SAY")
         end
     end
     
-    -- Process data for the current section
-    local messages = {}
-    local warningMessages = {} -- Separate array for warnings to send last
-    
-    -- Add header message
-    table.insert(messages, {
-        text = "Raid Assignments: " .. currentSection,
-        channel = headerChannel,
-        channelNum = channelNumber
-    })
-    
-    -- Get header row to identify column types
-    local headerRow = nil
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
-            headerRow = self.fullData[i]
-            break
-        end
-    end
-    
-    -- Process rows in original order
-    for i = 1, table.getn(self.fullData) do
-        local row = self.fullData[i]
-        
-        -- Check if this row belongs to current section
-        if row[1] == currentSection then
-            -- Skip header row (Icon)
-            if row[2] == "Icon" then 
-                -- Skip header row
-            
-            -- Skip Note rows completely
-            elseif row[2] == "Note" then
-                -- Skip lines with Note as icon completely
-            
-            -- Skip GUID rows completely
-            elseif row[2] == "GUID" then
-                -- Skip lines with GUID as icon completely
-                -- No processing needed
-            
-            -- Handle Warning rows specially and add to warningMessages
-            elseif row[2] == "Warning" and row[3] and row[3] ~= "" then
-                table.insert(warningMessages, {
-                    text = row[3], -- No prefix for warning
-                    channel = warningChannel, -- Use special warning channel
-                    channelNum = channelNumber
-                })
-            
-            -- Process normal assignment rows
-            elseif row[2] and row[3] and row[3] ~= "" then
-                -- Row[2] is the icon, row[3] is the target name
-                local iconName = row[2]
-                local targetName = row[3]
-                
-                local msgStart = ""
-                if iconName and iconName ~= "" and self.COLORED_ICONS[iconName] then
-                    msgStart = self.COLORED_ICONS[iconName] .. " " .. targetName
-                else
-                    msgStart = targetName
-                end
-                
-                -- Group assignments by type (tank & healer only)
-                local tanksList = {}
-                local healersList = {}
-                local otherAssignments = {}
-                
-                -- Process each column in this row
-                if headerRow then
-                    for col = 4, math.min(table.getn(row), table.getn(headerRow)) do
-                        if row[col] and row[col] ~= "" then
-                            local colType = headerRow[col]
-                            
-                            if colType == "Tank" then
-                                table.insert(tanksList, row[col])
-                            elseif colType == "Healer" then
-                                table.insert(healersList, row[col])
-                            else
-                                -- For other column types, add with type label
-                                table.insert(otherAssignments, colType .. ": " .. row[col])
-                            end
-                        end
-                    end
-                end
-                
-                -- Build the message parts
-                local msgParts = {}
-                
-                -- Add tanks group
-                if table.getn(tanksList) > 0 then
-                    table.insert(msgParts, "Tanks: " .. table.concat(tanksList, ", "))
-                end
-                
-                -- Add healers group
-                if table.getn(healersList) > 0 then
-                    table.insert(msgParts, "Healers: " .. table.concat(healersList, ", "))
-                end
-                
-                -- Add other assignments
-                for _, assignment in ipairs(otherAssignments) do
-                    table.insert(msgParts, assignment)
-                end
-                
-                -- Combine all parts
-                local fullMsg = msgStart
-                if table.getn(msgParts) > 0 then
-                    fullMsg = fullMsg .. " " .. table.concat(msgParts, " ")
-                end
-                
-                -- Split message if too long
-                if string.len(fullMsg) > 240 then
-                    -- Find a good split point
-                    local splitPoint = 240
-                    while splitPoint > 200 and string.sub(fullMsg, splitPoint, splitPoint) ~= " " do
-                        splitPoint = splitPoint - 1
-                    end
-                    
-                    table.insert(messages, {
-                        text = string.sub(fullMsg, 1, splitPoint),
-                        channel = bodyChannel,
-                        channelNum = channelNumber
-                    })
-                    
-                    table.insert(messages, {
-                        text = "..." .. string.sub(fullMsg, splitPoint + 1),
-                        channel = bodyChannel,
-                        channelNum = channelNumber
-                    })
-                else
-                    table.insert(messages, {
-                        text = fullMsg,
-                        channel = bodyChannel,
-                        channelNum = channelNumber
-                    })
-                end
-            end
-        end
-    end
-    
-    -- Add warning messages at the end
-    for _, warningMsg in ipairs(warningMessages) do
-        table.insert(messages, warningMsg)
-    end
-    
-    -- Send all messages with throttling to avoid being disconnected
-    if table.getn(messages) > 0 then
-        local messageIndex = 1
-        
-        local function SendNextMessage()
-            if messageIndex <= table.getn(messages) then
-                local msg = messages[messageIndex]
-                
-                -- Send message to appropriate channel
-                if msg.channel == "CHANNEL" then
-                    SendChatMessage(msg.text, msg.channel, nil, msg.channelNum)
-                else
-                    SendChatMessage(msg.text, msg.channel)
-                end
-                
-                messageIndex = messageIndex + 1
-                
-                -- Schedule next message with delay to avoid spam
-                if messageIndex <= table.getn(messages) then
-                    -- Removed debug message about sending progress
-                    self:ScheduleTimer(SendNextMessage, 0.5)
-                else
-                    -- Show one simple completion message
-                    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assignments announced")
-                end
-            end
-        end
-        
-        -- Start sending messages
-        SendNextMessage()
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No assignments to announce")
-    end
+    -- Return info as a structured table
+    return {
+        header = headerChannel,
+        assignment = assignmentChannel,
+        warning = warningChannel,
+        channelNum = channelNum
+    }
 end
 
 -- Add slash command
@@ -864,34 +896,34 @@ TWRA:Initialize()
 
 -- At the end of the file, add a test function to verify DisplayCurrentSection works
 function TWRA:TestDisplayCurrentSection()
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Testing DisplayCurrentSection")
+    self:Debug("nav", "Testing DisplayCurrentSection")
     
     if not self.DisplayCurrentSection then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: ERROR - DisplayCurrentSection function does not exist!")
+        self:Debug("error", "DisplayCurrentSection function does not exist!", true)
         return false
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: DisplayCurrentSection function exists")
+    self:Debug("nav", "DisplayCurrentSection function exists")
     
     if not self.navigation then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: ERROR - navigation table does not exist!")
+        self:Debug("error", "Navigation table does not exist!", true)
         return false
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Navigation: " .. 
+    self:Debug("nav", "Navigation: " .. 
         tostring(self.navigation.currentIndex) .. " of " .. 
         table.getn(self.navigation.handlers))
     
     if self.navigation.currentIndex and self.navigation.handlers and 
        self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Current section is " .. 
+        self:Debug("nav", "Current section is " .. 
             self.navigation.handlers[self.navigation.currentIndex])
     end
     
     -- Try to call the function
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Calling DisplayCurrentSection")
+    self:Debug("nav", "Calling DisplayCurrentSection")
     pcall(function() self:DisplayCurrentSection() end)
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: DisplayCurrentSection called")
+    self:Debug("nav", "DisplayCurrentSection called")
     
     return true
 end
@@ -907,7 +939,6 @@ function TWRA:HandleSectionCommand(args, sender)
     -- Split parts
     local parts = self:SplitString(args, ":")
     local partsCount = table.getn(parts)
-    
     if partsCount < 3 then return end
     
     local timestamp = tonumber(parts[1])
@@ -916,7 +947,6 @@ function TWRA:HandleSectionCommand(args, sender)
     
     -- Check against our timestamp
     local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
-    
     if timestamp > ourTimestamp then
         -- We need newer data
         self.SYNC.pendingSection = sectionIndex
@@ -1077,7 +1107,6 @@ function TWRA:CreateMinimapButton()
     local radian = math.rad(angle)
     local x = math.cos(radian) * radius
     local y = math.sin(radian) * radius
-    
     miniButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
     
     -- Set icon texture
@@ -1107,11 +1136,9 @@ function TWRA:CreateMinimapButton()
         GameTooltip:AddLine("Right-click: Toggle assignments OSD", 1, 1, 1)
         GameTooltip:Show()
     end)
-    
     miniButton:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    
     miniButton:SetScript("OnClick", function()
         if arg1 == "RightButton" then
             -- Right click: Toggle OSD
@@ -1134,7 +1161,6 @@ function TWRA:CreateMinimapButton()
         this:LockHighlight()
         this:StartMoving()
     end)
-    
     miniButton:SetScript("OnDragStop", function()
         this:StopMovingOrSizing()
         this:UnlockHighlight()
@@ -1209,15 +1235,13 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     
     local handlers = self.navigation.handlers
     local numSections = table.getn(handlers)
-    
     if numSections == 0 then 
         self:Debug("nav", "No sections available")
-        return false 
+        return false
     end
     
     local sectionIndex = targetSection
     local sectionName = nil
-    
     -- If sectionIndex is a string, find its index
     if type(targetSection) == "string" then
         for i, name in ipairs(handlers) do
@@ -1265,7 +1289,6 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     
     -- Determine if we should show OSD
     local shouldShowOSD = false
-    
     -- Case 1: Main frame doesn't exist or isn't shown
     if not self.mainFrame or not self.mainFrame:IsShown() then
         shouldShowOSD = true
@@ -1337,161 +1360,109 @@ end
 
 -- Improve ShowOptionsView to properly set current view and safely handle UI elements
 function TWRA:ShowOptionsView()
-    -- Debug at start of function to diagnose issues
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowOptionsView started - preparing UI elements")
-    
-    -- Set the view state
-    self.currentView = "options"
-    
-    -- Debug tracking
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowOptionsView - frame exists: " .. tostring(self.mainFrame ~= nil))
-    
-    -- Safety check for main frame
+    -- Check if mainFrame exists
     if not self.mainFrame then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ERROR - Main frame doesn't exist!")
-        return
+        self:CreateMainFrame()
     end
     
-    -- Change the options button text with safety check
-    if self.optionsButton and self.optionsButton.SetText then
-        pcall(function() self.optionsButton:SetText("Back") end)
-    end
-    
-    -- Change the title text with safety check
-    if self.mainFrame and self.mainFrame.titleText then
-        pcall(function() self.mainFrame.titleText:SetText("TWRA Options") end)
-    end
-    
-    -- Hide navigation elements - use pcall to prevent crashes
-    if self.navigation then
-        if self.navigation.prevButton then 
-            pcall(function() self.navigation.prevButton:Hide() end)
-        end
-        if self.navigation.nextButton then 
-            pcall(function() self.navigation.nextButton:Hide() end)
-        end
-        if self.navigation.dropdownMenu then 
-            pcall(function() self.navigation.dropdownMenu:Hide() end)
-        end
-        -- Hide the middle navigation element (menu button)
-        if self.navigation.menuButton then
-            pcall(function() self.navigation.menuButton:Hide() end)
-        end
-    end
-    
-    -- Clear rows and footers
-    pcall(function() self:ClearRows() end)
-    pcall(function() self:ClearFooters() end)
-    
-    -- Clean up any existing options container safely
-    if self.optionsContainer then
-        pcall(function() self.optionsContainer:Hide() end)
-        self.optionsContainer = nil
-    end
-    
-    -- Reset options elements array
-    self.optionsElements = {}
-    
-    -- Create options content using the dedicated function from the Options.lua
-    if type(self.CreateOptionsInMainFrame) == "function" then
-        -- Use pcall to catch any errors during options creation
-        local success, errorMsg = pcall(function() self:CreateOptionsInMainFrame() end)
+    -- Safety: Use pcall to avoid errors
+    local success, err = pcall(function()
+                
+        -- Clear any footers and rows
+        self:ClearFooters()
+        self:ClearRows()
         
-        if not success then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Error creating options: " .. tostring(errorMsg))
+        -- Hide navigation elements
+        if self.navigation then
+            if self.navigation.prevButton then self.navigation.prevButton:Hide() end
+            if self.navigation.nextButton then self.navigation.nextButton:Hide() end
+            if self.navigation.menuButton then self.navigation.menuButton:Hide() end
+            if self.navigation.dropdownMenu then self.navigation.dropdownMenu:Hide() end
+            if self.navigation.handlerText then self.navigation.handlerText:Hide() end
         end
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Options module not loaded properly")
+        
+        -- Hide action buttons
+        if self.announceButton then self.announceButton:Hide() end
+        if self.updateTanksButton then self.updateTanksButton:Hide() end
+        
+        -- Reset frame height to default while in options
+        self.mainFrame:SetHeight(300)
+        
+        -- Change "Options" button text to "Back"
+        if self.optionsButton then 
+            self.optionsButton:SetText("Back")
+        end
+        
+        -- Create options panel if it doesn't exist
+        if not self.optionsPanel then
+            self:CreateOptionsPanel()
+        end
+        
+        -- Show options panel
+        if self.optionsPanel then
+            self.optionsPanel:Show()
+        end
+        
+        -- Update current view state
+        self.currentView = "options"
+    end)
+    
+    if not success then
+        self:Error("Error in ShowOptionsView: " .. tostring(err))
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Switched to options view - currentView = " .. self.currentView)
+    self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
 end
 
 -- Fix ShowMainView to safely handle view transition
 function TWRA:ShowMainView()
-    -- Debug at start of function to diagnose issues
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowMainView started - preparing UI elements")
-    
-    -- Set the view state FIRST, before anything else
-    self.currentView = "main"
-    
-    -- Safety check for main frame
+    -- Check if mainFrame exists
     if not self.mainFrame then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ERROR - Main frame doesn't exist!")
-        return
+        self:CreateMainFrame()
     end
     
-    -- Debug output to trace flow
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowMainView - currentView now = " .. self.currentView)
-    
-    -- Reset options button text with safety check
-    if self.optionsButton and self.optionsButton.SetText then
-        pcall(function() self.optionsButton:SetText("Options") end)
-    end
-    
-    -- Reset title text with safety check
-    if self.mainFrame and self.mainFrame.titleText then
-        pcall(function() self.mainFrame.titleText:SetText("Raid Assignments") end)
-    end
-    
-    -- Clean up options elements safely
-    if self.optionsContainer then
-        pcall(function() self.optionsContainer:Hide() end)
-        self.optionsContainer = nil
-    end
-    
-    -- Clean up options elements
-    if self.optionsElements then
-        for _, element in pairs(self.optionsElements) do
-            if element and element ~= self.mainFrame and type(element.Hide) == "function" then
-                pcall(function() element:Hide() end)
-            end
+    -- Safety: Use pcall to avoid errors
+    local success, err = pcall(function()
+        -- Hide options panel
+        if self.optionsPanel then
+            self.optionsPanel:Hide()
         end
-        self.optionsElements = {}
+        
+        -- Show navigation elements
+        if self.navigation then
+            if self.navigation.prevButton then self.navigation.prevButton:Show() end
+            if self.navigation.nextButton then self.navigation.nextButton:Show() end
+            if self.navigation.menuButton then self.navigation.menuButton:Show() end
+            if self.navigation.handlerText then self.navigation.handlerText:Show() end
+        end
+        
+        -- Show action buttons
+        if self.announceButton then self.announceButton:Show() end
+        if self.updateTanksButton then self.updateTanksButton:Show() end
+        
+        -- Change button text back to "Options"
+        if self.optionsButton then 
+            self.optionsButton:SetText("Options")
+        end
+        
+        -- Update the current view state
+        self.currentView = "main"
+        
+        -- Check if we have pending navigation
+        if self.pendingNavigation then
+            self.navigation.currentIndex = self.pendingNavigation
+            self.pendingNavigation = nil
+        end
+        
+        -- Update display
+        self:DisplayCurrentSection()
+    end)
+    
+    if not success then
+        self:Error("Error in ShowMainView: " .. tostring(err))
     end
     
-    -- Show navigation elements with safety checks
-    if self.navigation then
-        if self.navigation.prevButton then 
-            pcall(function() self.navigation.prevButton:Show() end)
-        end
-        if self.navigation.nextButton then 
-            pcall(function() self.navigation.nextButton:Show() end)
-        end
-        if self.navigation.dropdownMenu then 
-            pcall(function() self.navigation.dropdownMenu:Show() end)
-        end
-        -- Show the middle navigation element (menu button)
-        if self.navigation.menuButton then
-            pcall(function() self.navigation.menuButton:Show() end)
-        end
-    end
-    
-    -- Show other buttons with safety checks
-    if self.announceButton then 
-        pcall(function() self.announceButton:Show() end)
-    end
-    if self.updateTanksButton then 
-        pcall(function() self.updateTanksButton:Show() end)
-    end
-    
-    -- Clear existing display content
-    pcall(function() self:ClearRows() end)
-    
-    -- Update display with current section data - only if nav data exists
-    if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
-        local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
-        if currentHandler then
-            -- Use pcall to avoid crashes during display
-            local success, errorMsg = pcall(function() self:FilterAndDisplayHandler(currentHandler) end)
-            
-            if not success then
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Error displaying content: " .. tostring(errorMsg))
-            end
-        end
-    end
-    
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Switched to main view - final currentView = " .. self.currentView)
+    self:Debug("ui", "Switched to main view - final currentView = " .. self.currentView)
 end
 
 -- Find rows relevant to the current player (either by name or class group)
@@ -1518,9 +1489,7 @@ function TWRA:GetPlayerRelevantRows(sectionData)
     -- Scan through all rows to find matches
     for rowIndex, rowData in ipairs(sectionData) do
         -- Skip header row and special rows
-        if rowIndex > 1 and rowData[2] ~= "Icon" and rowData[2] ~= "Note" and 
-           rowData[2] ~= "Warning" and rowData[2] ~= "GUID" then
-           
+        if rowIndex > 1 and rowData[2] ~= "Icon" and rowData[2] ~= "Note" and rowData[2] ~= "Warning" and rowData[2] ~= "GUID" then
             local isRelevantRow = false
             
             -- Check each cell for player name, class group, or player's group number
@@ -1534,8 +1503,7 @@ function TWRA:GetPlayerRelevantRows(sectionData)
                     end
                     
                     -- Match player class group (like "Warriors" for a Warrior)
-                    if playerClass and self.CLASS_GROUP_NAMES and self.CLASS_GROUP_NAMES[cellData] and 
-                       string.upper(self.CLASS_GROUP_NAMES[cellData]) == playerClass then
+                    if playerClass and self.CLASS_GROUP_NAMES and self.CLASS_GROUP_NAMES[cellData] and string.upper(self.CLASS_GROUP_NAMES[cellData]) == playerClass then
                         isRelevantRow = true
                         break
                     end
@@ -1555,6 +1523,7 @@ function TWRA:GetPlayerRelevantRows(sectionData)
                 end
             end
             
+            -- If row is relevant, add to our list
             if isRelevantRow then
                 table.insert(relevantRows, rowIndex)
             end
@@ -1562,4 +1531,64 @@ function TWRA:GetPlayerRelevantRows(sectionData)
     end
     
     return relevantRows
+end
+
+-- Function to clear current data before loading new data
+function TWRA:ClearData()
+    self:Debug("data", "Clearing current data")
+    
+    -- Clear fullData
+    self.fullData = nil
+    
+    -- Clear navigation
+    if self.navigation then
+        self.navigation.handlers = {}
+        self.navigation.currentIndex = 1
+    end
+    
+    -- Clear rows
+    self:ClearRows()
+    
+    -- Clear navigation text if it exists
+    if self.navigation and self.navigation.handlerText then
+        self.navigation.handlerText:SetText("")
+    end
+    
+    -- Clear UI elements if they exist
+    if self.mainFrame then
+        -- Clear highlights and footers
+        self:ClearFooters()
+        self:ClearRows()
+        
+        -- Clear standard footer elements
+        if self.footers then
+            for _, footer in pairs(self.footers) do
+                if footer.texture then
+                    footer.texture:Hide()
+                else
+                    if footer.bg then footer.bg:Hide() end
+                    if footer.icon then footer.icon:Hide() end
+                    if footer.text then footer.text:Hide() end
+                end
+            end
+        end
+        
+        -- Clear navigation elements
+        if self.navigation then
+            if self.navigation.prevButton then self.navigation.prevButton:Hide() end
+            if self.navigation.nextButton then self.navigation.nextButton:Hide() end
+            if self.navigation.menuButton then self.navigation.menuButton:Hide() end
+            if self.navigation.dropdownMenu then self.navigation.dropdownMenu:Hide() end
+            if self.navigation.handlerText then self.navigation.handlerText:Hide() end
+        end
+        
+        -- Clear action buttons
+        if self.announceButton then self.announceButton:Hide() end
+        if self.updateTanksButton then self.updateTanksButton:Hide() end
+    end
+    
+    -- Reset any example-related flags
+    self.usingExampleData = false
+    
+    self:Debug("data", "Data cleared successfully")
 end

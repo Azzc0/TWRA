@@ -1,6 +1,7 @@
 -- Sync functionality for TWRA
 TWRA = TWRA or {}
-DEFAULT_CHAT_FRAME:AddMessage("TWRA: ***** TEST MARKER LOADED - VERSION 124 *****")
+-- Replace direct chat message with Debug call
+TWRA:Debug("sync", "***** TEST MARKER LOADED - VERSION 124 *****")
 -- Sync constants
 TWRA.SYNC = {
     PREFIX = "TWRA",
@@ -156,8 +157,8 @@ end
 function TWRA:SendAddonMessage(message, distribution, target)
     if not message then return end
     
-    -- Add debug info with message length
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sending message (" .. string.len(message) .. " chars): " .. 
+    -- Replace direct chat message with Debug call
+    self:Debug("sync", "Sending message (" .. string.len(message) .. " chars): " .. 
         string.sub(message, 1, 50) .. (string.len(message) > 50 and "..." or ""))
     
     -- Detect message type for extra debugging
@@ -165,21 +166,21 @@ function TWRA:SendAddonMessage(message, distribution, target)
     if colonPos then
         local commandName = string.sub(message, 1, colonPos - 1)
         if commandName == self.SYNC.COMMANDS.DATA_RESPONSE then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sending DATA_RESPONSE")
+            self:Debug("sync", "Sending DATA_RESPONSE")
         elseif commandName == self.SYNC.COMMANDS.DATA_REQUEST then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sending DATA_REQUEST")
+            self:Debug("sync", "Sending DATA_REQUEST")
         end
     end
     
     -- Send appropriately based on group
     if GetNumRaidMembers() > 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sending to RAID")
+        self:Debug("sync", "Sending to RAID")
         SendAddonMessage(self.SYNC.PREFIX, message, "RAID")
     elseif GetNumPartyMembers() > 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sending to PARTY")
+        self:Debug("sync", "Sending to PARTY")
         SendAddonMessage(self.SYNC.PREFIX, message, "PARTY")
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Not in a group, message not sent")
+        self:Debug("sync", "Not in a group, message not sent")
     end
 end
 
@@ -194,85 +195,86 @@ function TWRA:HandleAddonMessage(message, channel, sender)
     local command = string.sub(message, 1, colonPos - 1)
     local args = string.sub(message, colonPos + 1)
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Received from " .. sender .. ": " .. command .. ":...")
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Trying to delegate it to the command handler")
+    self:Debug("sync", "Received from " .. sender .. ": " .. command .. ":...")
+    self:Debug("sync", "Trying to delegate to command handler")
+    
     -- Handle each command type
     if command == self.SYNC.COMMANDS.ANNOUNCE then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Delegating to Announce")
+        self:Debug("sync", "Delegating to Announce handler")
         self:HandleAnnounceCommand(args, sender)
     elseif command == self.SYNC.COMMANDS.SECTION then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Delegating to Sections")
+        self:Debug("sync", "Delegating to Section handler")
         self:HandleSectionCommand(args, sender)
     elseif command == self.SYNC.COMMANDS.VERSION then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Delegating to Version")
+        self:Debug("sync", "Delegating to Version handler")
         self:HandleVersionCommand(args, sender)
     elseif command == self.SYNC.COMMANDS.DATA_REQUEST then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Delegating to Request")
+        self:Debug("sync", "Delegating to Request handler")
         self:HandleDataRequestCommand(args, sender)
     elseif command == self.SYNC.COMMANDS.DATA_RESPONSE then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Delegating to Response")
+        self:Debug("sync", "Delegating to Response handler")
         self:HandleDataResponseCommand(args, sender)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Could not delegate self.SYNC.COMMANDS." .. command)
+        self:Debug("error", "Could not delegate command: " .. tostring(command))
     end
 end
 
 -- Handle ANNOUNCE command
 function TWRA:HandleAnnounceCommand(args, sender)
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Processing ANNOUNCE command")
+    self:Debug("sync", "Processing ANNOUNCE command")
     
     -- Parse timestamp and data
     local colonPos = string.find(args, ":", 1, true)
     if not colonPos then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid announce format")
+        self:Debug("error", "Invalid announce format")
         return
     end
     
     local timestamp = tonumber(string.sub(args, 1, colonPos - 1))
     local data = string.sub(args, colonPos + 1)
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: ------------- ANNOUNCE ------------")
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Timestamp: " .. tostring(timestamp))
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: String length: " .. string.len(data))
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: String preview: " .. string.sub(data, 1, 50) .. "...")
+    self:Debug("sync", "------------- ANNOUNCE ------------")
+    self:Debug("sync", "Timestamp: " .. tostring(timestamp))
+    self:Debug("sync", "String length: " .. string.len(data))
+    self:Debug("sync", "String preview: " .. string.sub(data, 1, 50) .. "...")
     
     -- Check against our timestamp
     local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Our timestamp: " .. tostring(ourTimestamp))
+    self:Debug("sync", "Our timestamp: " .. tostring(ourTimestamp))
     
     if timestamp and timestamp > ourTimestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Timestamp is newer - processing")
+        self:Debug("sync", "Timestamp is newer - processing")
         
         -- Directly use ForceUpdateFromSync with the pending section if available
         local sectionToUse = self.SYNC.pendingSection or 1
         if self:ForceUpdateFromSync(data, timestamp, sectionToUse, true) then
             -- Clear pending section after use
             self.SYNC.pendingSection = nil
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Successfully synchronized with " .. sender)
+            self:Debug("sync", "Successfully synchronized with " .. sender)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Failed to update from sync")
+            self:Debug("error", "Failed to update from sync")
         end
         
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Our data is newer or the same - ignoring")
+        self:Debug("sync", "Our data is newer or the same - ignoring")
     end
 end
 
 -- Completely refactored HandleSectionCommand to be simple and direct
 function TWRA:HandleSectionCommand(args, sender)
-    -- Send distinctive visible messages to chat window
-    DEFAULT_CHAT_FRAME:AddMessage("§§§ SECTION HANDLER START §§§")
+    -- Send distinctive visible messages using debug
+    self:Debug("sync", "SECTION HANDLER START", true)
     
     -- Safety first
     if not args then 
-        DEFAULT_CHAT_FRAME:AddMessage("§§§ ARGS IS NIL! §§§")
+        self:Debug("error", "ARGS IS NIL!", true)
         return 
     end
     
     -- Parse the message
     local parts = self:SplitString(args, ":")
     if table.getn(parts) < 3 then
-        DEFAULT_CHAT_FRAME:AddMessage("§§§ Invalid format: " .. args .. " §§§")
+        self:Debug("error", "Invalid format: " .. args, true)
         return
     end
     
@@ -280,80 +282,80 @@ function TWRA:HandleSectionCommand(args, sender)
     local sectionName = parts[2]
     local sectionIndex = tonumber(parts[3])
     
-    DEFAULT_CHAT_FRAME:AddMessage("§§§ PROCESSING: " .. sectionName .. " (idx:" .. sectionIndex .. ") §§§")
+    self:Debug("sync", "PROCESSING: " .. sectionName .. " (idx:" .. sectionIndex .. ")", true)
     
     -- Check timestamp
     local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
     
     if timestamp > ourTimestamp then
         -- Need newer data
-        DEFAULT_CHAT_FRAME:AddMessage("§§§ Requesting newer data §§§")
+        self:Debug("sync", "Requesting newer data", true)
         self.SYNC.pendingSection = sectionIndex
         self:SendAddonMessage(self.SYNC.COMMANDS.DATA_REQUEST .. ":" .. timestamp)
     elseif timestamp == ourTimestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("§§§ TIMESTAMPS MATCH - CHANGING SECTION §§§")
+        self:Debug("sync", "TIMESTAMPS MATCH - CHANGING SECTION", true)
         
         -- 1. Ensure navigation exists
         if not self.navigation or not self.navigation.handlers then
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ Rebuilding navigation §§§")
+            self:Debug("sync", "Rebuilding navigation", true)
             self:RebuildNavigation()
         end
         
         -- 2. Validate section index
         if not self.navigation or sectionIndex > table.getn(self.navigation.handlers) then
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ Invalid section index §§§")
+            self:Debug("error", "Invalid section index", true)
             return
         end
         
         -- 3. Update state
-        DEFAULT_CHAT_FRAME:AddMessage("§§§ Updating state: " .. sectionIndex .. " §§§")
+        self:Debug("sync", "Updating state: " .. sectionIndex, true)
         local oldIndex = self.navigation.currentIndex
         self.navigation.currentIndex = sectionIndex
         
         -- 4. Save to SavedVariables
         if TWRA_SavedVariables.assignments then
             TWRA_SavedVariables.assignments.currentSection = sectionIndex
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ Saved current section: " .. sectionIndex .. " §§§")
+            self:Debug("sync", "Saved current section: " .. sectionIndex, true)
         end
         
         -- 5. Update dropdown text ALWAYS
         if self.navigation and self.navigation.handlerText then
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ Updating dropdown to: " .. sectionName .. " §§§")
+            self:Debug("sync", "Updating dropdown to: " .. sectionName, true)
             self.navigation.handlerText:SetText(sectionName)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ NO HANDLER TEXT UI ELEMENT! §§§")
+            self:Debug("error", "NO HANDLER TEXT UI ELEMENT!", true)
         end
         
         -- 6. Update display if visible
         if self.mainFrame and self.mainFrame:IsShown() and self.currentView ~= "options" and self.DisplayCurrentSection then
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ Updating display §§§")
+            self:Debug("sync", "Updating display", true)
             self:DisplayCurrentSection()
         end
         
         -- 7. ALWAYS show OSD
         if self.ShowSectionNameOverlay then
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ Showing OSD overlay §§§")
+            self:Debug("sync", "Showing OSD overlay", true)
             self:ShowSectionNameOverlay(sectionName, sectionIndex, table.getn(self.navigation.handlers))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("§§§ NO OSD FUNCTION! §§§")
+            self:Debug("error", "NO OSD FUNCTION!", true)
         end
         
         -- Success message
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Changed to section " .. sectionIndex .. " (" .. sectionName .. ") by " .. sender)
+        self:Debug("sync", "Changed to section " .. sectionIndex .. " (" .. sectionName .. ") by " .. sender)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("§§§ Ignoring older timestamp §§§")
+        self:Debug("sync", "Ignoring older timestamp", true)
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("§§§ SECTION HANDLER COMPLETE §§§")
+    self:Debug("sync", "SECTION HANDLER COMPLETE", true)
 end
 
 -- Handle VERSION command
 function TWRA:HandleVersionCommand(args, sender)
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Processing VERSION command")
+    self:Debug("sync", "Processing VERSION command")
     
     local parts = self:SplitString(args, ":")
     if table.getn(parts) < 2 then 
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid VERSION format")
+        self:Debug("error", "Invalid VERSION format")
         return 
     end
     
@@ -362,17 +364,17 @@ function TWRA:HandleVersionCommand(args, sender)
     
     -- Safety check for valid timestamp
     if not timestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid timestamp in VERSION from " .. sender)
+        self:Debug("error", "Invalid timestamp in VERSION from " .. sender)
         return
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: " .. sender .. " has version with timestamp: " .. tostring(timestamp))
+    self:Debug("sync", sender .. " has version with timestamp: " .. tostring(timestamp))
     
     -- Check if we have newer data to share
     local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
     
     if ourTimestamp > timestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Our data is newer - announcing to group")
+        self:Debug("sync", "Our data is newer - announcing to group")
         
         -- Announce our data to the group
         if TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.source then
@@ -383,26 +385,26 @@ function TWRA:HandleVersionCommand(args, sender)
             
             self:SendAddonMessage(announceMsg)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Can't announce - no source data")
+            self:Debug("error", "Can't announce - no source data")
         end
     elseif timestamp > ourTimestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Their data is newer - requesting")
+        self:Debug("sync", "Their data is newer - requesting")
         
         -- Request newer data
         self:SendAddonMessage(self.SYNC.COMMANDS.DATA_REQUEST .. ":" .. timestamp)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Same timestamp, no action needed")
+        self:Debug("sync", "Same timestamp, no action needed")
     end
 end
 
 -- Handle DATA_REQUEST command with chunking
 function TWRA:HandleDataRequestCommand(args, sender)
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Processing DATA_REQUEST command")
+    self:Debug("sync", "Processing DATA_REQUEST command")
     
     -- Parse the requested timestamp
     local requestedTimestamp = tonumber(args)
     if not requestedTimestamp then 
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid timestamp in DATA_REQUEST")
+        self:Debug("error", "Invalid timestamp in DATA_REQUEST")
         return 
     end
     
@@ -420,7 +422,7 @@ function TWRA:HandleDataRequestCommand(args, sender)
         self:ScheduleTimer(function()
             -- Check if someone else already responded
             if not self.SYNC.pendingResponse then
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Someone else already responded, skipping")
+                self:Debug("sync", "Someone else already responded, skipping")
                 return
             end
             
@@ -430,7 +432,7 @@ function TWRA:HandleDataRequestCommand(args, sender)
             local data = TWRA_SavedVariables.assignments.source
             local dataLength = string.len(data)
             
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sending requested data to " .. sender)
+            self:Debug("sync", "Sending requested data to " .. sender)
             
             -- Maximum chunk size (safe for addon communication)
             local maxChunkSize = 200  -- Reduced for safety
@@ -442,11 +444,11 @@ function TWRA:HandleDataRequestCommand(args, sender)
                     requestedTimestamp,
                     data)
                 self:SendAddonMessage(responseMsg)
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sent data in one part (" .. dataLength .. " bytes)")
+                self:Debug("sync", "Sent data in one part (" .. dataLength .. " bytes)")
             else
                 -- Send in chunks
                 local chunks = math.ceil(dataLength / maxChunkSize)
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Splitting data into " .. chunks .. " chunks")
+                self:Debug("sync", "Splitting data into " .. chunks .. " chunks")
                 
                 for i = 1, chunks do
                     local start = (i-1) * maxChunkSize + 1
@@ -465,7 +467,7 @@ function TWRA:HandleDataRequestCommand(args, sender)
                     local chunkDelay = (i-1) * 0.3  -- 300ms between chunks
                     self:ScheduleTimer(function()
                         self:SendAddonMessage(chunkMsg)
-                        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Sent chunk " .. i .. " of " .. chunks)
+                        self:Debug("sync", "Sent chunk " .. i .. " of " .. chunks)
                     end, chunkDelay)
                 end
             end
@@ -473,19 +475,19 @@ function TWRA:HandleDataRequestCommand(args, sender)
     else
         -- Log message for debugging when we can't respond
         if requestedTimestamp ~= ourTimestamp then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Can't respond - timestamp mismatch (requested " .. 
+            self:Debug("sync", "Can't respond - timestamp mismatch (requested " .. 
                 requestedTimestamp .. ", we have " .. ourTimestamp .. ")")
         elseif not TWRA_SavedVariables.assignments then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Can't respond - no assignments data")
+            self:Debug("error", "Can't respond - no assignments data")
         elseif not TWRA_SavedVariables.assignments.source then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Can't respond - no source data")
+            self:Debug("error", "Can't respond - no source data")
         end
     end
 end
 
 -- Handle DATA_RESPONSE command with OSD progress updates
 function TWRA:HandleDataResponseCommand(args, sender)
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Processing DATA_RESPONSE command from " .. sender)
+    self:Debug("sync", "Processing DATA_RESPONSE command from " .. sender)
     
     -- Mark that someone has responded (to avoid duplicate responses)
     self.SYNC.pendingResponse = false
@@ -493,7 +495,7 @@ function TWRA:HandleDataResponseCommand(args, sender)
     -- Check if this is a chunked response
     local colonPos1 = string.find(args, ":", 1, true)
     if not colonPos1 then 
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid DATA_RESPONSE format")
+        self:Debug("error", "Invalid DATA_RESPONSE format")
         return 
     end
     
@@ -509,7 +511,7 @@ function TWRA:HandleDataResponseCommand(args, sender)
         
         local colonPos3 = string.find(remaining, ":", 1, true)
         if not colonPos3 then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid chunked message format - missing totalChunks")
+            self:Debug("error", "Invalid chunked message format - missing totalChunks")
             return
         end
         
@@ -517,11 +519,11 @@ function TWRA:HandleDataResponseCommand(args, sender)
         local chunkData = string.sub(remaining, colonPos3 + 1)
         
         if not timestamp or not chunkNum or not totalChunks then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid chunked message format - missing values")
+            self:Debug("error", "Invalid chunked message format - missing values")
             return
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Received chunk " .. chunkNum .. " of " .. totalChunks)
+        self:Debug("sync", "Received chunk " .. chunkNum .. " of " .. totalChunks)
         
         -- Initialize chunk storage if needed
         if not self.SYNC.chunks then
@@ -544,14 +546,14 @@ function TWRA:HandleDataResponseCommand(args, sender)
         
         -- Calculate progress percentage
         local progress = math.floor((self.SYNC.chunks[timestamp].receivedChunks / totalChunks) * 100)
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Receiving data: " .. progress .. "% complete")
+        self:Debug("sync", "Receiving data: " .. progress .. "% complete")
         
         -- Show sync progress in OSD
         self:ShowSyncProgressInOSD(progress, sender)
         
         -- If we have all chunks, combine and process
         if self.SYNC.chunks[timestamp].receivedChunks == totalChunks then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: All chunks received, combining data")
+            self:Debug("sync", "All chunks received, combining data")
             
             -- Combine all chunks in correct order
             local completeData = ""
@@ -559,12 +561,12 @@ function TWRA:HandleDataResponseCommand(args, sender)
                 if self.SYNC.chunks[timestamp].data[i] then
                     completeData = completeData .. self.SYNC.chunks[timestamp].data[i]
                 else
-                    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Missing chunk " .. i .. ", can't combine")
+                    self:Debug("error", "Missing chunk " .. i .. ", can't combine")
                     return
                 end
             end
             
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Combined data length: " .. string.len(completeData))
+            self:Debug("sync", "Combined data length: " .. string.len(completeData))
             
             -- Process the complete data
             self:ProcessCompleteData(completeData, timestamp, sender)
@@ -578,7 +580,7 @@ function TWRA:HandleDataResponseCommand(args, sender)
     else
         -- Single part format: timestamp:data
         local data = remaining
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Received single-part data, length: " .. string.len(data))
+        self:Debug("sync", "Received single-part data, length: " .. string.len(data))
         
         -- Show 100% progress for single-part data
         self:ShowSyncProgressInOSD(100, sender)
@@ -598,16 +600,16 @@ function TWRA:ProcessCompleteData(data, timestamp, sender)
     local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
     
     if timestamp and timestamp > ourTimestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Processing newer data from " .. sender)
+        self:Debug("sync", "Processing newer data from " .. sender)
         
         -- Decode the data
         local decodedData = self:DecodeBase64(data, timestamp, true)
         if not decodedData then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Failed to decode data from " .. sender)
+            self:Debug("error", "Failed to decode data from " .. sender)
             return
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Successfully decoded data with " .. 
+        self:Debug("sync", "Successfully decoded data with " .. 
             table.getn(decodedData) .. " entries")
         
         -- Update our data
@@ -639,9 +641,9 @@ function TWRA:ProcessCompleteData(data, timestamp, sender)
         -- Update the display
         self:HandleDisplayUpdate()
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Successfully synchronized with " .. sender)
+        self:Debug("sync", "Successfully synchronized with " .. sender)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Ignoring data from " .. sender .. 
+        self:Debug("sync", "Ignoring data from " .. sender .. 
                                     " - our data is newer or the same")
     end
 end
@@ -651,12 +653,12 @@ function TWRA:ProcessSyncData(data, timestamp, sender)
     local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
     
     if timestamp and timestamp > ourTimestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Processing newer data from " .. sender)
+        self:Debug("sync", "Processing newer data from " .. sender)
         
         -- Decode the data
         local decodedData = self:DecodeBase64(data, timestamp, true)
         if not decodedData then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Failed to decode data from " .. sender)
+            self:Debug("error", "Failed to decode data from " .. sender)
             return
         end
         
@@ -689,9 +691,9 @@ function TWRA:ProcessSyncData(data, timestamp, sender)
         -- Update the display
         self:HandleDisplayUpdate()
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Successfully synchronized with " .. sender)
+        self:Debug("sync", "Successfully synchronized with " .. sender)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Ignoring data from " .. sender .. 
+        self:Debug("sync", "Ignoring data from " .. sender .. 
                                     " - our data is newer or the same")
     end
 end
@@ -707,7 +709,7 @@ function TWRA:UpdateStoredData(data, timestamp, targetSection)
     end
     
     if not decodedData then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Failed to decode sync data")
+        self:Debug("error", "Failed to decode sync data")
         return false
     end
     
@@ -748,14 +750,14 @@ function TWRA:HandleDisplayUpdate()
     if self.currentView == "options" then
         -- Store a flag indicating that we should update when returning to main view
         self.pendingNavigation = self.navigation.currentIndex
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: In options view - deferring UI update")
+        self:Debug("ui", "In options view - deferring UI update")
     else
         -- We're in main view, update immediately
         if self.DisplayCurrentSection then
             self:DisplayCurrentSection()
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: In main view - updating UI immediately")
+            self:Debug("ui", "In main view - updating UI immediately")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: ERROR - DisplayCurrentSection function not found")
+            self:Debug("error", "DisplayCurrentSection function not found")
         end
     end
 end
@@ -776,31 +778,31 @@ end
 function TWRA:BroadcastSectionChange(sectionIndex)
     -- Skip if live sync is disabled or we're not in a group
     if not self.SYNC.liveSync then 
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Live sync disabled - not broadcasting section")
+        self:Debug("sync", "Live sync disabled - not broadcasting section")
         return 
     end
     
     -- Skip if we're not in a group
     if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Not in a group - not broadcasting section")
+        self:Debug("sync", "Not in a group - not broadcasting section")
         return
     end
     
     -- Skip if we don't have assignments data
     if not TWRA_SavedVariables.assignments or not TWRA_SavedVariables.assignments.timestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: No assignments data - not broadcasting section") 
+        self:Debug("sync", "No assignments data - not broadcasting section") 
         return
     end
     
     -- Skip if navigation is not properly initialized
     if not self.navigation or not self.navigation.handlers then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Navigation not initialized - not broadcasting section")
+        self:Debug("sync", "Navigation not initialized - not broadcasting section")
         return
     end
     
     -- Validate section index
     if not sectionIndex or sectionIndex < 1 or sectionIndex > table.getn(self.navigation.handlers) then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Invalid section index: " .. tostring(sectionIndex))
+        self:Debug("error", "Invalid section index: " .. tostring(sectionIndex))
         return
     end
     
@@ -811,7 +813,7 @@ function TWRA:BroadcastSectionChange(sectionIndex)
         self.navigation.handlers[sectionIndex],
         sectionIndex)
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Broadcasting section change: " .. 
+    self:Debug("sync", "Broadcasting section change: " .. 
         self.navigation.handlers[sectionIndex] .. " (index " .. sectionIndex .. ")")
     
     self:SendAddonMessage(sectionMsg)

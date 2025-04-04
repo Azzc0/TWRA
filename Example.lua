@@ -67,38 +67,49 @@ TWRA.EXAMPLE_DATA = {
 
 -- Function to load example data
 function TWRA:LoadExampleData()
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Loading example data")
+    self:Debug("data", "Loading example data")
     
-    -- Set a flag to indicate we're using example data
-    self.usingExampleData = true
+    -- Clear any existing data first
+    self:ClearData()
     
-    -- Store the example data
-    self.fullData = self.EXAMPLE_DATA
-    
-    -- Generate a simple timestamp
-    local timestamp = time()
-    
-    -- Create a Base64-ish representation for storage
-    -- We'll just use what's already in the Example.lua file for simplicity
-    local fakeSource = "EXAMPLE_DATA"
-    
-    -- Save the data properly to use the existing UI mechanism
-    TWRA_SavedVariables.assignments = {
-        data = self.EXAMPLE_DATA,
-        source = fakeSource,
-        timestamp = timestamp,
-        version = 1,
-        currentSection = 1
+    -- Set up example data
+    self.EXAMPLE_DATA = {
+        {"Anub", "Icon", "Target", "Tank", "Tank", "Utility", "Healer", "Healer", "Healer"},
+        {"Anub", "Skull", "Anub'rekhan", "Azzco", "Heartstiller", "Kaydaawg", "Kaydaawg", "Cozzalisa", "Warriors"},
+        {"Anub", "Cross", "Crypt Fiend", "Clickyou", "Clickyou", "Clickyou", "Clickyou", "Clickyou", "Clickyou"},
+        {"Anub", "Square", "Crypt Fiend", "Lenato", "Clickyou", "Slubban", "", "", ""},
+        {"Anub", "Moon", "Crypt Fiend", "Lenato", "Clickyou", "Slubban", "", "", ""},
+        {"Anub", "Triangle", "", "Warriors", "Warlocks", "Shamans", "", "", ""},
+        {"Anub", "Diamond", "", "Paladins", "Priests", "Rogues", "ö", "", ""},
+        {"Anub", "Circle", "Grand Widow Faerlina", "Druids", "Hunters", "Mages", "Warrior", "", ""},
+        {"Anub", "Star", "", "", "", "Group 1,2", "", "", ""},
+        {"Anub", "Note", "Use consumables [Free Action Potion]", "", "", "", "", "", ""},
+        {"Anub", "Warning", "Melee, use FAP on pull", "", "", "", "", "", ""},
+        {"Faerlina", "Icon", "Target", "Tank", "MC", "Healer", "", "", ""},
+        {"Faerlina", "Skull", "Faerlina", "Azzco", "Clickyou", "Sinfiull", "", "", ""},
+        {"Faerlina", "Warning", "Test", "", "", "", "", "", ""}
     }
     
-    -- Rebuild navigation with the example data
-    self:RebuildNavigation()
+    -- Create example players for testing
+    self.EXAMPLE_PLAYERS = {
+        ["Azzco"] = "WARRIOR",
+        ["Heartstiller"] = "PALADIN",
+        ["Kaydaawg"] = "PRIEST",
+        ["Cozzalisa"] = "SHAMAN",
+        ["Lenato"] = "DRUID|OFFLINE", -- This player will show as offline
+        ["Clickyou"] = "MAGE",
+        ["Slubban"] = "ROGUE", -- This is "Kroken" in the original data
+        ["Sinfiull"] = "WARLOCK",
+        ["Kroken"] = "ROGUE" -- Added Kroken explicitly
+    }
     
-    -- Set current section to first section
-    self.navigation.currentIndex = 1
+    -- Set the flag to indicate we're using example data
+    self.usingExampleData = true
     
-    -- Save the current section
-    self:SaveCurrentSection()
+    -- Save the example data with proper isExample flag
+    self:SaveAssignments(self.EXAMPLE_DATA, "example_data", nil, true)
     
-    return true
+    self:Debug("data", "Example data loaded with " .. table.getn(self.EXAMPLE_DATA) .. " rows")
+    
+    return self.EXAMPLE_DATA
 end

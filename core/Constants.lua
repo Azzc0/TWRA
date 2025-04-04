@@ -246,3 +246,39 @@ TWRA.BASE64_TABLE = {
     ['3']=55,['4']=56,['5']=57,['6']=58,['7']=59,['8']=60,['9']=61,['+'] = 62,['/'] = 63,
     ['='] = -1
 }
+
+-- Item rarity colors for links
+TWRA.ITEM_QUALITY_COLORS = {
+    ["Poor"] = "9d9d9d",      -- Gray
+    ["Common"] = "ffffff",    -- White
+    ["Uncommon"] = "1eff00",  -- Green
+    ["Rare"] = "0070dd",      -- Blue
+    ["Epic"] = "a335ee",      -- Purple
+    ["Legendary"] = "ff8000", -- Orange
+    ["Artifact"] = "e6cc80",  -- Light gold
+    ["Heirloom"] = "00ccff"   -- Light blue
+}
+
+-- Database mapping item names to their item IDs and quality
+TWRA.ITEM_DATABASE = {
+   
+    -- Consumables
+    ["Major Healing Potion"] = {id = 13446, quality = "Common"},
+    ["Greater Fire Protection Potion"] = {id = 13457, quality = "Uncommon"},
+    ["Greater Nature Protection Potion"] = {id = 13458, quality = "Uncommon"},
+    ["Greater Shadow Protection Potion"] = {id = 13459, quality = "Uncommon"},
+    ["Greater Frost Protection Potion"] = {id = 13456, quality = "Uncommon"},
+    ["Greater Arcane Protection Potion"] = {id = 13461, quality = "Uncommon"},
+    ["Flask of the Titans"] = {id = 13510, quality = "Uncommon"},
+    ["Major Mana Potion"] = {id = 13444, quality = "Common"},
+    ["Elixir of Poison Resistance"] = {id = 3386, quality = "Common"},
+    ["Free Action Potion"] = {id = 5634, quality = "Common"},
+    ["Limited Invulnerability Potion"] = {id = 3387, quality = "Uncommon"},
+    ["Living Action Potion"] = {id = 20008, quality = "Uncommon"},
+    ["Restorative Potion"] = {id = 9030, quality = "Uncommon"},
+    ["Elixir of the Mongoose"] = {id = 13452, quality = "Uncommon"},
+    ["Elixir of Brute Force"] = {id = 13453, quality = "Uncommon"},
+    ["Greater Stoneshield Potion"] = {id = 13455, quality = "Uncommon"},
+    ["Flask of Supreme Power"] = {id = 13512, quality = "Uncommon"},
+    ["Flask of Chromatic Resistance"] = {id = 13513, quality = "Uncommon"},
+}

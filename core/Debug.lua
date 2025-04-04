@@ -202,14 +202,22 @@ function TWRA_CaptureEarlyError(message)
     -- Create early errors array if it doesn't exist
     TWRA.earlyErrors = TWRA.earlyErrors or {}
     
-    -- Add timestamp to the error
-    local errorEntry = {
-        time = GetTime(),
-        message = message
-    }
+    -- Check if this is likely a TWRA error
+    local isTWRAError = string.find(message, "TWRA") or 
+                        string.find(message, "Raid Assignment") or
+                        string.find(message, "RaidAssignment") or
+                        (string.find(message, "Interface\\AddOns\\TWRA"))
     
-    -- Store error in our list for proper processing later - don't print immediately
-    table.insert(TWRA.earlyErrors, errorEntry)
+    if isTWRAError then
+        -- Add timestamp to the error
+        local errorEntry = {
+            time = GetTime(),
+            message = message
+        }
+        
+        -- Store error in our list for proper processing later - don't print immediately
+        table.insert(TWRA.earlyErrors, errorEntry)
+    end
     
     -- Return the error so the default handler still processes it
     return message
@@ -264,6 +272,14 @@ function TWRA:InitializeDebugSystem()
         }
     end
 
+    -- Also add error and warning colors if missing
+    if not self.DEBUG.colors["error"] then
+        self.DEBUG.colors["error"] = "FF0000" -- Red
+    end
+    if not self.DEBUG.colors["warning"] then
+        self.DEBUG.colors["warning"] = "FFAA00" -- Orange
+    end
+
     -- Create simplified category tracking
     self.DEBUG.categories = {}
     for category, _ in pairs(self.DEBUG.CATEGORIES) do
@@ -288,8 +304,22 @@ function TWRA:ProcessEarlyErrors()
     
     -- Process each early error through our debug system
     for _, errorEntry in ipairs(self.earlyErrors) do
-        local timeStr = string.format("%.2f", errorEntry.time)
-        self:Debug("error", "[" .. timeStr .. "s] " .. errorEntry.message, true)
+        -- Parse the message to extract category if present
+        local message = errorEntry.message
+        local category = "error"  -- Default to error category
+        
+        -- Check if message contains category pattern [category]
+        local categoryStart, categoryEnd, extractedCategory = string.find(message, "%[([^%]]+)%]")
+        if categoryStart and extractedCategory then
+            -- Found a category, extract it and the real message
+            category = extractedCategory
+            message = string.sub(message, categoryEnd + 1) -- Get everything after the category
+            message = string.gsub(message, "^%s+", "") -- Trim leading spaces
+        end
+        
+        -- Pass the message with the correct category to Debug
+        -- Don't include the timestamp in the message itself
+        self:Debug(category, message, true)
     end
     
     -- Clear early errors once processed
@@ -305,7 +335,20 @@ function TWRA_ErrorHandler(message)
     
     -- Log the error through our Debug system if it's initialized
     if TWRA.DEBUG and TWRA.DEBUG.initialized then
-        TWRA:Debug("error", message)
+        -- Check if this is a Lua error with file/line information
+        local fileInfo = string.match(message, "([^:]+:%d+:)")
+        if fileInfo and string.find(fileInfo, "TWRA") then
+            -- This is a TWRA addon error with file information
+            TWRA:Debug("error", message, true)
+        else
+            -- Only log errors from our addon
+            local isTWRAError = string.find(message, "TWRA") or 
+                                string.find(message, "Raid Assignment") or
+                                string.find(message, "RaidAssignment")
+            if isTWRAError then
+                TWRA:Debug("error", message, true)
+            end
+        end
     else
         -- Fall back to the early error capture if Debug isn't ready
         TWRA_CaptureEarlyError(message)
@@ -428,7 +471,18 @@ function TWRA:Debug(category, message, forceOutput, isDetail)
     -- Skip output if world hasn't loaded yet and not forcing output
     if not self.worldLoaded and not forceOutput then
         -- Capture as early error to display later
-        TWRA_CaptureEarlyError((category ~= "error" and "[" .. category .. "] " or "") .. message)
+        -- Make sure to include category in the message for later parsing
+        local formattedMessage = ""
+        if category ~= "error" then
+            formattedMessage = "[" .. category .. "] " .. message
+        else
+            formattedMessage = message
+        end
+        
+        table.insert(self.earlyErrors, {
+            time = GetTime(),
+            message = formattedMessage
+        })
         return
     end
     
@@ -436,7 +490,15 @@ function TWRA:Debug(category, message, forceOutput, isDetail)
     if forceOutput then
         -- Use consistent formatting for forced output too
         local color = self.DEBUG.colors[category] or "FFFFFF"
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF" .. color .. "[TWRA: " .. (category or "Debug") .. "]|r " .. message)
+        
+        -- Include timestamp only if showDetails is enabled
+        local prefix = "|cFF" .. color .. "[TWRA: " .. (category or "Debug") .. "]|r "
+        if self.DEBUG.showDetails then
+            local timeStr = string.format("%.2f", GetTime())
+            prefix = prefix .. "[" .. timeStr .. "s] "
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage(prefix .. message)
         return
     end
     
@@ -489,12 +551,20 @@ function TWRA:Debug(category, message, forceOutput, isDetail)
     
     -- Format and output the message using the correct color
     local color = self.DEBUG.colors[category] or "FFFFFF"
-    -- Use simplified format for all debug messages: [Category] message
+    
+    -- Create prefix, optionally with timestamp based on showDetails
+    local prefix = "|cFF" .. color .. "[TWRA: " .. category .. "]|r "
+    if self.DEBUG.showDetails and not isDetail then  -- Don't double-prefix detailed logs
+        local timeStr = string.format("%.2f", GetTime())
+        prefix = prefix .. "[" .. timeStr .. "s] "
+    end
+    
+    -- Use simplified format for all debug messages
     if isDetail then
         -- Add "DETAIL" marker to detailed logs
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF" .. color .. "[TWRA: " .. category .. " DETAIL]|r " .. message)
+        DEFAULT_CHAT_FRAME:AddMessage(prefix .. "DETAIL: " .. message)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF" .. color .. "[TWRA: " .. category .. "]|r " .. message)
+        DEFAULT_CHAT_FRAME:AddMessage(prefix .. message)
     end
 end
 

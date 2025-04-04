@@ -10,7 +10,6 @@ function TWRA.UI:CreateBackground(parent, r, g, b, a)
     return bg
 end
 
-
 -- Create a text element with standard options - FIXED TEXT COLOR TO BE WHITE BY DEFAULT
 function TWRA.UI:CreateText(parent, text, fontStyle, justifyH, r, g, b)
     local textObj = parent:CreateFontString(nil, "OVERLAY", fontStyle or "GameFontNormal")
@@ -196,12 +195,50 @@ end
 -- Apply class coloring to text elements
 function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, isOnline)
     -- Safe parameter checks
-    if not textObj or not playerName then 
-        return 
+    if not textObj then return end
+    
+    -- For backward compatibility: if playerName is passed as the only parameter,
+    -- try to determine class and status from the raid roster
+    if playerName and not playerClass then
+        -- Check if this is a player name or a class group
+        local classFromGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[playerName]
+        if classFromGroup then
+            -- Use direct class coloring for class groups
+            playerClass = classFromGroup
+            isInRaid = true
+            isOnline = true
+        else
+            -- Use enhanced GetPlayerStatus to handle example data
+            local inRaid, online = TWRA:GetPlayerStatus(playerName)
+            isInRaid = inRaid
+            isOnline = online
+            
+            -- Try to get the player's class
+            if TWRA.usingExampleData and TWRA.EXAMPLE_PLAYERS and TWRA.EXAMPLE_PLAYERS[playerName] then
+                -- Extract class from example players
+                local classInfo = TWRA.EXAMPLE_PLAYERS[playerName]
+                if classInfo then
+                    playerClass = string.gsub(classInfo, "|OFFLINE", "")
+                end
+            elseif playerName == UnitName("player") then
+                -- Get player class
+                local _, class = UnitClass("player")
+                playerClass = class
+            else
+                -- Scan raid roster
+                for i = 1, GetNumRaidMembers() do
+                    local name, _, _, _, _, class = GetRaidRosterInfo(i)
+                    if name == playerName then
+                        playerClass = class
+                        break
+                    end
+                end
+            end
+        end
     end
     
     -- Default colors
-    local r, g, b = 1, 1, 1
+    local r, g, b = 1, 1, 1 -- Default white
     
     -- Apply coloring based on status
     if not isInRaid then
@@ -210,9 +247,9 @@ function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, 
     elseif not isOnline then
         -- Gray for offline
         r, g, b = 0.5, 0.5, 0.5
-    elseif playerClass and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[playerClass] then
-        -- Class color - FIX: properly access the color here
-        local color = TWRA.VANILLA_CLASS_COLORS[playerClass]
+    elseif playerClass and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[string.upper(playerClass)] then
+        -- Class color - properly access the color
+        local color = TWRA.VANILLA_CLASS_COLORS[string.upper(playerClass)]
         r, g, b = color.r, color.g, color.b
     end
     
@@ -283,7 +320,8 @@ end
 function TWRA.UI:CreateHiddenScrollFrame(parent, width, height, point, relFrame, relPoint, x, y)
     -- Check all required parameters
     if not parent then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Error: Missing parent for CreateHiddenScrollFrame")
+        -- Replace direct chat message with Debug call
+        TWRA:Debug("error", "Missing parent for CreateHiddenScrollFrame")
         return
     end
     

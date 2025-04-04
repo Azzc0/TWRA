@@ -21,7 +21,7 @@ TWRA (Turtle WoW Raid Assignments) has basic functionality in place, but needs c
 ### Feature Modules
 - `features/AutoTanks.lua`: Tank handling (oRA2 integration and future alternatives)
 - `features/AutoNavigate.lua`: Auto-navigation using SuperWoW's GUID
-- `features/Minimap.lua`: Minimap button and related functionality
+- `features/Minimap.lua`: REMOVED - Integrated directly into Core.lua
 
 ### UI Modules
 - `ui/Frame.lua`: Main frame creation and management
@@ -39,30 +39,43 @@ TWRA (Turtle WoW Raid Assignments) has basic functionality in place, but needs c
 ### 1. Code Cleanup
 - [x] Remove unused files and code
 - [ ] Replace all `DEFAULT_CHAT_FRAME:AddMessage` with `TWRA:Debug` calls
-- [ ] Fix syntax errors in existing files
+- [x] Fix syntax errors in existing files
 - [ ] Standardize function naming and parameter patterns
 
 ### 2. UI Improvements
 - [x] Fix the options button functionality
-- [ ] Make the main frame properly movable and resizable
+- [x] Make the main frame properly movable
 - [ ] Improve the section navigation dropdown
 - [ ] Enhance the visual appeal of assignments display
 
 ### 3. Module Refactoring
-- [ ] Move constants to `core/Constants.lua`
-- [ ] Implement proper debug system in `core/Debug.lua` 
-- [ ] Extract base64 logic to `core/Base64.lua`
-- [ ] Create `features/Minimap.lua` for minimap functionality
+- [x] Move constants to `core/Constants.lua`
+- [x] Implement proper debug system in `core/Debug.lua` 
+- [x] Extract base64 logic to `core/Base64.lua`
+- [x] Handle minimap functionality in Core.lua instead of a separate file
 - [ ] Organize tank handling in `features/AutoTanks.lua`
 - [ ] Refactor auto-navigation into `features/AutoNavigate.lua`
 
-### 4. Sync System Enhancement
-- [ ] Improve reliability of sync operations
+### 4. Debug System Enhancements
+- [x] Create debug framework with categories and levels
+- [ ] Fix early message handling to use proper categories
+- [ ] Ensure we only capture our addon's errors, not other addons
+- [ ] Update all code to use the Debug system instead of direct chat messages
+
+### 5. Item Linking System
+- [ ] Create item database with names and IDs
+- [ ] Implement color coding system for different item rarities
+- [ ] Add support for item linking in Notes/Warnings
+- [ ] Enhance display of items with appropriate icons
+- [ ] Implement tooltip support for linked items
+
+### 6. Sync System Enhancement
+- [ ] Begin sync testing for reliability
 - [ ] Add version checking to sync protocol
 - [ ] Implement proper error handling for sync failures
 - [ ] Add progress indicators for sync operations
 
-### 5. Documentation
+### 7. Documentation
 - [ ] Add consistent comments throughout the code
 - [ ] Document the public API for each module
 - [ ] Create user documentation for key features
