@@ -8,6 +8,7 @@ TWRA.EXAMPLE_PLAYERS = {
     ["Nytorpa"] = "WARRIOR",
     ["Dhl"] = "DRUID",
     ["Lenato"] = "PALADIN",
+    ["Sinfuil"] = "PALADIN",
     ["Kroken"] = "ROGUE",
     ["Kaydaawg"] = "PRIEST",
     ["Slaktaren"] = "PRIEST",
@@ -38,8 +39,8 @@ TWRA.EXAMPLE_DATA = {
     {"Welcome", "Note", "Lines with your name or your class (plural) will be highlighted.", "", "", "", "Pooras", "", ""},
     
     -- Faerlina example
-    {"Grand Widow Faerlina", "Icon", "Target", "Tank", "Pull", "MC", "Sinful", "", ""},
-    {"Grand Widow Faerlina", "Skull", "Naxxramas Follower", "Azzco", "", "", "", "", ""},
+    {"Grand Widow Faerlina", "Icon", "Target", "Tank", "Pull", "MC", "Heal", "", ""},
+    {"Grand Widow Faerlina", "Skull", "Naxxramas Follower", "Azzco", "", "", "Sinfuil", "", ""},
     {"Grand Widow Faerlina", "Cross", "Naxxramas Follower", "Dhl", "", "", "Slaktaren", "", ""},
     {"Grand Widow Faerlina", "Triangle", "Grand Widow Faerlina", "Lenato", "", "", "Ambulans", "", ""},
     {"Grand Widow Faerlina", "Square", "Naxxramas Worshipper", "", "Jouthor", "Slubban", "", "", ""},
@@ -56,68 +57,111 @@ TWRA.EXAMPLE_DATA = {
     {"Thaddius", "Square", "Feugen", "Dhl", "Warriors", "Rogues", "Hunters", "Shamans", "Druids"},
     {"Thaddius", "Note", "Feugen (right) mana burns around him, it can be outranged.", "", "", "", "", "", ""},
     {"Thaddius", "Warning", "--- BOSS +++", "", "", "", "", "", ""},
-    {"Thaddius", "Note", "if Feugen and Stalagg doesn't die at the same time they'll ressurrect.", "", "", "", "", ""},
-    
-    -- Empty rows to ensure proper termination
-    {"", "", "", "", "", "", "", "", ""},
-    {"", "", "", "", "", "", "", "", ""},
-    {"", "", "", "", "", "", "", "", ""},
-    {"", "", "", "", "", "", "", "", ""}
+    {"Thaddius", "Note", "if Feugen and Stalagg doesn't die at the same time they'll ressurrect.", "", "", "", "", ""}
 }
 
 -- Function to load example data
 function TWRA:LoadExampleData()
     self:Debug("data", "Loading example data")
     
+    -- Store current section name if available
+    local currentSectionName = nil
+    if self.navigation and self.navigation.currentIndex and
+       self.navigation.handlers and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
+        currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
+        self:Debug("data", "Remembering current section: " .. currentSectionName)
+    end
+    
     -- Clear any existing data first
     self:ClearData()
-    
-    -- Set up example data
-    self.EXAMPLE_DATA = {
-        {"Anub", "Icon", "Target", "Tank", "Tank", "Utility", "Healer", "Healer", "Healer"},
-        {"Anub", "Skull", "Anub'rekhan", "Azzco", "Heartstiller", "Kaydaawg", "Kaydaawg", "Cozzalisa", "Warriors"},
-        {"Anub", "Cross", "Crypt Fiend", "Clickyou", "Clickyou", "Clickyou", "Clickyou", "Clickyou", "Clickyou"},
-        {"Anub", "Square", "Crypt Fiend", "Lenato", "Clickyou", "Slubban", "", "", ""},
-        {"Anub", "Moon", "Crypt Fiend", "Lenato", "Clickyou", "Slubban", "", "", ""},
-        {"Anub", "Triangle", "", "Warriors", "Warlocks", "Shamans", "", "", ""},
-        {"Anub", "Diamond", "", "Paladins", "Priests", "Rogues", "ö", "", ""},
-        {"Anub", "Circle", "Grand Widow Faerlina", "Druids", "Hunters", "Mages", "Warrior", "", ""},
-        {"Anub", "Star", "", "", "", "Group 1,2", "", "", ""},
-        {"Anub", "Note", "Use consumables [Free Action Potion]", "", "", "", "", "", ""},
-        {"Anub", "Warning", "Melee, use FAP on pull", "", "", "", "", "", ""},
-        {"Faerlina", "Icon", "Target", "Tank", "MC", "Healer", "", "", ""},
-        {"Faerlina", "Skull", "Faerlina", "Azzco", "Clickyou", "Sinfiull", "", "", ""},
-        {"Faerlina", "Warning", "Test", "", "", "", "", "", ""}
-    }
-    
-    -- Create example players for testing
-    self.EXAMPLE_PLAYERS = {
-        ["Azzco"] = "WARRIOR",
-        ["Heartstiller"] = "PALADIN",
-        ["Kaydaawg"] = "PRIEST",
-        ["Cozzalisa"] = "SHAMAN",
-        ["Lenato"] = "DRUID|OFFLINE", -- This player will show as offline
-        ["Clickyou"] = "MAGE",
-        ["Slubban"] = "ROGUE", -- This is "Kroken" in the original data
-        ["Sinfiull"] = "WARLOCK",
-        ["Kroken"] = "ROGUE" -- Added Kroken explicitly
-    }
     
     -- Set the flag to indicate we're using example data
     self.usingExampleData = true
     
-    -- Save the example data with proper isExample flag
-    self:SaveAssignments(self.EXAMPLE_DATA, "example_data", nil, true)
+    -- Create the assignment data in memory
+    self.fullData = self.EXAMPLE_DATA
     
-    -- Switch to main view if in options and ensure we update the display
-    if self.currentView == "options" then
-        self:ShowMainView()
-    else
-        -- Display the data in current view
-        self:DisplayCurrentSection()
+    -- Save the example data with proper flags
+    TWRA_SavedVariables.assignments = {
+        data = self.EXAMPLE_DATA,
+        source = "example_data",
+        timestamp = time(),
+        currentSection = currentSectionName or "Welcome", -- Try to keep current section or default to Welcome
+        version = 1,
+        isExample = true
+    }
+    
+    -- Rebuild navigation with the new data
+    self:RebuildNavigation()
+    
+    -- Try to restore previous section
+    if self.navigation and self.navigation.handlers then
+        local foundSection = false
+        if currentSectionName then
+            -- Try to find the section by name first
+            for i, name in ipairs(self.navigation.handlers) do
+                if name == currentSectionName then
+                    self.navigation.currentIndex = i
+                    foundSection = true
+                    self:Debug("data", "Restored section: " .. currentSectionName)
+                    break
+                end
+            end
+        end
+        
+        -- If section not found, default to first section
+        if not foundSection then
+            self.navigation.currentIndex = 1
+            self:Debug("data", "Previous section not found, using first section")
+        end
+        
+        -- Update UI if main frame is already created
+        if self.mainFrame then
+            -- Update navigation display if it exists
+            if self.navigation.handlerText and 
+               self.navigation.handlers and self.navigation.handlers[self.navigation.currentIndex] then
+                self.navigation.handlerText:SetText(self.navigation.handlers[self.navigation.currentIndex])
+            end
+        end
     end
     
-    self:Debug("data", "Example data loaded with " .. table.getn(self.EXAMPLE_DATA) .. " rows")
+    self:Debug("data", "Example data loaded successfully")
+    return true
+end
+
+-- Function to load example data and show main view - called by the Example button
+function TWRA:LoadExampleDataAndShow()
+    -- Load the example data
+    if self:LoadExampleData() then
+        -- Switch to main view if in options
+        if self.currentView == "options" then
+            self:ShowMainView()
+        else
+            -- Just update the display
+            self:DisplayCurrentSection()
+        end
+        
+        -- Show user feedback (optional)
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Example data loaded!")
+        
+        return true
+    end
     
-    return self.EXAMPLE_DATA
+    return false
+end
+
+-- Function to check if data is example data
+function TWRA:IsExampleData(data)
+    if not data then return false end
+    
+    -- Do a simple check - if the first section is named "Welcome" and there's a note about importing assignments
+    for i = 1, table.getn(data) do
+        if data[i][1] == "Welcome" and 
+           data[i][2] == "Note" and 
+           string.find(data[i][3] or "", "import your own assignments") then
+            return true
+        end
+    end
+    
+    return false
 end

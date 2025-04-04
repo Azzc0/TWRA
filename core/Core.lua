@@ -63,54 +63,6 @@ function TWRA:OnEvent()
             self:Error("InitOptions function not found")
         end
         
-        -- COMPLETELY DISABLE InterfaceOptions integration
-        -- This is the most radical approach but should resolve the issue
-        
-        -- -- 1. Override the BlizzardOptionsPanel_OnLoad function for our addon
-        -- self.originalBlizzardOptionsPanel_OnLoad = BlizzardOptionsPanel_OnLoad
-        -- _G.BlizzardOptionsPanel_OnLoad = function(panel, ...)
-        --     if panel and panel:GetName() and string.find(panel:GetName(), "TWRA") then
-        --         self:Debug("ui", "Blocked BlizzardOptionsPanel_OnLoad for " .. panel:GetName())
-        --         return -- Don't process our panels
-        --     end
-        --     -- Call original for other addons
-        --     self.originalBlizzardOptionsPanel_OnLoad(panel, ...)
-        -- end
-        
-        -- -- 2. Intercept the InterfaceOptionsFrame_OpenToCategory function
-        -- if InterfaceOptionsFrame_OpenToCategory then
-        --     self.originalInterfaceOptionsFrame_OpenToCategory = InterfaceOptionsFrame_OpenToCategory
-        --     _G.InterfaceOptionsFrame_OpenToCategory = function(panel)
-        --         if type(panel) == "string" and string.find(panel, "TWRA") then
-        --             self:Debug("ui", "Redirecting options panel open to our own UI")
-        --             self:ToggleMainFrame()
-        --             self:ShowOptionsView()
-        --             return
-        --         elseif panel and panel.name and string.find(panel.name, "TWRA") then
-        --             self:Debug("ui", "Redirecting options panel object to our own UI")
-        --             self:ToggleMainFrame()
-        --             self:ShowOptionsView()
-        --             return
-        --         end
-        --         -- Call original for other addons
-        --         self.originalInterfaceOptionsFrame_OpenToCategory(panel)
-        --     end
-        -- end
-        
-        -- -- 3. Force any existing TWRA options panels to be detached
-        -- self:ScheduleTimer(function()
-        --     if InterfaceOptionsFrame and InterfaceOptionsFramePanelContainer then
-        --         for i = 1, InterfaceOptionsFramePanelContainer:GetNumChildren() do
-        --             local child = select(i, InterfaceOptionsFramePanelContainer:GetChildren())
-        --             if child and child.name and string.find(child.name, "TWRA") then
-        --                 child:Hide()
-        --                 child:SetParent(nil)
-        --                 self:Debug("ui", "Detached InterfaceOptions panel: " .. tostring(child.name))
-        --             end
-        --         end
-        --     end
-        -- end, 0.1)
-        
         -- Add emergency UI reset function
         self.ResetUI = function()
             self:Debug("ui", "Performing emergency UI reset")
@@ -482,22 +434,27 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
 end
 
 -- Function to save the current section index
-function TWRA:SaveCurrentSection()
+function TWRA:SaveCurrentSection(name)
     -- Only save if we have assignments already
     if TWRA_SavedVariables and TWRA_SavedVariables.assignments and self.navigation then
         -- Make sure currentIndex exists before trying to save it 
         if self.navigation.currentIndex then
             TWRA_SavedVariables.assignments.currentSection = self.navigation.currentIndex
+            
+            -- Also save the section name
+            if self.navigation.handlers and 
+               self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
+                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                TWRA_SavedVariables.assignments.currentSectionName = sectionName
+                self:Debug("nav", "Saved current section: " .. self.navigation.currentIndex .. 
+                            " (" .. sectionName .. ")")
+            end
         else
             -- If no current index, default to 1
             TWRA_SavedVariables.assignments.currentSection = 1
+            TWRA_SavedVariables.assignments.currentSectionName = nil
         end
     end
-end
-
--- Helper function to check if oRA2 is available
-function TWRA:IsORA2Available()
-    return oRA and oRA.maintanktable ~= nil
 end
 
 -- Basic implementation of CreateMainFrame (will be overridden by Frame.lua)
@@ -552,18 +509,6 @@ end
 function TWRA:DisplayCurrentSection()
     -- This will be overridden by UI modules 
     self:Debug("ui", "DisplayCurrentSection placeholder called")
-end
-
-function TWRA:LoadSavedAssignments()
-    -- This will be overridden by DataProcessing.lua
-    self:Debug("ui", "LoadSavedAssignments placeholder called")
-    return false
-end
-
-function TWRA:LoadExampleData()
-    -- This will be overridden by DataProcessing.lua or Example.lua
-    self:Debug("ui", "LoadExampleData placeholder called")
-    return false
 end
 
 -- Debug function placeholder in case Debug.lua hasn't loaded yet
@@ -744,4 +689,66 @@ function TWRA:ResetUI()
     self.currentView = "main"
     
     self:Debug("ui", "UI reset complete")
+end
+
+-- Fix the SaveAssignments function to properly preserve current section
+function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
+    if not data or not sourceString then return end
+    
+    -- Use provided timestamp or generate new one
+    local timestamp = originalTimestamp or time()
+    
+    -- Store current section before updating data
+    local currentSectionIndex = 1
+    local currentSectionName = nil
+    if self.navigation and self.navigation.currentIndex then
+        currentSectionIndex = self.navigation.currentIndex
+        if self.navigation.handlers and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
+            currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
+        end
+        self:Debug("nav", "SaveAssignments - Current section before update: " .. 
+                  currentSectionIndex .. " (" .. (currentSectionName or "unknown") .. ")")
+    end
+    
+    -- Store the section information as pending for post-import navigation
+    self.pendingSectionName = currentSectionName
+    self.pendingSectionIndex = currentSectionIndex
+    
+    -- Update our full data in flat format for use in the current session
+    self.fullData = data
+    
+    -- Check if this is the example data and set flag accordingly
+    local isExampleData = (sourceString == "example_data" or self:IsExampleData(data))
+    self.usingExampleData = isExampleData
+    
+    -- Rebuild navigation with new section names
+    self:RebuildNavigation()
+    
+    -- Save the data, source string, and timestamps
+    TWRA_SavedVariables.assignments = {
+        data = data,
+        source = sourceString,
+        timestamp = timestamp,
+        currentSection = currentSectionIndex,
+        currentSectionName = currentSectionName, -- Store name for better restoration
+        version = 1,
+        isExample = isExampleData,
+        usingExampleData = isExampleData
+    }
+    
+    self:Debug("nav", "SaveAssignments - Saved with section: " .. 
+                (currentSectionName or "unknown") .. " (" .. currentSectionIndex .. ")")
+    
+    -- Skip announcement if noAnnounce is true
+    if noAnnounce then return end
+    
+    -- Announce update to group if we're in one
+    if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+        local announceMsg = string.format("%s:%d:%s", 
+            self.SYNC.COMMANDS.ANNOUNCE,
+            timestamp,
+            UnitName("player"))
+        
+        self:SendAddonMessage(announceMsg)
+    end
 end

@@ -3,18 +3,6 @@ TWRA_SavedVariables = TWRA_SavedVariables or {
 }
 TWRA = TWRA or {}
 
--- Core initialization and utility functions
-local b64Table = {
-    ['A']=0,['B']=1,['C']=2,['D']=3,['E']=4,['F']=5,['G']=6,['H']=7,['I']=8,['J']=9,
-    ['K']=10,['L']=11,['M']=12,['N']=13,['O']=14,['P']=15,['Q']=16,['R']=17,['S']=18,
-    ['T']=19,['U']=20,['V']=21,['W']=22,['X']=23,['Y']=24,['Z']=25,['a']=26,['b']=27,
-    ['c']=28,['d']=29,['e']=30,['f']=31,['g']=32,['h']=33,['i']=34,['j']=35,['k']=36,
-    ['l']=37,['m']=38,['n']=39,['o']=40,['p']=41,['q']=42,['r']=43,['s']=44,['t']=45,
-    ['u']=46,['v']=47,['w']=48,['x']=49,['y']=50,['z']=51,['0']=52,['1']=53,['2']=54,
-    ['3']=55,['4']=56,['5']=57,['6']=58,['7']=59,['8']=60,['9']=61,['+'] = 62,['/'] = 63,
-    ['='] = -1
-}
-
 -- Update NavigateHandler to save current section
 function TWRA:NavigateHandler(delta)
     -- Ensure navigation exists
@@ -97,99 +85,6 @@ function TWRA:UpdateUI()
         end
     end
 end
-
--- Data constants
-TWRA.VANILLA_CLASS_COLORS = {
-    ["WARRIOR"] = {r=0.68, g=0.51, b=0.33},
-    ["PRIEST"] = {r=0.9, g=0.9, b=0.9},
-    ["DRUID"] = {r=0.9, g=0.44, b=0.04},
-    ["ROGUE"] = {r=0.9, g=0.86, b=0.36},
-    ["MAGE"] = {r=0.36, g=0.7, b=0.84},
-    ["HUNTER"] = {r=0.57, g=0.73, b=0.35},
-    ["WARLOCK"] = {r=0.53, g=0.46, b=0.74},
-    ["PALADIN"] = {r=0.86, g=0.45, b=0.63},
-    ["SHAMAN"] = {r=0.0, g=0.39, b=0.77}
-}
-
-TWRA.CLASS_GROUP_NAMES = {
-    ["Druids"] = "DRUID",
-    ["Hunters"] = "HUNTER",
-    ["Mages"] = "MAGE",
-    ["Paladins"] = "PALADIN",
-    ["Priests"] = "PRIEST",
-    ["Rogues"] = "ROGUE",
-    ["Shamans"] = "SHAMAN",
-    ["Warlocks"] = "WARLOCK",
-    ["Warriors"] = "WARRIOR"
-}
-
-TWRA.CLASS_COORDS = {
-    ["WARRIOR"] = {0, 0.25, 0, 0.25},
-    ["PALADIN"] = {0, 0.25, 0.5, 0.75},
-    ["HUNTER"] = {0, 0.25, 0.25, 0.5},
-    ["ROGUE"] = {0.5, 0.75, 0, 0.25},
-    ["PRIEST"] = {0.5, 0.75, 0.25, 0.5},
-    ["SHAMAN"] = {0.25, 0.5, 0.25, 0.5},
-    ["MAGE"] = {0.25, 0.5, 0, 0.25},
-    ["WARLOCK"] = {0.75, 1, 0.25, 0.5},
-    ["DRUID"] = {0.75, 1, 0, 0.25}
-}
-
-TWRA.ICONS = {
-    -- Format: name = {texture, x1, x2, y1, y2}
-    ["Skull"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.75, 1, 0.25, 0.5},
-    ["Cross"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.5, 0.75, 0.25, 0.5},
-    ["Square"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.25, 0.5, 0.25, 0.5},
-    ["Moon"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0, 0.25, 0.25, 0.5},
-    ["Triangle"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.75, 1, 0, 0.25},
-    ["Diamond"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.5, 0.75, 0, 0.25},
-    ["Circle"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.25, 0.5, 0, 0.25},
-    ["Star"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0, 0.25, 0, 0.25},
-    ["Warning"] = {"Interface\\DialogFrame\\DialogAlertIcon", 0, 1, 0, 1},
-    ["Note"] = {"Interface\\TutorialFrame\\TutorialFrame-QuestionMark", 0, 1, 0, 1},
-    ["GUID"] = {"Interface\\Icons\\INV_Misc_Note_01", 0, 1, 0, 1}  -- Added GUID icon
-}
-
--- Add colored icon text for announcements
-TWRA.COLORED_ICONS = {
-    ['Skull'] = '|cFFF1EFE4[Skull]|r',
-    ['Cross'] = '|cFFB20A05[Cross]|r',
-    ['Square'] = '|cFF00B9F3[Square]|r',
-    ['Moon'] = '|cFF8FB9D0[Moon]|r',
-    ['Triangle'] = '|cFF2BD923[Triangle]|r',
-    ['Diamond'] = '|cffB035F2[Diamond]|r',
-    ['Circle'] = '|cFFE76100[Circle]|r',
-    ['Star'] = '|cFFF7EF52[Star]|r',
-}
-
-TWRA.ROLE_ICONS = {
-    -- Basic role icons using standard game textures
-    ["Tank"] = "Interface\\Icons\\Ability_Warrior_DefensiveStance",     -- Tank
-    ["Heal"] = "Interface\\Icons\\Spell_Holy_HolyBolt",                 -- Heal
-    ["DPS"] = "Interface\\Icons\\INV_Sword_04",                         -- DPS
-    ["CC"] = "Interface\\Icons\\Spell_Frost_ChainsOfIce",               -- CC
-    ["Pull"] = "Interface\\Icons\\Ability_Hunter_SniperShot",           -- Pull
-    ["Ress"] = "Interface\\Icons\\Spell_Holy_Resurrection",             -- Ress
-    ["Assist"] = "Interface\\Icons\\Ability_Warrior_BattleShout",       -- Assist
-    ["Scout"] = "Interface\\Icons\\Ability_Hunter_EagleEye",            -- Scout
-    ["Lead"] = "Interface\\Icons\\Ability_Warrior_RallyingCry",         -- Lead
-    
-    -- Fallbacks for roles that don't match our custom icons
-    ["MC"] = "Interface\\Icons\\Spell_Shadow_ShadowWordDominate",
-    ["Kick"] = "Interface\\Icons\\Ability_Kick",
-    ["Decurse"] = "Interface\\Icons\\Spell_Holy_RemoveCurse",
-    ["Taunt"] = "Interface\\Icons\\Spell_Nature_Reincarnation",
-    ["MD"] = "Interface\\Icons\\Ability_Hunter_Misdirection",
-    ["Sap"] = "Interface\\Icons\\Ability_Sap",
-    ["Purge"] = "Interface\\Icons\\Spell_Holy_Dispel",
-    ["Shackle"] = "Interface\\Icons\\Spell_Nature_Slow",
-    ["Banish"] = "Interface\\Icons\\Spell_Shadow_Cripple",
-    ["Kite"] = "Interface\\Icons\\Ability_Rogue_Sprint",
-    ["Bomb"] = "Interface\\Icons\\spell_fire_selfdestruct",
-    ["Interrupt"] = "Interface\\Icons\\Ability_Kick",
-    ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01"
-}
-
 -- Main initialization - called only once
 function TWRA:Initialize()
     local frame = CreateFrame("Frame")
@@ -249,10 +144,21 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     local timestamp = originalTimestamp or time()
     
     -- Store current section before updating
-    local currentIndex = 1
+    local currentSectionIndex = 1
+    local currentSectionName = nil
     if self.navigation and self.navigation.currentIndex then
-        currentIndex = self.navigation.currentIndex
+        currentSectionIndex = self.navigation.currentIndex
+        if self.navigation.handlers and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
+            currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
+        end
     end
+    
+    -- Remember the section name for post-import navigation
+    self.pendingSectionName = currentSectionName
+    self.pendingSectionIndex = currentSectionIndex
+    
+    -- Store original data for debugging
+    local originalData = self.fullData
     
     -- Update our full data in flat format for use in the current session
     self.fullData = data
@@ -261,21 +167,24 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     local isExampleData = (sourceString == "example_data" or self:IsExampleData(data))
     self.usingExampleData = isExampleData
     
-    -- Save the data, source string, and current section index
+    -- Rebuild navigation before saving to get new section names
+    self:RebuildNavigation()
+    
+    -- Save the data, source string, and current section index and example flag
     TWRA_SavedVariables.assignments = {
         data = data,
         source = sourceString,
         timestamp = timestamp,
-        currentSection = currentIndex,
+        currentSection = currentSectionIndex,
+        currentSectionName = currentSectionName, -- Store section name for better restoration
         version = 1,
-        isExample = isExampleData
+        isExample = isExampleData,
+        usingExampleData = isExampleData
     }
     
-    -- Rebuild navigation
-    self:RebuildNavigation()
-    
-    -- Replace direct message with Debug call
-    self:Debug("data", "Assignments saved with timestamp " .. timestamp)
+    -- Debug output for section navigation
+    self:Debug("nav", "SaveAssignments - Previous section: " .. (currentSectionName or "None") .. 
+                      " (index: " .. currentSectionIndex .. ")")
     
     -- Skip announcement if noAnnounce is true
     if noAnnounce then return end
@@ -293,81 +202,98 @@ end
 
 function TWRA:LoadSavedAssignments()
     local saved = TWRA_SavedVariables.assignments
-    if not saved or not saved.data then return false end
     
-    -- Set the full data directly from saved data
-    self.fullData = saved.data
-    
-    -- Rebuild navigation with the loaded data
-    self:RebuildNavigation()
-    
-    -- Store and set current section
-    local currentSection = saved.currentSection or 1
-    if self.navigation then
-        self.navigation.currentIndex = math.min(currentSection, table.getn(self.navigation.handlers))
+    -- Case 1: No saved data exists
+    if not saved or not saved.data then 
+        self:Debug("data", "No saved assignments found - loading example data")
+        return self:LoadExampleData()
     end
     
-    self:Debug("data", "Loaded assignments")
+    -- Load the saved data
+    self.fullData = saved.data
+    
+    -- Rebuild navigation
+    self:RebuildNavigation()
+    
+    -- Set example data flag properly
+    self.usingExampleData = saved.usingExampleData or saved.isExample or false
+    
+    -- Try to navigate to the previously selected section by name first
+    local sectionRestored = false
+    if saved.currentSectionName and self.navigation.handlers then
+        for i, name in ipairs(self.navigation.handlers) do
+            if name == saved.currentSectionName then
+                self.navigation.currentIndex = i
+                sectionRestored = true
+                self:Debug("nav", "Restored section by name: " .. saved.currentSectionName)
+                break
+            end
+        end
+    end
+    
+    -- If section wasn't restored by name, try by index
+    if not sectionRestored then
+        local currentSection = saved.currentSection or 1
+        if self.navigation then
+            self.navigation.currentIndex = math.min(currentSection, table.getn(self.navigation.handlers))
+            self:Debug("nav", "Restored section by index: " .. self.navigation.currentIndex)
+        end
+    end
+    
+    self:Debug("data", "Loaded assignments (example mode: " .. (self.usingExampleData and "ON" or "OFF") .. ")")
     return true
 end
 
--- Utility functions
-function TWRA:GetPlayerStatus(name)
-    if not name or name == "" then return false, nil end
+-- Function to check if we're dealing with example data
+function TWRA:IsExampleData(data)
+    if not data then return false end
     
+    -- Quick check for known example data markers
+    for i = 1, table.getn(data) do
+        if data[i][1] == "Welcome" and 
+           data[i][2] == "Star" and
+           data[i][3] == "Big nasty boss" then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Enhanced GetPlayerStatus function to handle example data
+function TWRA:GetPlayerStatus(name)
+    -- Safety checks
+    if not name or name == "" then return false, nil end
     if UnitName("player") == name then return true, true end
     
-    -- Check raid roster
+    -- Check if we're using example data
+    if self.usingExampleData and self.EXAMPLE_PLAYERS then
+        local classInfo = self.EXAMPLE_PLAYERS[name]
+        if classInfo then
+            -- Consider player "in raid" with online status based on absence of |OFFLINE flag
+            local isOnline = not string.find(classInfo, "|OFFLINE")
+            return true, isOnline
+        end
+    end
+    
+    -- Regular player status checks
     for i = 1, GetNumRaidMembers() do
-        local raidName, _, _, _, _, _, _, online = GetRaidRosterInfo(i)
-        if raidName == name then
+        if GetRaidRosterInfo(i) == name then
+            local _, _, _, _, _, _, _, online = GetRaidRosterInfo(i)
             return true, online
         end
     end
     
-    -- Check party if not in raid
-    if GetNumRaidMembers() == 0 then
-        for i = 1, GetNumPartyMembers() do
-            if UnitName("party" .. i) == name then
-                return true, UnitIsConnected("party" .. i)
-            end
+    for i = 1, GetNumPartyMembers() do
+        if UnitName("party"..i) == name then
+            return true, UnitIsConnected("party"..i)
         end
     end
     
     return false, nil
 end
 
-function TWRA:HasClassInRaid(className)
-    for i = 1, GetNumRaidMembers() do
-        local _, _, _, _, _, class = GetRaidRosterInfo(i)
-        if class == className then
-            return true
-        end
-    end
-    return false
-end
-
-function TWRA:IsRaidAssist()
-    if GetNumRaidMembers() == 0 then
-        return false
-    end
-    
-    local playerName = UnitName("player")
-    for i = 1, GetNumRaidMembers() do
-        if UnitName("raid"..i) == playerName then
-            -- Use the Classic function names
-            return IsRaidOfficer("raid"..i) or IsRaidLeader("raid"..i)
-        end
-    end
-    return false
-end
-
--- Check if oRA2 is available
-function TWRA:IsORA2Available()
-    return oRA and oRA.maintanktable ~= nil  -- Changed to lowercase
-end
-
--- Update to use Debug
+-- Update to use Debug)
 function TWRA:UpdateTanks()
     -- Debug output our sync state
     self:Debug("tank", "Updating tanks for section " .. 
@@ -538,30 +464,6 @@ function TWRA:ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
             self.sectionOverlay:Hide()
         end
     end, 2)
-end
-
--- Timer functionality for older WoW versions
-function TWRA:ScheduleTimer(func, delay)
-    local timer = CreateFrame("Frame")
-    timer.start = GetTime()
-    timer.delay = delay
-    timer.func = func
-    
-    timer:SetScript("OnUpdate", function()
-        local elapsed = GetTime() - timer.start
-        if elapsed >= timer.delay then
-            timer:SetScript("OnUpdate", nil)
-            timer.func()
-        end
-    end)
-    
-    return timer
-end
-
-function TWRA:CancelTimer(timer)
-    if timer then
-        timer:SetScript("OnUpdate", nil)
-    end
 end
 
 -- Announcement functionality - completely rewritten
@@ -896,46 +798,6 @@ end
 -- Initialize UI at end of loading - THIS IS THE ONLY INITIALIZE CALL
 TWRA:Initialize()
 
--- At the end of the file, add a test function to verify DisplayCurrentSection works
-function TWRA:TestDisplayCurrentSection()
-    self:Debug("nav", "Testing DisplayCurrentSection")
-    
-    if not self.DisplayCurrentSection then
-        self:Debug("error", "DisplayCurrentSection function does not exist!", true)
-        return false
-    end
-    
-    self:Debug("nav", "DisplayCurrentSection function exists")
-    
-    if not self.navigation then
-        self:Debug("error", "Navigation table does not exist!", true)
-        return false
-    end
-    
-    self:Debug("nav", "Navigation: " .. 
-        tostring(self.navigation.currentIndex) .. " of " .. 
-        table.getn(self.navigation.handlers))
-    
-    if self.navigation.currentIndex and self.navigation.handlers and 
-       self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
-        self:Debug("nav", "Current section is " .. 
-            self.navigation.handlers[self.navigation.currentIndex])
-    end
-    
-    -- Try to call the function
-    self:Debug("nav", "Calling DisplayCurrentSection")
-    pcall(function() self:DisplayCurrentSection() end)
-    self:Debug("nav", "DisplayCurrentSection called")
-    
-    return true
-end
-
--- Add a slash command to test
-SLASH_TWRATEST1 = "/twratest"
-SlashCmdList["TWRATEST"] = function(msg)
-    TWRA:TestDisplayCurrentSection()
-end
-
 -- Update the HandleSectionCommand to save the current section when changed via sync
 function TWRA:HandleSectionCommand(args, sender)
     -- Split parts
@@ -973,30 +835,6 @@ function TWRA:HandleSectionCommand(args, sender)
     end
 end
 
--- Make SaveCurrentSection more robust
-function TWRA:SaveCurrentSection()
-    if not TWRA_SavedVariables.assignments then
-        -- Create assignments structure if it doesn't exist
-        TWRA_SavedVariables.assignments = {
-            data = nil,
-            source = nil,
-            timestamp = time(),
-            currentSection = 1
-        }
-    end
-    
-    if self.navigation and self.navigation.currentIndex then
-        local oldSection = TWRA_SavedVariables.assignments.currentSection or 1
-        TWRA_SavedVariables.assignments.currentSection = self.navigation.currentIndex
-        
-        if oldSection ~= self.navigation.currentIndex then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Saved current section: " .. 
-                self.navigation.currentIndex .. " (" .. 
-                self.navigation.handlers[self.navigation.currentIndex] .. ")")
-        end
-    end
-end
-
 -- Also update HandleTableAnnounce to save the section after receiving data
 function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
     -- Check against our timestamp
@@ -1005,13 +843,6 @@ function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
     if timestamp and timestamp > ourTimestamp then
         -- Use the pending section if available
         local sectionToUse = self.SYNC.pendingSection or 1
-        
-        -- Store the structured data directly
-        TWRA_SavedVariables.assignments = {
-            data = tableData,
-            timestamp = timestamp,
-            currentSection = sectionToUse  -- Save the section here
-        }
         
         -- Convert to flat format for use in current session
         local flatData = {}
@@ -1040,6 +871,22 @@ function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
         -- Rebuild navigation
         self:RebuildNavigation()
         
+        -- Get the section name for the current index
+        local sectionName = nil
+        if self.navigation and self.navigation.handlers and 
+           sectionToUse <= table.getn(self.navigation.handlers) then
+            sectionName = self.navigation.handlers[sectionToUse]
+        end
+        
+        -- Store the structured data with section information
+        TWRA_SavedVariables.assignments = {
+            data = tableData,
+            timestamp = timestamp,
+            currentSection = sectionToUse,
+            currentSectionName = sectionName, -- Add this line to store the section name
+            version = 1
+        }
+        
         -- Set current section
         if self.navigation then
             self.navigation.currentIndex = sectionToUse
@@ -1062,27 +909,6 @@ function TWRA:SectionDropdownSelected(index)
     self:NavigateToSection(index)  -- This will now save the section
 end
 
--- Add slash command to test keybinding functionality
-SLASH_TWRASHOW1 = "/twrashow"
-SlashCmdList["TWRASHOW"] = function(msg)
-    if TWRA and TWRA.ShowWhilePressed then
-        if msg == "up" then
-            TWRA:ShowWhilePressed("up")
-        else
-            TWRA:ShowWhilePressed("down")
-        end
-    end
-end
-
--- Add slash command to toggle the test button
-SLASH_TWRATEST1 = "/twratest"
-SlashCmdList["TWRATEST"] = function(msg)
-    if msg == "button" and TWRA and TWRA.ToggleTestButton then
-        TWRA:ToggleTestButton()
-    else
-        TWRA:TestDisplayCurrentSection()
-    end
-end
 
 -- Add CreateMinimapButton function - moved from OSD.lua to TWRA.lua as requested
 function TWRA:CreateMinimapButton()
@@ -1183,41 +1009,6 @@ function TWRA:CreateMinimapButton()
     
     self:Debug("general", "Minimap button created")
     return miniButton
-end
-
--- Add message handling system functions to TWRA.lua
--- These were previously in OSD.lua but should be core functionality
-function TWRA:RegisterMessageHandler(message, callback)
-    -- Initialize the message handlers table if it doesn't exist
-    self.messageHandlers = self.messageHandlers or {}
-    
-    -- Create array for this message type if needed
-    if not self.messageHandlers[message] then
-        self.messageHandlers[message] = {}
-    end
-    
-    -- Add the callback to the handlers array
-    table.insert(self.messageHandlers[message], callback)
-    self:Debug("general", "Registered message handler for: " .. message)
-end
-
--- Send message function to complete the messaging system
-function TWRA:SendMessage(message, arg1, arg2, arg3, arg4, arg5)
-    -- Initialize the message handlers table if it doesn't exist
-    self.messageHandlers = self.messageHandlers or {}
-    
-    -- Check if we have any handlers for this message
-    if not self.messageHandlers[message] then
-        return -- No handlers registered
-    end
-    
-    self:Debug("general", "Sending message: " .. message)
-    
-    -- Call each registered handler with the arguments
-    for _, callback in ipairs(self.messageHandlers[message]) do
-        -- Use explicit arguments instead of varargs (... unpacking)
-        callback(arg1, arg2, arg3, arg4, arg5)
-    end
 end
 
 -- Enhanced NavigateToSection function with better debugging
@@ -1369,33 +1160,10 @@ function TWRA:ShowOptionsView()
     
     -- Safety: Use pcall to avoid errors
     local success, err = pcall(function()
-        -- Hide all section-related content
-        if self.rowFrames then
-            for _, row in pairs(self.rowFrames) do
-                for _, cell in pairs(row) do
-                    if cell.text then cell.text:Hide() end
-                    if cell.bg then cell.bg:Hide() end
-                    if cell.icon then cell.icon:Hide() end
-                end
-            end
-        end
-        
-        -- Clear row highlights - ensure they're completely hidden
-        if self.rowHighlights then
-            for _, highlight in pairs(self.rowHighlights) do
-                highlight:Hide()
-                -- Set alpha to 0 as an extra measure
-                highlight:SetAlpha(0)
-                -- Release parent attachment to ensure it's not visible
-                highlight:ClearAllPoints()
-                highlight:SetParent(nil)
-            end
-            -- Clear the table to ensure no references remain
-            self.rowHighlights = {}
-        end
-        
-        -- Clear any footers
+                
+        -- Clear any footers and rows
         self:ClearFooters()
+        self:ClearRows()
         
         -- Hide navigation elements
         if self.navigation then
@@ -1428,40 +1196,91 @@ function TWRA:ShowOptionsView()
             self.optionsPanel:Show()
         end
         
-        -- Update export field with current data if available
-        if self.optionsPanel and self.optionsPanel.exportBox and 
-           TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.source then
-            self.optionsPanel.exportBox.editBox:SetText(TWRA_SavedVariables.assignments.source)
-        end
-        
         -- Update current view state
-            if self.navigation.handlerText then self.navigation.handlerText:Show() end
-        end
-        
-        -- Show action buttons
-        if self.announceButton then self.announceButton:Show() end
-        if self.updateTanksButton then self.updateTanksButton:Show() end
-        
-        -- Change button text back to "Options"
-        if self.optionsButton then 
-            self.optionsButton:SetText("Options")
-        end
-        
-        -- Update the current view state
-        self.currentView = "main"
-        
-        -- Check if we have pending navigation
-        if self.pendingNavigation then
-            self.navigation.currentIndex = self.pendingNavigation
-            self.pendingNavigation = nil
-        end
-        
-        -- Update display
-        self:DisplayCurrentSection()
+        self.currentView = "options"
     end)
     
     if not success then
-        self:Error("Error in ShowMainView: " .. tostring(err))
+        self:Error("Error in ShowOptionsView: " .. tostring(err))
+    end
+    
+    self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
+end
+
+-- Fix ShowMainView to better handle section restoration after import
+function TWRA:ShowMainView()
+    -- Check if mainFrame exists
+    if not self.mainFrame then
+        self:CreateMainFrame()
+    end
+    
+    -- Hide options panel if it exists
+    if self.optionsPanel then
+        self.optionsPanel:Hide()
+    end
+    
+    -- Show navigation elements
+    if self.navigation then
+        if self.navigation.prevButton then self.navigation.prevButton:Show() end
+        if self.navigation.nextButton then self.navigation.nextButton:Show() end
+        if self.navigation.menuButton then self.navigation.menuButton:Show() end
+        if self.navigation.handlerText then self.navigation.handlerText:Show() end
+    end
+    
+    -- Show action buttons
+    if self.announceButton then self.announceButton:Show() end
+    if self.updateTanksButton then self.updateTanksButton:Show() end
+    
+    -- Change button text back to "Options"
+    if self.optionsButton then 
+        self.optionsButton:SetText("Options")
+    end
+    
+    -- Update the current view state
+    self.currentView = "main"
+    
+    -- Check if we have pending navigation from an import
+    if self.pendingSectionName or self.pendingSectionIndex then
+        self:Debug("nav", "Found pending section navigation after import: " .. 
+                        (self.pendingSectionName or "unnamed") .. 
+                        " (index: " .. (self.pendingSectionIndex or "unknown") .. ")")
+                        
+        -- Try to navigate to the previously selected section by name first
+        local sectionRestored = false
+        
+        if self.pendingSectionName and self.navigation and self.navigation.handlers then
+            for i, name in ipairs(self.navigation.handlers) do
+                if name == self.pendingSectionName then
+                    self:Debug("nav", "Navigating to section by name: " .. self.pendingSectionName)
+                    self.navigation.currentIndex = i
+                    self:SaveCurrentSection() -- Store selected section in saved vars
+                    sectionRestored = true
+                    break
+                end
+            end
+        end
+        
+        -- If we couldn't find by name, try by index
+        if not sectionRestored and self.pendingSectionIndex and self.navigation then
+            local maxIndex = table.getn(self.navigation.handlers or {})
+            if maxIndex > 0 then
+                local safeIndex = math.min(self.pendingSectionIndex, maxIndex)
+                self:Debug("nav", "Navigating to section by index: " .. safeIndex)
+                self.navigation.currentIndex = safeIndex
+                self:SaveCurrentSection() -- Store selected section in saved vars
+                sectionRestored = true
+            end
+        end
+        
+        -- Clear pending navigation
+        self.pendingSectionName = nil
+        self.pendingSectionIndex = nil
+        
+        -- Display the section content
+        self:DisplayCurrentSection()
+    else
+        -- No pending navigation, just display current section
+        self:DisplayCurrentSection()
     end
     
     self:Debug("ui", "Switched to main view - final currentView = " .. self.currentView)
@@ -1545,16 +1364,16 @@ function TWRA:ClearData()
     -- Clear navigation
     if self.navigation then
         self.navigation.handlers = {}
-        self.navigation.currentIndex = 1
+        -- self.navigation.currentIndex = 1 -- We need this information for persistance during an import.
     end
     
     -- Clear rows
     self:ClearRows()
     
-    -- Clear navigation text if it exists
-    if self.navigation and self.navigation.handlerText then
-        self.navigation.handlerText:SetText("")
-    end
+    -- -- Clear navigation text if it exists -- we need this information for persistance during an import.
+    -- if self.navigation and self.navigation.handlerText then
+    --     self.navigation.handlerText:SetText("")
+    -- end
     
     -- Clear UI elements if they exist
     if self.mainFrame then
@@ -1600,47 +1419,34 @@ SLASH_TWRAEXAMPLE1 = "/twraexample"
 SlashCmdList["TWRAEXAMPLE"] = function(msg)
     -- Check if example data is currently loaded
     local isExampleActive = TWRA.usingExampleData or false
-    
-    -- Get the timestamp of current data
-    local timestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or "none"
-    
-    -- Get source of current data
-    local source = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.source and "yes" or "no"
-    
-    -- Check if the source is specifically example data
-    local isExampleFromSource = TWRA_SavedVariables.assignments and 
-                              TWRA_SavedVariables.assignments.isExample
+    local saved = TWRA_SavedVariables.assignments or {}
     
     -- Print status to chat
     DEFAULT_CHAT_FRAME:AddMessage("TWRA Example Data Status:")
     DEFAULT_CHAT_FRAME:AddMessage("- Using example data flag: " .. (isExampleActive and "TRUE" or "FALSE"))
-    DEFAULT_CHAT_FRAME:AddMessage("- Is example from source: " .. (isExampleFromSource and "TRUE" or "FALSE"))
-    DEFAULT_CHAT_FRAME:AddMessage("- Current data timestamp: " .. tostring(timestamp))
-    DEFAULT_CHAT_FRAME:AddMessage("- Has source data: " .. source)
+    DEFAULT_CHAT_FRAME:AddMessage("- Is example from source: " .. ((saved.isExample or saved.usingExampleData) and "TRUE" or "FALSE"))
+    DEFAULT_CHAT_FRAME:AddMessage("- Current data timestamp: " .. tostring(saved.timestamp or "none"))
+    DEFAULT_CHAT_FRAME:AddMessage("- Has source data: " .. (saved.source and "yes" or "no"))
     
-    -- Count players in EXAMPLE_PLAYERS
-    local playerCount = 0
-    local offlineCount = 0
+    -- Count and test example players
     if TWRA.EXAMPLE_PLAYERS then
+        local playerCount, offlineCount = 0, 0
         for name, classInfo in pairs(TWRA.EXAMPLE_PLAYERS) do
             playerCount = playerCount + 1
-            if string.find(classInfo, "|OFFLINE") then
-                offlineCount = offlineCount + 1
-            end
+            if string.find(classInfo, "|OFFLINE") then offlineCount = offlineCount + 1 end
         end
+        DEFAULT_CHAT_FRAME:AddMessage("- Example players: " .. playerCount .. " (with " .. offlineCount .. " offline)")
+        
+        -- Test a few players
+        DEFAULT_CHAT_FRAME:AddMessage("Player status test:")
+        local function testPlayer(name)
+            local inRaid, online = TWRA:GetPlayerStatus(name)
+            DEFAULT_CHAT_FRAME:AddMessage("  - " .. name .. ": " .. 
+                (inRaid and (online and "OFFLINE") or "NOT IN RAID"))
+        end
+        testPlayer("Azzco")
+        testPlayer("Kaydaawg") -- Should be in example data
     end
-    DEFAULT_CHAT_FRAME:AddMessage("- Example players: " .. playerCount .. " (with " .. offlineCount .. " offline)")
-    
-    -- Check a few specific players as a test
-    local function checkPlayerStatus(name)
-        local inRaid, online = TWRA:GetPlayerStatus(name)
-        local status = (inRaid and (online and "ONLINE" or "OFFLINE") or "NOT IN RAID")
-        DEFAULT_CHAT_FRAME:AddMessage("  - " .. name .. ": " .. status)
-    end
-    
-    DEFAULT_CHAT_FRAME:AddMessage("Player status test:")
-    checkPlayerStatus("Azzco")
-    checkPlayerStatus("Lenato")  -- Should be offline in example data
     
     -- Load example data if requested
     if msg == "load" then
@@ -1649,11 +1455,11 @@ SlashCmdList["TWRAEXAMPLE"] = function(msg)
         if TWRA.currentView == "options" then
             TWRA:ShowMainView()
         else
-            TWRA:DisplayCurrentSection()
+            self:DisplayCurrentSection()
         end
     end
     
-    -- Debug class coloring for a specific player
+    -- Debug class coloring check command handler
     if msg and string.find(msg, "check") then
         local _, _, playerName = string.find(msg, "check%s+(%S+)")
         if playerName then
@@ -1665,42 +1471,12 @@ SlashCmdList["TWRAEXAMPLE"] = function(msg)
             DEFAULT_CHAT_FRAME:AddMessage("  - In raid: " .. tostring(inRaid))
             DEFAULT_CHAT_FRAME:AddMessage("  - Online: " .. tostring(online))
             DEFAULT_CHAT_FRAME:AddMessage("  - Class info: " .. tostring(classInfo))
-            DEFAULT_CHAT_FRAME:AddMessage("  - Class: " .. tostring(class))
-            
-            if class then
-                local colorInfo = TWRA.VANILLA_CLASS_COLORS[class]
-                if colorInfo then
-                    DEFAULT_CHAT_FRAME:AddMessage("  - Color: r=" .. colorInfo.r .. 
-                                                " g=" .. colorInfo.g .. " b=" .. colorInfo.b)
-                else
-                    DEFAULT_CHAT_FRAME:AddMessage("  - Color not found for class: " .. class)
-                end
+            if class and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[class] then
+                local c = TWRA.VANILLA_CLASS_COLORS[class]
+                DEFAULT_CHAT_FRAME:AddMessage("  - Color: r=" .. c.r .. " g=" .. c.g .. " b=" .. c.b)
             end
         else
             DEFAULT_CHAT_FRAME:AddMessage("Usage: /twraexample check PlayerName")
         end
     end
-end
-
--- Add function to handle example data loading
-function TWRA:LoadExampleDataAndShow()
-    -- Load example data and update UI
-    if self:LoadExampleData() then
-        -- Set flag that we're using example data
-        self.usingExampleData = true
-        
-        -- Switch to main view if in options
-        if self.currentView == "options" then
-            self:ShowMainView()
-        else
-            -- Update display
-            self:DisplayCurrentSection()
-        end
-        
-        -- Show user feedback
-        self:Debug("data", "Example data loaded successfully")
-        return true
-    end
-    
-    return false
 end

@@ -100,16 +100,16 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     
     self:Debug("data", "Decoding base64 string")
     
-    -- Convert Base64 to binary string
-    local luaCode = ""
-    local bits = 0
-    local bitCount = 0
-    
     -- Safety check for minimum length
     if string.len(base64Str) < 4 then
         self:Error("Decode failed - string too short")
         return nil
     end
+    
+    -- Convert Base64 to binary string
+    local luaCode = ""
+    local bits = 0
+    local bitCount = 0
     
     for i = 1, string.len(base64Str) do
         local b64char = string.sub(base64Str, i, i)
@@ -164,17 +164,35 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return "?"  -- Fallback for invalid codes
     end)
     
-    -- Execute the Lua code to get the table
+    -- Verify the string starts with "return {" - basic sanity check
+    if string.sub(luaCode, 1, 8) ~= "return {" then
+        self:Error("Decoded text does not appear to be a valid Lua table")
+        self:Debug("error", "Expected 'return {' but found: " .. string.sub(luaCode, 1, 10))
+        return nil
+    end
+    
+    -- Execute the Lua code to get the table - use pcall for safety
     local func, err = loadstring(luaCode)
     if not func then
         self:Error("Error parsing Lua code: " .. (err or "unknown error"))
         return nil
     end
     
-    -- Execute the function to get the table
     local success, result = pcall(func)
     if not success then
         self:Error("Error executing Lua code: " .. (result or "unknown error"))
+        return nil
+    end
+    
+    -- Ensure we have a valid table
+    if type(result) ~= "table" then
+        self:Error("Decoded result is not a table (type: " .. type(result) .. ")")
+        return nil
+    end
+    
+    -- Verify the table has at least one entry
+    if table.getn(result) == 0 then
+        self:Error("Decoded table is empty")
         return nil
     end
     
@@ -183,8 +201,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     
     -- If this is a sync operation with timestamp, handle it directly
     if syncTimestamp then
-        self:Debug("sync", "Using provided timestamp: " .. syncTimestamp)
-        -- Store data with sync timestamp
+        -- Skip section restoration during sync - handled separately
         self:SaveAssignments(result, base64Str, syncTimestamp, noAnnounce or true)
     end
     

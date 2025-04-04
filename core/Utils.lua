@@ -52,6 +52,30 @@ function TWRA:TruncateText(text, length)
     return string.sub(text, 1, length) .. "..."
 end
 
+-- Timer functionality for older WoW versions
+function TWRA:ScheduleTimer(func, delay)
+    local timer = CreateFrame("Frame")
+    timer.start = GetTime()
+    timer.delay = delay
+    timer.func = func
+    
+    timer:SetScript("OnUpdate", function()
+        local elapsed = GetTime() - timer.start
+        if elapsed >= timer.delay then
+            timer:SetScript("OnUpdate", nil)
+            timer.func()
+        end
+    end)
+    
+    return timer
+end
+
+function TWRA:CancelTimer(timer)
+    if timer then
+        timer:SetScript("OnUpdate", nil)
+    end
+end
+
 -- Player status utility functions
 -- These were previously in Frame.lua but are more appropriate in a utils file
 
@@ -114,4 +138,62 @@ function TWRA:HasClassInRaid(className)
         end
     end
     return false
+end
+
+---- Import from TWRA.lua
+
+-- Utility functions
+function TWRA:GetPlayerStatus(name)
+    if not name or name == "" then return false, nil end
+    
+    if UnitName("player") == name then return true, true end
+    
+    -- Check raid roster
+    for i = 1, GetNumRaidMembers() do
+        local raidName, _, _, _, _, _, _, online = GetRaidRosterInfo(i)
+        if raidName == name then
+            return true, online
+        end
+    end
+    
+    -- Check party if not in raid
+    if GetNumRaidMembers() == 0 then
+        for i = 1, GetNumPartyMembers() do
+            if UnitName("party" .. i) == name then
+                return true, UnitIsConnected("party" .. i)
+            end
+        end
+    end
+    
+    return false, nil
+end
+
+function TWRA:HasClassInRaid(className)
+    for i = 1, GetNumRaidMembers() do
+        local _, _, _, _, _, class = GetRaidRosterInfo(i)
+        if class == className then
+            return true
+        end
+    end
+    return false
+end
+
+function TWRA:IsRaidAssist()
+    if GetNumRaidMembers() == 0 then
+        return false
+    end
+    
+    local playerName = UnitName("player")
+    for i = 1, GetNumRaidMembers() do
+        if UnitName("raid"..i) == playerName then
+            -- Use the Classic function names
+            return IsRaidOfficer("raid"..i) or IsRaidLeader("raid"..i)
+        end
+    end
+    return false
+end
+
+-- Check if oRA2 is available
+function TWRA:IsORA2Available()
+    return oRA and oRA.maintanktable ~= nil  -- Changed to lowercase
 end

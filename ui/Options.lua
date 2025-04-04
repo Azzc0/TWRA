@@ -457,63 +457,6 @@ function TWRA:CreateOptionsInMainFrame()
     importBtn:SetHeight(22)
     importBtn:SetPoint("TOPLEFT", container, "BOTTOMLEFT", 0, -10)
     importBtn:SetText("Import")
-    importBtn:SetScript("OnClick", function()
-        local importText = importBox:GetText()
-        if not importText or importText == "" then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: No data to import")
-            return
-        end
-        
-        -- Store current section before updating data
-        local currentSection = nil
-        if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-            currentSection = self.navigation.currentIndex
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Current section before import: " .. currentSection)
-        end
-        
-        -- Try to decode the data
-        local decodedData = self:DecodeBase64(importText)
-        if not decodedData then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Failed to decode data")
-            return
-        end
-        
-        -- Save the data with the original import string
-        self:SaveAssignments(decodedData, importText)
-        
-        -- Try to navigate back to the previous section if possible
-        if currentSection and self.navigation and self.navigation.handlers then
-            if currentSection <= table.getn(self.navigation.handlers) then
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Restoring section " .. currentSection)
-                self.navigation.currentIndex = currentSection
-                self:SaveCurrentSection() -- Store selected section in saved vars
-            else
-                -- If previous section is no longer valid, go to first section
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Section out of range, setting to 1")
-                self.navigation.currentIndex = 1
-                self:SaveCurrentSection()
-            end
-        end
-        
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assignment data imported successfully")
-        importBox:SetText("")
-        
-        -- If we're in options view, make sure the section text is updated
-        if self.currentView == "options" then
-            -- We're in options view, so current section text isn't shown
-            -- Just save the current section for when we go back to main view
-        else 
-            -- Update the main view immediately
-            self:DisplayCurrentSection()
-            
-            -- Update handler text to reflect the section name
-            if self.navigation and self.navigation.handlerText and self.navigation.handlers 
-               and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
-                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                self.navigation.handlerText:SetText(sectionName)
-            end
-        end
-    end)
     table.insert(self.optionsElements, importBtn)
     
     local clearBtn = CreateFrame("Button", nil, rightColumn, "UIPanelButtonTemplate")
@@ -686,7 +629,7 @@ function TWRA:CreateOptionsInMainFrame()
         self:ResetOSDPosition()
     end)
     
-    -- Import button behavior
+    -- Import button behavior - simplified approach
     importBtn:SetScript("OnClick", function()
         local importText = importBox:GetText()
         if not importText or importText == "" then
@@ -694,55 +637,65 @@ function TWRA:CreateOptionsInMainFrame()
             return
         end
         
-        -- Store current section before updating data
-        local currentSection = nil
-        if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-            currentSection = self.navigation.currentIndex
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Current section before import: " .. currentSection)
+        -- Check if we have navigation information
+        local currentSectionName = nil
+        local currentSectionIndex = 1
+        
+        -- Capture current section info before import
+        if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+            currentSectionName = TWRA_SavedVariables.assignments.currentSectionName
+            currentSectionIndex = TWRA_SavedVariables.assignments.currentSection or 1
+            TWRA:Debug("data", "Import with saved section: " .. 
+                       (currentSectionName or "unnamed") .. " (" .. currentSectionIndex .. ")")
         end
         
-        -- Try to decode the data
-        local decodedData = self:DecodeBase64(importText)
+        -- Try to decode the data first
+        local decodedData = TWRA:DecodeBase64(importText)
         if not decodedData then
             DEFAULT_CHAT_FRAME:AddMessage("TWRA: Failed to decode data")
             return
         end
         
-        -- Save the data with the original import string
-        self:SaveAssignments(decodedData, importText)
+        -- Only clear data after successful decode
+        TWRA:ClearData()
         
-        -- Try to navigate back to the previous section if possible
-        if currentSection and self.navigation and self.navigation.handlers then
-            if currentSection <= table.getn(self.navigation.handlers) then
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Restoring section " .. currentSection)
-                self.navigation.currentIndex = currentSection
-                self:SaveCurrentSection() -- Store selected section in saved vars
-            else
-                -- If previous section is no longer valid, go to first section
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Section out of range, setting to 1")
-                self.navigation.currentIndex = 1
-                self:SaveCurrentSection()
+        -- Save the data (will rebuild navigation)
+        TWRA:SaveAssignments(decodedData, importText)
+        
+        -- Now restore section preference based on saved info
+        if TWRA.navigation and TWRA.navigation.handlers then
+            local sectionFound = false
+            
+            -- First try to find by name (more reliable)
+            if currentSectionName then
+                for i, name in ipairs(TWRA.navigation.handlers) do
+                    if name == currentSectionName then
+                        TWRA.navigation.currentIndex = i
+                        TWRA:SaveCurrentSection()
+                        TWRA:Debug("data", "Restored section by name: " .. name .. " (index: " .. i .. ")")
+                        sectionFound = true
+                        break
+                    end
+                end
+            end
+            
+            -- If not found by name, try by index as fallback
+            if not sectionFound and currentSectionIndex then
+                local maxIndex = table.getn(TWRA.navigation.handlers)
+                if maxIndex > 0 then
+                    local safeIndex = math.min(currentSectionIndex, maxIndex)
+                    TWRA.navigation.currentIndex = safeIndex
+                    TWRA:SaveCurrentSection()
+                    TWRA:Debug("data", "Restored section by index: " .. safeIndex)
+                end
             end
         end
         
         DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assignment data imported successfully")
         importBox:SetText("")
         
-        -- If we're in options view, make sure the section text is updated
-        if self.currentView == "options" then
-            -- We're in options view, so current section text isn't shown
-            -- Just save the current section for when we go back to main view
-        else 
-            -- Update the main view immediately
-            self:DisplayCurrentSection()
-            
-            -- Update handler text to reflect the section name
-            if self.navigation and self.navigation.handlerText and self.navigation.handlers 
-               and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
-                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                self.navigation.handlerText:SetText(sectionName)
-            end
-        end
+        -- Switch to main view to show the imported data
+        TWRA:ShowMainView()
     end)
     
     -- Clear button behavior
@@ -1263,32 +1216,73 @@ function TWRA:CreateOptionsPanel()
         self:ResetOSDPosition()
     end)
     
-    -- Import button behavior
+    -- Import button behavior - simplified approach
     importBtn:SetScript("OnClick", function()
         local importText = importBox:GetText()
         if not importText or importText == "" then
-            self:Debug("ui", "No data to import")
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: No data to import")
             return
         end
         
-        -- Clear any existing data first
-        self:ClearData()
+        -- Check if we have navigation information
+        local currentSectionName = nil
+        local currentSectionIndex = 1
         
-        -- Try to decode the data
-        local decodedData = self:DecodeBase64(importText)
+        -- Capture current section info before import
+        if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+            currentSectionName = TWRA_SavedVariables.assignments.currentSectionName
+            currentSectionIndex = TWRA_SavedVariables.assignments.currentSection or 1
+            TWRA:Debug("data", "Import with saved section: " .. 
+                       (currentSectionName or "unnamed") .. " (" .. currentSectionIndex .. ")")
+        end
+        
+        -- Try to decode the data first
+        local decodedData = TWRA:DecodeBase64(importText)
         if not decodedData then
-            self:Debug("error", "Failed to decode data")
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Failed to decode data")
             return
         end
         
-        -- Save the data with the original import string
-        self:SaveAssignments(decodedData, importText)
+        -- Only clear data after successful decode
+        TWRA:ClearData()
         
-        self:Debug("ui", "Assignment data imported successfully")
+        -- Save the data (will rebuild navigation)
+        TWRA:SaveAssignments(decodedData, importText)
+        
+        -- Now restore section preference based on saved info
+        if TWRA.navigation and TWRA.navigation.handlers then
+            local sectionFound = false
+            
+            -- First try to find by name (more reliable)
+            if currentSectionName then
+                for i, name in ipairs(TWRA.navigation.handlers) do
+                    if name == currentSectionName then
+                        TWRA.navigation.currentIndex = i
+                        TWRA:SaveCurrentSection()
+                        TWRA:Debug("data", "Restored section by name: " .. name .. " (index: " .. i .. ")")
+                        sectionFound = true
+                        break
+                    end
+                end
+            end
+            
+            -- If not found by name, try by index as fallback
+            if not sectionFound and currentSectionIndex then
+                local maxIndex = table.getn(TWRA.navigation.handlers)
+                if maxIndex > 0 then
+                    local safeIndex = math.min(currentSectionIndex, maxIndex)
+                    TWRA.navigation.currentIndex = safeIndex
+                    TWRA:SaveCurrentSection()
+                    TWRA:Debug("data", "Restored section by index: " .. safeIndex)
+                end
+            end
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assignment data imported successfully")
         importBox:SetText("")
         
         -- Switch to main view to show the imported data
-        self:ShowMainView()
+        TWRA:ShowMainView()
     end)
     
     -- Clear button behavior
@@ -1320,7 +1314,7 @@ function TWRA:CreateOptionsPanel()
     end)
     
     if not success or not exampleButton then
-        self:Error("Failed to create example button")
+        self:Debug("ui", "Failed to create example button")
     end
     
     -- Store references to the panel
