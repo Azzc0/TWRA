@@ -23,24 +23,35 @@ function TWRA:InitOSD()
         self.OSD.locked = TWRA_SavedVariables.options.osdLocked or self.OSD.locked
     end
 
-    -- FIX: Create minimap button with delay to ensure all dependencies are loaded
+    -- Schedule minimap button creation using the function from TWRA.lua
     self:ScheduleTimer(function()
         self:Debug("osd", "Creating minimap button...")
-        self:CreateMinimapButton()
+        -- Call CreateMinimapButton from TWRA.lua
+        if self.CreateMinimapButton then
+            self:CreateMinimapButton()
+        else
+            self:Debug("error", "CreateMinimapButton function not found!")
+        end
     end, 1)
     
-    -- Register message handlers
-    self:RegisterMessageHandler("SECTION_CHANGED", function(sectionName, currentIndex, totalSections, context)
-        self:HandleSectionChange(sectionName, currentIndex, totalSections, context)
-    end)
-    
-    self:RegisterMessageHandler("SHOW_OSD", function(sectionName, currentIndex, totalSections, persistent)
-        self:ShowSectionNameOverlay(sectionName, currentIndex, totalSections, persistent)
-    end)
-    
-    self:RegisterMessageHandler("TEST_OSD", function()
-        self:TestOSD()
-    end)
+    -- Register message handlers using RegisterMessageHandler from TWRA.lua
+    if self.RegisterMessageHandler then
+        self:RegisterMessageHandler("SECTION_CHANGED", function(sectionName, currentIndex, totalSections, context)
+            self:HandleSectionChange(sectionName, currentIndex, totalSections, context)
+        end)
+        
+        self:RegisterMessageHandler("SHOW_OSD", function(sectionName, currentIndex, totalSections, persistent)
+            self:ShowSectionNameOverlay(sectionName, currentIndex, totalSections, persistent)
+        end)
+        
+        self:RegisterMessageHandler("TEST_OSD", function()
+            self:TestOSD()
+        end)
+        
+        self:Debug("osd", "OSD message handlers registered")
+    else
+        self:Debug("error", "RegisterMessageHandler function not found!")
+    end
     
     self:Debug("osd", "OSD module initialized")
 end
@@ -76,7 +87,7 @@ function TWRA:ShowSectionNameOverlay(sectionName, currentIndex, totalSections, p
     
     -- Create the overlay frame if it doesn't exist
     if not self.sectionOverlay then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Creating section overlay frame")
+        self:Debug("osd", "Creating section overlay frame")
         
         -- Create main frame
         self.sectionOverlay = CreateFrame("Frame", "TWRA_SectionOverlay", UIParent)
@@ -262,7 +273,7 @@ function TWRA:ShowSectionNameOverlay(sectionName, currentIndex, totalSections, p
         end, self.OSD.duration)
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Showing section OSD with section: " .. (sectionName or "Unknown"))
+    self:Debug("osd", "Section OSD shown with section: " .. (sectionName or "Unknown"))
 end
 
 -- Also update the ToggleOSD function to always try to show current content
@@ -283,7 +294,7 @@ function TWRA:ToggleOSD()
         end
         
         self:ShowSectionNameOverlay(sectionName, currentIndex, totalSections, true)
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD shown (persistent)")
+        self:Debug("osd", "OSD shown (persistent)")
     -- If OSD exists and is visible, hide it    
     elseif self.sectionOverlay:IsShown() then
         self.sectionOverlay:Hide()
@@ -364,13 +375,13 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
     
     -- Ensure we have data to work with
     if not self.fullData then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: No assignment data available for OSD")
+        self:Debug("osd", "No assignment data available for OSD")
         return
     end
     
     local playerName = UnitName("player")
     local _, playerClass = UnitClass("player")
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Looking up OSD content for " .. playerName .. 
+    self:Debug("osd", "Looking up OSD content for " .. playerName .. 
                                  " (class: " .. (playerClass or "unknown") .. 
                                  ") in section " .. sectionName)
     
@@ -386,7 +397,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
         for group, class in pairs(self.CLASS_GROUP_NAMES) do
             if class == playerClass then
                 classPlural = group
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found class group name: " .. group)
+                self:Debug("osd", "Found class group name: " .. group)
                 break
             end
         end
@@ -400,13 +411,13 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
             -- Check if this is a header row (has "Target" in column 3)
             if row[3] == "Target" then
                 headerRow = row
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found header row at index " .. i)
+                self:Debug("osd", "Found header row at index " .. i)
             elseif row[2] == "Warning" then
                 table.insert(warnings, row[3])
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found warning: " .. row[3])
+                self:Debug("osd", "Found warning: " .. row[3])
             elseif row[2] == "Note" then
                 table.insert(notes, row[3])
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found note: " .. row[3])
+                self:Debug("osd", "Found note: " .. row[3])
             end
         end
     end
@@ -433,7 +444,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                         foundMatch = true
                         matchColumn = col
                         playerRole = headerRow[col]
-                        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found player match in column " .. col .. 
+                        self:Debug("osd", "Found player match in column " .. col .. 
                                                      " - Role: " .. (playerRole or "unknown"))
                         break
                     end
@@ -495,7 +506,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                         rowData = row,                   -- Full row data
                         matchColumn = matchColumn        -- Column where player was matched
                     })
-                    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found relevant row - Target: " .. row[3])
+                    self:Debug("osd", "Found relevant row - Target: " .. row[3])
                 end
             end
         end
@@ -674,11 +685,11 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                         tankName:SetPoint("LEFT", currentXPos, "RIGHT", 3, 0)
                         tankName:SetText(tank.name)
                         
-                        -- Use our coloring function instead of inline color setting
+                        if TWRA.UI and TWRA.UI.ApplyClassColoring then
                             TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                         else
                             -- Fallback if UI utils not available
-                            self:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                         end
                         
                         currentXPos = tankName
@@ -745,7 +756,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                             TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                         else
                             -- Fallback if UI utils not available
-                            self:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                         end
                         
                         currentXPos = tankName
@@ -814,7 +825,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                                 TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                             else
                                 -- Fallback if UI utils not available
-                                self:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                                TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                             end
                             
                             currentXPos = tankName
@@ -881,7 +892,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                                 TWRA.UI:ApplyClassColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
                             else
                                 -- Fallback if UI utils not available
-                                self:ApplyPlayerNameColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
+                                TWRA:ApplyPlayerNameColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
                             end
                             
                             currentXPos = healerName
@@ -946,7 +957,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                             TWRA.UI:ApplyClassColoring(tankText, tank.name, tank.class, tank.inRaid, tank.online)
                         else
                             -- Fallback if UI utils not available
-                            self:ApplyPlayerNameColoring(tankText, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankText, tank.name, tank.class, tank.inRaid, tank.online)
                         end
                         
                         currentXPos = tankText
@@ -1066,7 +1077,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                             TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                         else
                             -- Fallback if UI utils not available
-                            self:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                         end
                         
                         currentXPos = tankName
@@ -1135,7 +1146,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                                 TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                             else
                                 -- Fallback if UI utils not available
-                                self:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                                TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
                             end
                             
                             currentXPos = tankName
@@ -1202,7 +1213,7 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                                 TWRA.UI:ApplyClassColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
                             else
                                 -- Fallback if UI utils not available
-                                self:ApplyPlayerNameColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
+                                TWRA:ApplyPlayerNameColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
                             end
                             
                             currentXPos = healerName
@@ -1210,720 +1221,196 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                     end
                 end
             end
-            
-            -- Store this line container and update total height
-            table.insert(contentLines, lineContainer)
-            table.insert(self.assignmentIcons, lineContainer)
-            totalHeight = totalHeight + lineHeight + 2  -- Add spacing between lines
         end
-    else
-        -- No assignments found - create a simple "no assignment" line
-        local noAssignmentContainer = CreateFrame("Frame", nil, self.sectionOverlay)
-        noAssignmentContainer:SetHeight(lineHeight)
-        noAssignmentContainer:SetPoint("TOPLEFT", self.sectionOverlayInfo, "TOPLEFT", 0, 0)
-        noAssignmentContainer:SetPoint("TOPRIGHT", self.sectionOverlayInfo, "TOPRIGHT", 0, 0)
-        
-        local noAssignText = noAssignmentContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        noAssignText:SetPoint("LEFT", noAssignmentContainer, "LEFT", 15, 0)
-        noAssignText:SetText("No specific assignment")
-        noAssignText:SetTextColor(0.8, 0.8, 0.8) -- Gray text
-        
-        table.insert(contentLines, noAssignmentContainer)
-        table.insert(self.assignmentIcons, noAssignmentContainer)
-        totalHeight = lineHeight
     end
     
-    -- Resize the info container to fit the content
-    self.sectionOverlayInfo:SetHeight(totalHeight)
-    
-    -- Display warning if any
+    -- Add warnings if any
     if table.getn(warnings) > 0 then
-        self.sectionOverlayWarning:SetText(warnings[1])
         self.warningIcon:Show()
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Showing warning")
+        self.sectionOverlayWarning:SetText(table.concat(warnings, "\n"))
     end
     
-    -- Display note if any
+    -- Add notes if any
     if table.getn(notes) > 0 then
-        self.sectionOverlayNote:SetText(notes[1])
         self.noteIcon:Show()
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Showing note")
+        self.sectionOverlayNote:SetText(table.concat(notes, "\n"))
     end
     
-    -- Adjust container positions based on content
-    if warnings[1] then
-        self.warningContainer:ClearAllPoints()
-        self.warningContainer:SetPoint("TOP", self.sectionOverlayInfo, "BOTTOM", 0, -5)
-    end
-    
-    if notes[1] then
-        self.noteContainer:ClearAllPoints()
-        if warnings[1] then
-            self.noteContainer:SetPoint("TOP", self.warningContainer, "BOTTOM", 0, -2)
-        else
-            self.noteContainer:SetPoint("TOP", self.sectionOverlayInfo, "BOTTOM", 0, -5)
-        end
-    end
-    
-    -- Calculate total height needed for overlay
-    local totalOverlayHeight = 70  -- Base height (header + footer space)
-    totalOverlayHeight = totalOverlayHeight + totalHeight  -- Add content height
-    
-    if warnings[1] then
-        totalOverlayHeight = totalOverlayHeight + 25  -- Add warning height
-    end
-    
-    if notes[1] then
-        totalOverlayHeight = totalOverlayHeight + 25  -- Add note height
-    end
-    
-    -- Update overlay height
-    self.sectionOverlay:SetHeight(totalOverlayHeight)
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Set OSD height to " .. totalOverlayHeight)
+    -- Adjust the height of the info container based on the total content height
+    self.sectionOverlayInfo:SetHeight(totalHeight)
 end
 
--- Test the OSD with full content (for test button)
-function TWRA:TestOSD()
-    local currentIndex = 1
-    local totalSections = 5
-    local sectionName = "Test Section"
-    
-    -- Use current section if available
-    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-        currentIndex = self.navigation.currentIndex
-        totalSections = table.getn(self.navigation.handlers)
-        sectionName = self.navigation.handlers[currentIndex]
-    end
-    
-    -- Make sure we have a section name to display, use a placeholder if necessary
-    if not sectionName then
-        sectionName = "Test Section"
-    end
-    
-    self:ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
-    self:Debug("osd", "Testing OSD with section '" .. sectionName .. "'")
+-- Fix the syntax error in the for loop around line 631-679
+-- Section where colorization occurs
+if TWRA.UI and TWRA.UI.ApplyClassColoring then
+    TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+else
+    -- Fallback if UI utils not available
+    TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
 end
 
--- Reset OSD position to default
-function TWRA:ResetOSDPosition()
-    self.OSD.point = "CENTER"
-    self.OSD.xOffset = 0
-    self.OSD.yOffset = 100
+currentXPos = tankName
+
+-- Add fallback ApplyPlayerNameColoring method if not already defined
+function TWRA:ApplyPlayerNameColoring(textElement, playerName, playerClass, isInRaid, isOnline)
+    -- Safe checks for parameters
+    if not textElement or not playerName then return end
     
-    -- Save to options
-    if TWRA_SavedVariables and TWRA_SavedVariables.options then
-        TWRA_SavedVariables.options.osdPoint = self.OSD.point
-        TWRA_SavedVariables.options.osdXOffset = self.OSD.xOffset
-        TWRA_SavedVariables.options.osdYOffset = self.OSD.yOffset
+    -- Default colors
+    local r, g, b = 1, 1, 1 -- Default white
+    
+    -- Apply coloring based on status
+    if not isInRaid then
+        -- Red for not in raid
+        r, g, b = 1, 0.3, 0.3
+    elseif not isOnline then
+        -- Gray for offline
+        r, g, b = 0.5, 0.5, 0.5
+    elseif playerClass and self.VANILLA_CLASS_COLORS and self.VANILLA_CLASS_COLORS[playerClass] then
+        -- Class color
+        local color = self.VANILLA_CLASS_COLORS[playerClass]
+        r, g, b = color.r, color.g, color.b
     end
     
-    -- Apply to existing overlay if it exists
-    if self.sectionOverlay then
-        self.sectionOverlay:ClearAllPoints()
-        self.sectionOverlay:SetPoint(self.OSD.point, UIParent, self.OSD.point, self.OSD.xOffset, self.OSD.yOffset)
+    -- Apply the color to the text element
+    if textElement.SetTextColor then
+        textElement:SetTextColor(r, g, b)
     end
-    
-    self:Debug("osd", "OSD position reset to default")
-    -- Show test OSD to confirm position
-    self:TestOSD()
 end
 
--- Create minimap button
+-- Add the missing CreateMinimapButton function
 function TWRA:CreateMinimapButton()
-    -- Return existing button if already created
-    if self.minimapButton and self.minimapButton:GetName() == "TWRAMinimapButton" then 
-        self:Debug("osd", "Minimap button already exists")
-        -- Make sure it's shown
-        self.minimapButton:Show()
-        return self.minimapButton
+    -- Create a frame for our minimap button
+    local miniButton = CreateFrame("Button", "TWRAMinimapButton", Minimap)
+    miniButton:SetWidth(32)
+    miniButton:SetHeight(32)
+    miniButton:SetFrameStrata("MEDIUM")
+    miniButton:SetFrameLevel(8)
+    
+    -- Set position (default to 180 degrees)
+    local defaultAngle = 180
+    local angle = defaultAngle
+    
+    -- Use saved angle if available
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.minimapAngle then
+        angle = TWRA_SavedVariables.options.minimapAngle
     end
     
-    self:Debug("osd", "Creating new minimap button")
+    -- Calculate position
+    local radius = 80
+    local radian = math.rad(angle)
+    local x = math.cos(radian) * radius
+    local y = math.sin(radian) * radius
     
-    -- Create the button frame with a unique name to avoid conflicts
-    local button = CreateFrame("Button", "TWRAMinimapButton", Minimap)
-    button:SetWidth(32)
-    button:SetHeight(32)
-    button:SetFrameStrata("MEDIUM")
-    button:SetFrameLevel(8)
+    miniButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
     
-    -- Set button appearance
-    local icon = button:CreateTexture(nil, "BACKGROUND")
-    icon:SetWidth(20)
-    icon:SetHeight(20)
-    icon:SetPoint("CENTER", button, "CENTER", 0, 0)
-    icon:SetTexture("Interface\\FriendsFrame\\FriendsFrameScrollIcon")
+    -- Set icon texture
+    local icon = miniButton:CreateTexture(nil, "BACKGROUND")
+    icon:SetTexture("Interface\\AddOns\\TWRA\\textures\\minimap_icon")
     
-    -- Add button border
-    local overlay = button:CreateTexture(nil, "OVERLAY")
-    overlay:SetWidth(53)
-    overlay:SetHeight(53)
-    overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    overlay:SetPoint("TOPLEFT", button, "TOPLEFT", -10, 10)  -- FIX: Adjust border position
+    -- If the custom texture doesn't exist, use a default
+    if not icon:GetTexture() then
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Book_11")
+    end
     
-    -- Set scripts for showing OSD on hover
-    button:SetScript("OnEnter", function()
-        -- Show OSD when hovering without starting the auto-hide timer
-        self:ShowSectionNameOverlay(nil, nil, nil, true) -- Pass true to indicate persistent display
+    icon:SetAllPoints(miniButton)
+    miniButton.icon = icon
+    
+    -- Add highlight texture
+    local highlight = miniButton:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    highlight:SetBlendMode("ADD")
+    highlight:SetAllPoints(miniButton)
+    miniButton.highlight = highlight
+    
+    -- Set up scripts
+    miniButton:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(miniButton, "ANCHOR_LEFT")
+        GameTooltip:AddLine("TWRA - Raid Assignments")
+        GameTooltip:AddLine("Left-click: Toggle assignments window", 1, 1, 1)
+        GameTooltip:AddLine("Right-click: Toggle assignments OSD", 1, 1, 1)
+        GameTooltip:Show()
     end)
-    button:SetScript("OnLeave", function()
-        -- Hide OSD when mouse leaves the button
-        if self.sectionOverlay then
-            self.sectionOverlay:Hide()
+    
+    miniButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    miniButton:SetScript("OnClick", function()
+        if arg1 == "RightButton" then
+            -- Right click: Toggle OSD
+            if TWRA.ToggleOSD then
+                TWRA:ToggleOSD()
+            end
+        else
+            -- Left click: Toggle main window
+            if TWRA.ToggleMainFrame then
+                TWRA:ToggleMainFrame()
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Main window not available")
+            end
         end
     end)
     
-    -- Left-click to open main frame
-    button:SetScript("OnClick", function()
-        TWRA:ToggleMainFrame()
+    -- Make the button draggable
+    miniButton:RegisterForDrag("LeftButton")
+    miniButton:SetScript("OnDragStart", function()
+        this:LockHighlight()
+        this:StartMoving()
     end)
     
-    -- Functions to handle drag positioning around the minimap
-    local function UpdatePosition(angle)
-        -- Position the button based on angle and a set radius from minimap center
-        local radius = 80
-        local xpos = math.cos(angle) * radius
-        local ypos = math.sin(angle) * radius
-        button:ClearAllPoints()
-        button:SetPoint("CENTER", Minimap, "CENTER", xpos, ypos)
+    miniButton:SetScript("OnDragStop", function()
+        this:StopMovingOrSizing()
+        this:UnlockHighlight()
         
-        -- Save position
+        -- Calculate and save angle
+        local x, y = this:GetCenter()
+        local mx, my = Minimap:GetCenter()
+        local angle = math.deg(math.atan2(y - my, x - mx))
+        
+        -- Save to settings
         if TWRA_SavedVariables and TWRA_SavedVariables.options then
             TWRA_SavedVariables.options.minimapAngle = angle
         end
-    end
-    
-    -- Right-click drag handler
-    button:RegisterForDrag("RightButton")
-    button:SetScript("OnDragStart", function()
-        button:StartMoving()
-    end)
-    button:SetScript("OnDragStop", function()
-        button:StopMovingOrSizing()
-        
-        -- Calculate angle from minimap center
-        local x, y = button:GetCenter()
-        local minimapX, minimapY = Minimap:GetCenter()
-        if not x or not y or not minimapX or not minimapY then return end
-            
-        local angleRad = math.atan2(y - minimapY, x - minimapX)
-        UpdatePosition(angleRad)
     end)
     
-    -- Load saved position or set default
-    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.minimapAngle then
-        UpdatePosition(TWRA_SavedVariables.options.minimapAngle)
-    else
-        -- Default position at top of minimap
-        button:ClearAllPoints()
-        button:SetPoint("CENTER", Minimap, "CENTER", 0, 80)
-    end
+    -- Store reference in addon
+    self.minimapButton = miniButton
     
-    -- Store button reference
-    self.minimapButton = button
-    
-    -- Set initial visibility based on options
-    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.hideMinimapButton then
-        self:Debug("osd", "Minimap button hidden per saved options")
-        button:Hide()
-    else
-        -- Explicitly show the button
-        self:Debug("osd", "Showing minimap button")
-        button:Show()
-    end
-    
-    return button
+    self:Debug("osd", "Minimap button created")
+    return miniButton
 end
 
--- Show sync progress in the OSD
-function TWRA:ShowSyncProgressInOSD(progress, sender)
-    -- Create the sync OSD if it doesn't exist
-    if not self.syncOSD then
-        self.syncOSD = CreateFrame("Frame", "TWRA_SyncOSD", UIParent)
-        self.syncOSD:SetFrameStrata("HIGH")
-        self.syncOSD:SetWidth(300)
-        self.syncOSD:SetHeight(80)
-        
-        -- Add background
-        local bg = self.syncOSD:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture(0, 0, 0, 0.7)
-        
-        -- Add border
-        local border = CreateFrame("Frame", nil, self.syncOSD)
-        border:SetPoint("TOPLEFT", -2, 2)
-        border:SetPoint("BOTTOMRIGHT", 2, -2)
-        border:SetBackdrop({
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        
-        -- Title text
-        self.syncTitle = self.syncOSD:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        self.syncTitle:SetPoint("TOP", self.syncOSD, "TOP", 0, -10)
-        self.syncTitle:SetTextColor(0.41, 0.8, 0.94)  -- Light blue color
-        self.syncTitle:SetText("Updating Assignments")
-        
-        -- Source text
-        self.syncSource = self.syncOSD:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        self.syncSource:SetPoint("TOP", self.syncTitle, "BOTTOM", 0, -5)
-        self.syncSource:SetTextColor(1, 1, 1)
-        
-        -- Progress background
-        local progressBg = self.syncOSD:CreateTexture(nil, "ARTWORK")
-        progressBg:SetPoint("TOPLEFT", self.syncOSD, "TOPLEFT", 20, -45)
-        progressBg:SetPoint("RIGHT", self.syncOSD, "RIGHT", -20, 0)
-        progressBg:SetHeight(20)
-        progressBg:SetTexture(0.3, 0.3, 0.3, 0.8)
-        self.progressBg = progressBg
-        
-        -- Progress bar with fixed position
-        self.progressBar = self.syncOSD:CreateTexture(nil, "OVERLAY")
-        self.progressBar:SetPoint("TOPLEFT", progressBg, "TOPLEFT", 0, 0)
-        self.progressBar:SetHeight(progressBg:GetHeight())
-        self.progressBar:SetTexture(0.0, 0.44, 0.87, 0.8)  -- Blue color
-        
-        -- Progress text
-        self.progressText = self.syncOSD:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        self.progressText:SetPoint("CENTER", progressBg, "CENTER", 0, 0)
-        self.progressText:SetTextColor(1, 1, 1)
-        
-        -- Apply position and scale settings from regular OSD
-        self.syncOSD:ClearAllPoints()
-        self.syncOSD:SetPoint(self.OSD.point, UIParent, self.OSD.point, self.OSD.xOffset, self.OSD.yOffset)
-        self.syncOSD:SetScale(self.OSD.scale)
-        
-        -- Make sync OSD also movable (just like the regular OSD)
-        self.syncOSD:SetMovable(true)
-        self.syncOSD:EnableMouse(true)
-        self.syncOSD:RegisterForDrag("LeftButton")
-        self.syncOSD:SetScript("OnDragStart", function()
-            if not self.OSD.locked then
-                self.syncOSD:StartMoving()
-            end
-        end)
-        self.syncOSD:SetScript("OnDragStop", function()
-            self.syncOSD:StopMovingOrSizing()
-            -- Update position variables
-            local point, _, relPoint, xOffset, yOffset = self.syncOSD:GetPoint()
-            self.OSD.point = point
-            self.OSD.relPoint = relPoint
-            self.OSD.xOffset = xOffset
-            self.OSD.yOffset = yOffset
-            
-            -- Save to options
-            if TWRA_SavedVariables and TWRA_SavedVariables.options then
-                TWRA_SavedVariables.options.osdPoint = point
-                TWRA_SavedVariables.options.osdRelPoint = relPoint
-                TWRA_SavedVariables.options.osdXOffset = xOffset
-                TWRA_SavedVariables.options.osdYOffset = yOffset
-            end
-        end)
+-- Add the missing RegisterMessageHandler function
+function TWRA:RegisterMessageHandler(message, callback)
+    -- Initialize the message handlers table if it doesn't exist
+    self.messageHandlers = self.messageHandlers or {}
+    
+    -- Create array for this message type if needed
+    if not self.messageHandlers[message] then
+        self.messageHandlers[message] = {}
     end
     
-    -- Update source text
-    self.syncSource:SetText("Receiving from " .. sender)
-    
-    -- FIX: Use SetWidth with a direct percentage calculation
-    -- First store the total width
-    if not self.progressBgWidth then
-        -- Get the width directly
-        self.progressBgWidth = self.progressBg:GetWidth() 
-        -- If not valid, use a fallback measurement
-        if not self.progressBgWidth or self.progressBgWidth <= 0 then
-            self.progressBgWidth = 260  -- Fixed fallback width (300 - 40 padding)
-        end
-    end
-    
-    -- Calculate progress width based on percentage
-    local progressWidth = (self.progressBgWidth * progress) / 100
-    -- Apply the width directly
-    self.progressBar:SetWidth(progressWidth)
-    
-    -- Update progress text
-    self.progressText:SetText(progress .. "%")
-    
-    -- Show the sync OSD
-    self.syncOSD:Show()
+    -- Add the callback to the handlers array
+    table.insert(self.messageHandlers[message], callback)
+    self:Debug("general", "Registered message handler for: " .. message)
 end
 
--- Hide the sync progress OSD
-function TWRA:HideSyncProgressOSD()
-    if self.syncOSD then
-        self.syncOSD:Hide()
-    end
-end
-
--- OSD (On-Screen Display) Implementation for TWRA
-TWRA = TWRA or {}
-TWRA.UI = TWRA.UI or {}
-
--- Initialize OSD settings and frame
-function TWRA:InitOSD()
-    -- Create the OSD namespace if it doesn't exist
-    self.OSD = self.OSD or {}
+-- Also add the SendMessage function to complete the messaging system
+function TWRA:SendMessage(message, arg1, arg2, arg3, arg4, arg5)
+    -- Initialize the message handlers table if it doesn't exist
+    self.messageHandlers = self.messageHandlers or {}
     
-    -- Load settings from saved variables
-    self.OSD.locked = TWRA_SavedVariables.options.osdLocked or false
-    self.OSD.scale = TWRA_SavedVariables.options.osdScale or 1.0
-    self.OSD.duration = TWRA_SavedVariables.options.osdDuration or 2
-    self.OSD.lines = self.OSD.lines or {}
-    
-    -- Create the OSD frame if it doesn't exist
-    if not self.OSD.frame then
-        local frame = CreateFrame("Frame", "TWRA_OSDFrame", UIParent)
-        frame:SetFrameStrata("HIGH")
-        frame:SetWidth(400)
-        frame:SetHeight(100)
-        
-        -- Set initial position from saved variables or default to center
-        if TWRA_SavedVariables.options.osdPoint then
-            frame:SetPoint(
-                TWRA_SavedVariables.options.osdPoint,
-                UIParent,
-                TWRA_SavedVariables.options.osdPoint,
-                TWRA_SavedVariables.options.osdXOffset or 0,
-                TWRA_SavedVariables.options.osdYOffset or 100
-            )
-        else
-            frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-        end
-        
-        -- Set scale
-        frame:SetScale(self.OSD.scale)
-        
-        -- Add background
-        local bg = frame:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture(0, 0, 0, 0.7)
-        
-        -- Add border
-        local border = CreateFrame("Frame", nil, frame)
-        border:SetPoint("TOPLEFT", -2, 2)
-        border:SetPoint("BOTTOMRIGHT", 2, -2)
-        border:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        
-        -- Create text lines container
-        local textContainer = CreateFrame("Frame", nil, frame)
-        textContainer:SetPoint("TOPLEFT", 10, -10)
-        textContainer:SetPoint("BOTTOMRIGHT", -10, 10)
-        
-        -- Store frame references
-        self.OSD.frame = frame
-        self.OSD.bg = bg
-        self.OSD.border = border
-        self.OSD.textContainer = textContainer
-        self.OSD.textLines = {}
-        
-        -- Make the frame movable
-        frame:SetMovable(true)
-        frame:EnableMouse(not self.OSD.locked)
-        frame:RegisterForDrag("LeftButton")
-        frame:SetScript("OnDragStart", function()
-            if not self.OSD.locked then
-                this:StartMoving()
-            end
-        end)
-        frame:SetScript("OnDragStop", function()
-            this:StopMovingOrSizing()
-            
-            -- Save position
-            local point, _, _, xOffset, yOffset = this:GetPoint()
-            TWRA_SavedVariables.options.osdPoint = point
-            TWRA_SavedVariables.options.osdXOffset = xOffset
-            TWRA_SavedVariables.options.osdYOffset = yOffset
-        end)
-        
-        -- Initially hide the frame
-        frame:Hide()
+    -- Check if we have any handlers for this message
+    if not self.messageHandlers[message] then
+        return -- No handlers registered
     end
     
-    -- Update OSD lock state
-    self:UpdateOSDLock()
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD system initialized")
-end
-
--- Update OSD lock state
-function TWRA:UpdateOSDLock()
-    if not self.OSD or not self.OSD.frame then return end
-    self.OSD.frame:EnableMouse(not self.OSD.locked)
-end
-
--- Reset OSD position to center
-function TWRA:ResetOSDPosition()
-    if not self.OSD or not self.OSD.frame then return end
+    self:Debug("general", "Sending message: " .. message)
     
-    -- Reset position
-    self.OSD.frame:ClearAllPoints()
-    self.OSD.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-    
-    -- Save new position
-    TWRA_SavedVariables.options.osdPoint = "CENTER"
-    TWRA_SavedVariables.options.osdXOffset = 0
-    TWRA_SavedVariables.options.osdYOffset = 100
-    
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD position reset")
-end
-
--- Toggle OSD visibility
-function TWRA:ToggleOSD(show)
-    -- Create OSD if it doesn't exist
-    if not self.OSD or not self.OSD.frame then
-        self:InitOSD()
+    -- Call each registered handler with the arguments
+    for _, callback in ipairs(self.messageHandlers[message]) do
+        -- Use explicit arguments instead of varargs (... unpacking)
+        callback(arg1, arg2, arg3, arg4, arg5)
     end
-    
-    if show == nil then
-        -- Toggle visibility
-        show = not self.OSD.frame:IsShown()
-    end
-    
-    if show then
-        -- FIX: Always set content when showing OSD
-        self:SetDefaultOSDContent()
-        self:UpdateOSDContent()
-        self.OSD.frame:Show()
-    else
-        -- Hide the OSD
-        self.OSD.frame:Hide()
-    end
-end
-
--- FIX: Add function to set default content if none exists
-function TWRA:SetDefaultOSDContent()
-    -- Make sure OSD structure exists
-    self.OSD = self.OSD or {}
-    
-    -- If no content exists or it's empty, add default content
-    if not self.OSD.lines or table.getn(self.OSD.lines) == 0 then
-        -- Try to get current section info
-        local sectionName, currentIndex, totalSections
-        
-        if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-            currentIndex = self.navigation.currentIndex
-            sectionName = self.navigation.handlers[currentIndex]
-            totalSections = table.getn(self.navigation.handlers)
-        end
-        
-        if sectionName then
-            -- We have a section, show its info
-            self.OSD.lines = {
-                { text = sectionName, color = {1, 0.82, 0} },
-                { text = "Section " .. (currentIndex or "?") .. " of " .. (totalSections or "?"), color = {1, 1, 1} }
-            }
-            
-            -- Try to find player's assignment
-            self:AddPlayerAssignmentToOSD(sectionName)
-        else 
-            -- No section info available, show default message
-            self.OSD.lines = {
-                { text = "TWRA OSD", color = {1, 0.82, 0} },
-                { text = "No active section selected", color = {1, 1, 1} }
-            }
-        end
-    end
-end
-
--- FIX: Add helper function to find player assignments
-function TWRA:AddPlayerAssignmentToOSD(sectionName)
-    -- Ensure we have data
-    if not self.fullData then return end
-    
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    
-    -- Look for player in the current section
-    for i, row in ipairs(self.fullData) do
-        if row[1] == sectionName then
-            -- Skip header rows (with Icon in column 2)
-            if row[2] ~= "Icon" then
-                for j = 4, table.getn(row) do  -- Start from column 4 (first role)
-                    if row[j] == playerName then
-                        -- Get role name from header
-                        local roleName = "Unknown Role"
-                        local targetName = row[3] or "Unknown Target"
-                        
-                        -- Find header row to get role name
-                        for k, headerRow in ipairs(self.fullData) do
-                            if headerRow[1] == sectionName and headerRow[2] == "Icon" then
-                                roleName = headerRow[j] or "Unknown Role"
-                                break
-                            end
-                        end
-                        
-                        -- Add assignment to OSD content
-                        table.insert(self.OSD.lines, {
-                            text = "Your assignment: " .. roleName .. " on " .. targetName,
-                            color = {0.8, 1, 0.8}
-                        })
-                        
-                        return  -- Found assignment, exit function
-                    end
-                end
-            end
-        end
-    end
-    
-    -- If reached here, no assignment found
-    table.insert(self.OSD.lines, {
-        text = "No specific assignment found",
-        color = {0.8, 0.8, 0.8}
-    })
-end
-
--- Update the content displayed in the OSD
-function TWRA:UpdateOSDContent()
-    if not self.OSD or not self.OSD.frame then return end
-    
-    -- Clear existing text lines
-    for _, line in pairs(self.OSD.textLines or {}) do
-        if line then
-            line:Hide()
-            line:SetParent(nil)
-        end
-    end
-    self.OSD.textLines = {}
-    
-    -- Create new text lines
-    local yOffset = 0
-    local lineHeight = 20
-    
-    -- Determine the maximum height needed
-    local contentHeight = table.getn(self.OSD.lines or {}) * lineHeight
-    self.OSD.frame:SetHeight(contentHeight + 20) -- Add padding
-    
-    -- Create text for each line
-    for i, lineData in ipairs(self.OSD.lines or {}) do
-        local lineText = self.OSD.textContainer:CreateFontString(nil, "OVERLAY", 
-            i == 1 and "GameFontNormalLarge" or "GameFontNormal")
-        
-        lineText:SetPoint("TOP", self.OSD.textContainer, "TOP", 0, yOffset)
-        lineText:SetWidth(self.OSD.textContainer:GetWidth())
-        lineText:SetText(lineData.text or "")
-        lineText:SetJustifyH("CENTER")
-        
-        -- Set color if provided
-        if lineData.color then
-            lineText:SetTextColor(lineData.color[1], lineData.color[2], lineData.color[3], lineData.color[4] or 1)
-        end
-        
-        table.insert(self.OSD.textLines, lineText)
-        yOffset = yOffset - lineHeight
-    end
-end
-
--- Test the OSD
-function TWRA:TestOSD()
-    -- Set up test content
-    self.OSD = self.OSD or {}
-    self.OSD.lines = {
-        { text = "OSD Test", color = {1, 0.82, 0} },
-        { text = "Display working correctly", color = {1, 1, 1} }
-    }
-    
-    -- Show the OSD
-    self:ToggleOSD(true)
-    
-    -- Hide after the configured duration
-    local duration = (self.OSD and self.OSD.duration) or 2
-    if self.osdHideTimer then
-        self:CancelTimer(self.osdHideTimer)
-    end
-    
-    self.osdHideTimer = self:ScheduleTimer(function() 
-        self:ToggleOSD(false)
-    end, duration)
-end
-
--- Show section navigation in OSD
-function TWRA:ShowOSD(sectionName, currentIndex, totalSections)
-    -- Create OSD if it doesn't exist
-    if not self.OSD or not self.OSD.frame then
-        self:InitOSD()
-    end
-    
-    self.OSD = self.OSD or {}
-    self.OSD.lines = {
-        { text = sectionName or "Unknown Section", color = {1, 0.82, 0} },
-    }
-    
-    -- Add section count if provided
-    if currentIndex and totalSections then
-        table.insert(self.OSD.lines, 
-            { text = "Section " .. currentIndex .. " of " .. totalSections, color = {1, 1, 1} })
-    end
-    
-    -- Add player's assignment if available
-    if sectionName then
-        self:AddPlayerAssignmentToOSD(sectionName)
-    end
-    
-    -- Show the OSD
-    self:ToggleOSD(true)
-    
-    -- Hide after the configured duration
-    local duration = (self.OSD and self.OSD.duration) or 2
-    if self.osdHideTimer then
-        self:CancelTimer(self.osdHideTimer)
-    end
-    
-    self.osdHideTimer = self:ScheduleTimer(function() 
-        self:ToggleOSD(false)
-    end, duration)
-end
-
--- REMOVE: Apply class colors to text
-function TWRA:ApplyPlayerNameColoring(nameElement, playerName, playerClass, isInRaid, isOnline)
-    -- This should be replaced with:
-    -- if TWRA.UI and TWRA.UI.ApplyClassColoring then
-    --     TWRA.UI:ApplyClassColoring(nameElement, playerName, playerClass, isInRaid, isOnline)
-    -- end
-end
-
--- Fix the function with proper structure to close the for loop
-function TWRA:ProcessTarget(unitID)
-    -- Get the unit's raid target marker
-    local index = GetRaidTargetIndex(unitID)
-    if not index then return end
-    
-    -- Get the marker name from the index
-    local markerName = self.GetMarkerNameFromIndex(index)
-    if not markerName then return end
-    
-    -- Check if we can get the target NPC name
-    local targetName = UnitName(unitID)
-    if not targetName then return end
-    
-    -- Skip non-NPC targets
-    if UnitIsPlayer(unitID) then return end
-    
-    -- Find sections with this target and marker
-    for sectionName, sectionData in pairs(self.cachedMarkerData) do
-        for iconName, targets in pairs(sectionData) do
-            if iconName == markerName then
-                for _, targetData in ipairs(targets) do
-                    -- Check if target name matches
-                    if targetData.name == targetName then
-                        -- We found a match - navigate to this section
-                        if sectionName ~= self.lastMatchedSection then
-                            self:Debug("auto", "Found match for " .. markerName .. " " .. targetName .. " in section " .. sectionName)
-                            self.lastMatchedSection = sectionName
-                            
-                            -- Navigate to this section
-                            self:NavigateToSection(sectionName)
-                            return true
-                        end
-                        return false -- Already on this section
-                    end
-                end
-            end
-        end
-    end
-    
-    -- No match found
-    return false
 end

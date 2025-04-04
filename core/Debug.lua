@@ -1,4 +1,250 @@
 -- TWRA Debug System
+-- Manages debug messages with categories and configurable verbosity
+
+TWRA = TWRA or {}
+
+-- Debug category definitions 
+TWRA.DEBUG_CATEGORIES = {
+    general = { name = "General", default = true, description = "General debug messages" },
+    ui = { name = "UI", default = true, description = "User interface events and updates" },
+    sync = { name = "Sync", default = true, description = "Synchronization messages" },
+    data = { name = "Data", default = false, description = "Detailed data processing messages" },
+    nav = { name = "Navigation", default = true, description = "Section navigation events" },
+    auto = { name = "Auto", default = true, description = "Automatic features" },
+    tank = { name = "Tank", default = true, description = "Tank assignments" },
+    osd = { name = "OSD", default = true, description = "On-screen display messages" },
+    error = { name = "Error", default = true, description = "Errors and warnings" }
+}
+
+-- Debug level definitions
+TWRA.DEBUG_LEVELS = {
+    OFF = 0,    -- No debug output
+    ERROR = 1,  -- Only errors
+    WARN = 2,   -- Errors and warnings
+    INFO = 3,   -- Normal information 
+    VERBOSE = 4 -- All messages including detailed logs
+}
+
+-- Initialize debug settings
+function TWRA:InitDebug()
+    -- Create default settings if they don't exist
+    if not TWRA_SavedVariables.debug then
+        TWRA_SavedVariables.debug = {
+            level = self.DEBUG_LEVELS.INFO,  -- Default to INFO level
+            categories = {},                 -- Will be filled with default values
+            timestamp = true,                -- Show timestamps by default
+            frameNum = false,                -- Don't show frame numbers by default
+            suppressCount = 0                -- Count of suppressed messages
+        }
+        
+        -- Set default category values
+        for category, info in pairs(self.DEBUG_CATEGORIES) do
+            TWRA_SavedVariables.debug.categories[category] = info.default
+        end
+    end
+    
+    -- Create debug frame if needed
+    if not self.debugFrame then
+        self.debugFrame = CreateFrame("Frame")
+        self.debugFrame.lastUpdate = GetTime()
+        self.debugFrame.frameCount = 0
+        self.debugFrame:SetScript("OnUpdate", function()
+            -- Count frames for performance debugging
+            self.debugFrame.frameCount = self.debugFrame.frameCount + 1
+            
+            -- Reset counter every second
+            if GetTime() - self.debugFrame.lastUpdate > 1 then
+                self.debugFrame.lastUpdate = GetTime()
+                self.debugFrame.frameCount = 0
+            end
+        end)
+    end
+    
+    -- Reset suppressed message count
+    TWRA_SavedVariables.debug.suppressCount = 0
+    
+    self:Debug("general", "Debug system initialized")
+end
+
+-- Main debug function
+function TWRA:Debug(category, message, level)
+    -- Default level if not specified
+    level = level or self.DEBUG_LEVELS.INFO
+    
+    -- Exit immediately if debugging is disabled or if level is too verbose
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA|r: " .. message)
+        return
+    end
+    
+    -- Exit if debug level is below the requested level
+    if TWRA_SavedVariables.debug.level < level then
+        TWRA_SavedVariables.debug.suppressCount = TWRA_SavedVariables.debug.suppressCount + 1
+        return
+    end
+    
+    -- Exit if category is disabled
+    if category ~= "error" and TWRA_SavedVariables.debug.categories[category] == false then
+        TWRA_SavedVariables.debug.suppressCount = TWRA_SavedVariables.debug.suppressCount + 1
+        return
+    end
+    
+    -- Format message with optional components
+    local msgPrefix = "|cFF33FF99TWRA|r"
+    
+    -- Add timestamp if enabled
+    if TWRA_SavedVariables.debug.timestamp then
+        local time = date("%H:%M:%S")
+        msgPrefix = msgPrefix .. " [" .. time .. "]"
+    end
+    
+    -- Add frame number if enabled
+    if TWRA_SavedVariables.debug.frameNum and self.debugFrame then
+        msgPrefix = msgPrefix .. " [" .. self.debugFrame.frameCount .. "]"
+    end
+    
+    -- Add category
+    local categoryInfo = self.DEBUG_CATEGORIES[category] or {}
+    local categoryName = categoryInfo.name or category
+    
+    -- Color code based on level/category
+    local categoryColor = "|cFFAAAAFF"
+    if category == "error" then
+        categoryColor = "|cFFFF3333"
+    elseif level == self.DEBUG_LEVELS.WARN then
+        categoryColor = "|cFFFFAA33"
+    end
+    
+    msgPrefix = msgPrefix .. " " .. categoryColor .. "[" .. categoryName .. "]|r:"
+    
+    -- Add final message
+    local fullMessage = msgPrefix .. " " .. message
+    
+    -- Output to chat frame
+    DEFAULT_CHAT_FRAME:AddMessage(fullMessage)
+end
+
+-- Error logging - always shown even at minimal debug levels
+function TWRA:Error(message)
+    self:Debug("error", message, self.DEBUG_LEVELS.ERROR)
+end
+
+-- Warning logging - shown at WARN level and above
+function TWRA:Warn(category, message)
+    self:Debug(category, message, self.DEBUG_LEVELS.WARN)
+end
+
+-- Info logging - shown at INFO level and above (default)
+function TWRA:Info(category, message)
+    self:Debug(category, self.DEBUG_LEVELS.INFO)
+end
+
+-- Verbose logging - only shown at VERBOSE level
+function TWRA:Verbose(category, message)
+    self:Debug(category, message, self.DEBUG_LEVELS.VERBOSE)
+end
+
+-- Set debug level
+function TWRA:SetDebugLevel(level)
+    if not TWRA_SavedVariables.debug then 
+        self:InitDebug()
+    end
+    
+    TWRA_SavedVariables.debug.level = level
+    self:Debug("general", "Debug level set to " .. level)
+end
+
+-- Enable/disable debug category
+function TWRA:SetDebugCategory(category, enabled)
+    if not TWRA_SavedVariables.debug then
+        self:InitDebug()
+    end
+    
+    if self.DEBUG_CATEGORIES[category] then
+        TWRA_SavedVariables.debug.categories[category] = enabled
+        self:Debug("general", "Debug category '" .. category .. "' " .. (enabled and "enabled" or "disabled"))
+    else
+        self:Error("Unknown debug category: " .. tostring(category))
+    end
+end
+
+-- Show debug statistics
+function TWRA:ShowDebugStats()
+    local stats = {
+        "Debug Level: " .. TWRA_SavedVariables.debug.level,
+        "Suppressed Messages: " .. TWRA_SavedVariables.debug.suppressCount,
+        "Active Categories:"
+    }
+    
+    for category, enabled in pairs(TWRA_SavedVariables.debug.categories) do
+        if enabled then
+            table.insert(stats, "  - " .. category)
+        end
+    end
+    
+    for _, line in ipairs(stats) do
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug|r: " .. line)
+    end
+end
+
+-- Add debug slash command
+SLASH_TWRADEBUG1 = "/twradebug"
+SlashCmdList["TWRADEBUG"] = function(msg)
+    local args = {}
+    for arg in string.gmatch(msg, "%S+") do
+        table.insert(args, string.lower(arg))
+    end
+    
+    if args[1] == "level" then
+        if not args[2] then
+            TWRA:Debug("general", "Current debug level: " .. TWRA_SavedVariables.debug.level)
+            return
+        end
+        
+        local level = tonumber(args[2])
+        if level and level >= 0 and level <= 4 then
+            TWRA:SetDebugLevel(level)
+        else
+            TWRA:Error("Invalid debug level. Use 0-4 (OFF, ERROR, WARN, INFO, VERBOSE)")
+        end
+        
+    elseif args[1] == "enable" and args[2] then
+        TWRA:SetDebugCategory(args[2], true)
+        
+    elseif args[1] == "disable" and args[2] then
+        TWRA:SetDebugCategory(args[2], false)
+        
+    elseif args[1] == "timestamp" then
+        TWRA_SavedVariables.debug.timestamp = not TWRA_SavedVariables.debug.timestamp
+        TWRA:Debug("general", "Timestamps " .. (TWRA_SavedVariables.debug.timestamp and "enabled" or "disabled"))
+        
+    elseif args[1] == "framenum" then
+        TWRA_SavedVariables.debug.frameNum = not TWRA_SavedVariables.debug.frameNum
+        TWRA:Debug("general", "Frame numbers " .. (TWRA_SavedVariables.debug.frameNum and "enabled" or "disabled"))
+        
+    elseif args[1] == "stats" then
+        TWRA:ShowDebugStats()
+        
+    elseif args[1] == "categories" then
+        TWRA:Debug("general", "Available debug categories:")
+        for cat, info in pairs(TWRA.DEBUG_CATEGORIES) do
+            local status = TWRA_SavedVariables.debug.categories[cat]
+            status = status == nil and info.default or status
+            TWRA:Debug("general", "  - " .. cat .. ": " .. (status and "enabled" or "disabled") .. " (" .. info.description .. ")")
+        end
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug Commands|r:")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twradebug level [0-4] - Set debug level (0=Off, 1=Error, 2=Warn, 3=Info, 4=Verbose)")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twradebug enable <category> - Enable a debug category")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twradebug disable <category> - Disable a debug category")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twradebug categories - List all categories")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twradebug timestamp - Toggle timestamps")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twradebug framenum - Toggle frame numbers")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twradebug stats - Show debug statistics")
+    end
+end
+
+-- TWRA Debug System
 TWRA = TWRA or {}
 TWRA.DEBUG = TWRA.DEBUG or {}
 

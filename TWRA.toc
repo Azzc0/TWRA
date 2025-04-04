@@ -1,19 +1,30 @@
 ## Interface: 11200
-## Title: Turtlewow Raid Assignments
-## Notes: Announce assigns (and active tanks) in game from a spreadsheet
-## Dependencies: 
-## Version: 0.1
+## Title: TWRA - Turtle WoW Raid Assignments
+## Notes: Raid assignment management tool for Turtle WoW
 ## Author: Azzco
+## Version: 0.1
 ## SavedVariables: TWRA_SavedVariables
-Bindings.xml
-Example.lua
-Debug.lua
-Base64.lua
-UIUtils.lua
-Sync.lua
-AutoNavigate.lua
-Options.lua
-Bindings.lua
+
+# Core modules
+core\Debug.lua
+core\Constants.lua
+core\Utils.lua
+core\Base64.lua
 TWRA.lua
-Frame.lua
-OSD.lua
+core\Core.lua
+core\DataProcessing.lua
+
+# UI modules
+ui\UIUtils.lua
+ui\Frame.lua
+ui\OSD.lua
+ui\Options.lua
+
+# Feature modules
+features\AutoTanks.lua
+features\AutoNavigate.lua
+
+# Utility modules
+sync\SyncHandlers.lua
+sync\ChunkManager.lua
+sync\Sync.lua

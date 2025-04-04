@@ -5,52 +5,30 @@ TWRA.UI = TWRA.UI or {}
 -- Used in: Frame.lua, OSD.lua, ui/Options/DebugOptions.lua
 -- Apply class coloring to a player's name based on status
 function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, isOnline)
-    -- If empty name, just return
-    if not playerNameOrClass or playerNameOrClass == "" then return end
+    -- Safe parameter checks
+    if not textObj or not playerName then 
+        return 
+    end
     
-    -- Handle class groups (like "MAGE" or "WARLOCK")
-    if TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[playerNameOrClass] then
-        local className = TWRA.CLASS_GROUP_NAMES[playerNameOrClass]
-        local isClassInRaid = TWRA:HasClassInRaid(className)
-        
-        if isClassInRaid then
-            -- Use class color
-            if TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[className] then
-                local color = TWRA.VANILLA_CLASS_COLORS[className]
-                textElement:SetTextColor(color.r, color.g, color.b)
-            end
-        else
-            -- Red for missing class
-            textElement:SetTextColor(1, 0.3, 0.3)
-        end
-    else
-        -- Handle individual players
-        local inRaid, online = TWRA:GetPlayerStatus(playerNameOrClass)
-        
-        if inRaid then
-            if not online then
-                -- Gray for offline players
-                textElement:SetTextColor(0.5, 0.5, 0.5)
-            else
-                -- Get player's class for coloring
-                local playerClass = TWRA:GetPlayerClass(playerNameOrClass)
-                
-                if playerClass and TWRA.VANILLA_CLASS_COLORS then
-                    playerClass = string.upper(playerClass)
-                    local color = TWRA.VANILLA_CLASS_COLORS[playerClass]
-                    if color then
-                        textElement:SetTextColor(color.r, color.g, color.b)
-                    else
-                        textElement:SetTextColor(1, 1, 1)  -- White if no color found
-                    end
-                else
-                    textElement:SetTextColor(1, 1, 1)  -- White if no class found
-                end
-            end
-        else
-            -- Red for players not in raid
-            textElement:SetTextColor(1, 0.3, 0.3)
-        end
+    -- Default colors
+    local r, g, b = 1, 1, 1
+    
+    -- Apply coloring based on status
+    if not isInRaid then
+        -- Red for not in raid
+        r, g, b = 1, 0.3, 0.3
+    elseif not isOnline then
+        -- Gray for offline
+        r, g, b = 0.5, 0.5, 0.5
+    elseif playerClass and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[playerClass] then
+        -- Class color
+        local color = TWRA.VANILLA_CLASS_COLORS[playerClass]
+        r, g, b = color.r, color.g, color.b
+    end
+    
+    -- Apply the color to the text element
+    if textObj.SetTextColor then
+        textObj:SetTextColor(r, g, b)
     end
 end
 

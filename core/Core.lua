@@ -1,6 +1,5 @@
 -- Turtle WoW Raid Assignments (TWRA)
 -- Core initialization file
--- New comment from a new commit
 
 TWRA = TWRA or {}
 
@@ -22,7 +21,10 @@ function TWRA:OnLoad()
         TWRA_SavedVariables.options.hideFrameByDefault = true
     end
     
-    -- Debug system is now initialized by Debug.lua
+    -- Initialize Debug system
+    if self.InitDebug then
+        self:InitDebug()
+    end
     
     -- Ensure all needed namespaces exist
     TWRA.UI = TWRA.UI or {}
@@ -53,63 +55,61 @@ end
 
 function TWRA:OnEvent()
     if event == "ADDON_LOADED" and arg1 == "TWRA" then
-        -- Debug system is now initialized by Debug.lua
-        
         -- Initialize options
         if self.InitOptions then
             self:Debug("general", "Initializing options")
             self:InitOptions()
         else
-            self:Debug("error", "InitOptions function not found")
+            self:Error("InitOptions function not found")
         end
         
         -- COMPLETELY DISABLE InterfaceOptions integration
         -- This is the most radical approach but should resolve the issue
         
-        -- 1. Override the BlizzardOptionsPanel_OnLoad function for our addon
-        self.originalBlizzardOptionsPanel_OnLoad = BlizzardOptionsPanel_OnLoad
-        _G.BlizzardOptionsPanel_OnLoad = function(panel, ...)
-            if panel and panel:GetName() and string.find(panel:GetName(), "TWRA") then
-                self:Debug("ui", "Blocked BlizzardOptionsPanel_OnLoad for " .. panel:GetName())
-                return -- Don't process our panels
-            end
-            -- Call original for other addons
-            self.originalBlizzardOptionsPanel_OnLoad(panel, ...)
-        end
+        -- -- 1. Override the BlizzardOptionsPanel_OnLoad function for our addon
+        -- self.originalBlizzardOptionsPanel_OnLoad = BlizzardOptionsPanel_OnLoad
+        -- _G.BlizzardOptionsPanel_OnLoad = function(panel, ...)
+        --     if panel and panel:GetName() and string.find(panel:GetName(), "TWRA") then
+        --         self:Debug("ui", "Blocked BlizzardOptionsPanel_OnLoad for " .. panel:GetName())
+        --         return -- Don't process our panels
+        --     end
+        --     -- Call original for other addons
+        --     self.originalBlizzardOptionsPanel_OnLoad(panel, ...)
+        -- end
         
-        -- 2. Intercept the InterfaceOptionsFrame_OpenToCategory function
-        if InterfaceOptionsFrame_OpenToCategory then
-            self.originalInterfaceOptionsFrame_OpenToCategory = InterfaceOptionsFrame_OpenToCategory
-            _G.InterfaceOptionsFrame_OpenToCategory = function(panel)
-                if type(panel) == "string" and string.find(panel, "TWRA") then
-                    self:Debug("ui", "Redirecting options panel open to our own UI")
-                    self:ToggleMainFrame()
-                    self:ShowOptionsView()
-                    return
-                elseif panel and panel.name and string.find(panel.name, "TWRA") then
-                    self:Debug("ui", "Redirecting options panel object to our own UI")
-                    self:ToggleMainFrame()
-                    self:ShowOptionsView()
-                    return
-                end
-                -- Call original for other addons
-                self.originalInterfaceOptionsFrame_OpenToCategory(panel)
-            end
-        end
+        -- -- 2. Intercept the InterfaceOptionsFrame_OpenToCategory function
+        -- if InterfaceOptionsFrame_OpenToCategory then
+        --     self.originalInterfaceOptionsFrame_OpenToCategory = InterfaceOptionsFrame_OpenToCategory
+        --     _G.InterfaceOptionsFrame_OpenToCategory = function(panel)
+        --         if type(panel) == "string" and string.find(panel, "TWRA") then
+        --             self:Debug("ui", "Redirecting options panel open to our own UI")
+        --             self:ToggleMainFrame()
+        --             self:ShowOptionsView()
+        --             return
+        --         elseif panel and panel.name and string.find(panel.name, "TWRA") then
+        --             self:Debug("ui", "Redirecting options panel object to our own UI")
+        --             self:ToggleMainFrame()
+        --             self:ShowOptionsView()
+        --             return
+        --         end
+        --         -- Call original for other addons
+        --         self.originalInterfaceOptionsFrame_OpenToCategory(panel)
+        --     end
+        -- end
         
-        -- 3. Force any existing TWRA options panels to be detached
-        self:ScheduleTimer(function()
-            if InterfaceOptionsFrame and InterfaceOptionsFramePanelContainer then
-                for i = 1, InterfaceOptionsFramePanelContainer:GetNumChildren() do
-                    local child = select(i, InterfaceOptionsFramePanelContainer:GetChildren())
-                    if child and child.name and string.find(child.name, "TWRA") then
-                        child:Hide()
-                        child:SetParent(nil)
-                        self:Debug("ui", "Detached InterfaceOptions panel: " .. child.name)
-                    end
-                end
-            end
-        end, 0.1)
+        -- -- 3. Force any existing TWRA options panels to be detached
+        -- self:ScheduleTimer(function()
+        --     if InterfaceOptionsFrame and InterfaceOptionsFramePanelContainer then
+        --         for i = 1, InterfaceOptionsFramePanelContainer:GetNumChildren() do
+        --             local child = select(i, InterfaceOptionsFramePanelContainer:GetChildren())
+        --             if child and child.name and string.find(child.name, "TWRA") then
+        --                 child:Hide()
+        --                 child:SetParent(nil)
+        --                 self:Debug("ui", "Detached InterfaceOptions panel: " .. tostring(child.name))
+        --             end
+        --         end
+        --     end
+        -- end, 0.1)
         
         -- Add emergency UI reset function
         self.ResetUI = function()
@@ -287,7 +287,7 @@ function TWRA:ToggleMainFrame()
                 self:Debug("ui", "Frame created and shown")
             end
         else
-            self:Debug("error", "Unable to create main frame")
+            self:Error("Unable to create main frame")
         end
     else
         -- Simple toggle - if shown, hide; if hidden, show
@@ -440,6 +440,7 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     
     -- Save current section
     self:SaveCurrentSection()
+    self:Debug("nav", "Navigated to section " .. sectionIndex .. " (" .. sectionName .. ")")
     
     -- Update display based on current view
     if self.currentView == "options" then
@@ -569,7 +570,11 @@ end
 if not TWRA.Debug then
     function TWRA:Debug(category, message)
         -- Simple debug output if the full debug system isn't loaded yet
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: " .. (message or "nil"))
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [" .. category .. "]:|r " .. (message or "nil"))
+    end
+    
+    function TWRA:Error(message)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333TWRA Error:|r " .. (message or "nil"))
     end
 end
 

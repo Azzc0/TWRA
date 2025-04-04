@@ -74,17 +74,15 @@ function TWRA:RebuildNavigation()
     end
     
     -- Debug output to verify sections
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Built " .. table.getn(self.navigation.handlers) .. " sections: " .. 
+    self:Debug("nav", "Built " .. table.getn(self.navigation.handlers) .. " sections: " .. 
         table.concat(self.navigation.handlers, ", "))
     
     return self.navigation.handlers
 end
 
-
-
 -- Helper function to update UI elements based on current data
 function TWRA:UpdateUI()
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Updating UI")
+    self:Debug("ui", "Updating UI")
     
     -- Call UI update functions directly
     if self.UpdateNavigationButtons then
@@ -94,7 +92,7 @@ function TWRA:UpdateUI()
     if self.DisplayCurrentSection then
         self:DisplayCurrentSection()
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: ERROR - DisplayCurrentSection not found!")
+        self:Error("DisplayCurrentSection not found!")
     end
     
     -- Try to update any visible UI elements
@@ -251,6 +249,8 @@ function TWRA:Initialize()
                 self.pendingNavigation = nil
             end
             
+            self:Debug("general", "Addon initialization complete")
+            
         -- Rest of the function remains unchanged
         elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
             -- Handle group composition changes
@@ -279,6 +279,12 @@ function TWRA:Initialize()
 
     -- Initialize OSD
     if self.InitOSD then self:InitOSD() end
+    
+    -- Initialize Debug system (must be early)
+    if self.InitDebug then 
+        self:InitDebug() 
+        self:Debug("general", "Debug system initialized")
+    end
 end
 
 -- In SaveAssignments function
@@ -354,7 +360,7 @@ end
 -- Improved Base64 decoding function with support for special characters
 function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     if not base64Str then 
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Decode failed - nil string")
+        self:Error("Decode failed - nil string")
         return nil 
     end
     
@@ -364,7 +370,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     base64Str = string.gsub(base64Str, "\r", "")
     base64Str = string.gsub(base64Str, "\t", "")
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Decoding base64 string")
+    self:Debug("data", "Decoding base64 string")
     
     -- Convert Base64 to binary string
     local luaCode = ""
@@ -396,8 +402,8 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         end
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Decoded string length: " .. string.len(luaCode))
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: String begins with: " .. string.sub(luaCode, 1, 40) .. "...")
+    self:Debug("data", "Decoded string length: " .. string.len(luaCode))
+    self:Debug("data", "String begins with: " .. string.sub(luaCode, 1, 40) .. "...")
     
     -- The decoded string may contain Unicode escape sequences like \u00e5
     -- We need to convert these to actual UTF-8 characters
@@ -426,23 +432,23 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     -- Execute the Lua code to get the table
     local func, err = loadstring(luaCode)
     if not func then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Error parsing Lua code: " .. (err or "unknown error"))
+        self:Error("Error parsing Lua code: " .. (err or "unknown error"))
         return nil
     end
     
     -- Execute the function to get the table
     local success, result = pcall(func)
     if not success then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Error executing Lua code: " .. (result or "unknown error"))
+        self:Error("Error executing Lua code: " .. (result or "unknown error"))
         return nil
     end
     
     -- If we get here, we have a valid table
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Successfully decoded table with " .. table.getn(result) .. " entries")
+    self:Debug("data", "Successfully decoded table with " .. table.getn(result) .. " entries")
     
     -- If this is a sync operation with timestamp, handle it directly
     if syncTimestamp then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Using provided timestamp: " .. syncTimestamp)
+        self:Debug("sync", "Using provided timestamp: " .. syncTimestamp)
         -- Store data with sync timestamp
         self:SaveAssignments(result, base64Str, syncTimestamp, noAnnounce or true)
     end
@@ -508,20 +514,21 @@ function TWRA:IsORA2Available()
     return oRA and oRA.maintanktable ~= nil  -- Changed to lowercase
 end
 
+-- Update to use Debug
 function TWRA:UpdateTanks()
     -- Debug output our sync state
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Updating tanks for section " .. 
+    self:Debug("tank", "Updating tanks for section " .. 
         self.navigation.handlers[self.navigation.currentIndex])
     
     -- Check if oRA2 is available
     if not self:IsORA2Available() then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: oRA2 is required for tank management")
+        self:Warn("tank", "oRA2 is required for tank management")
         return
     end
     
     -- Check if we have data
     if not self.fullData or table.getn(self.fullData) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No data to update tanks from")
+        self:Warn("tank", "No data to update tanks from")
         return
     end
     
@@ -1189,32 +1196,34 @@ end
 function TWRA:ToggleMainFrame()
     -- Make sure frame exists
     if not self.mainFrame then
+        self:Debug("ui", "Main frame doesn't exist - creating it")
         if self.CreateMainFrame then
             self:CreateMainFrame()
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Error - Unable to create main frame")
+            self:Error("Unable to create main frame - function not found")
             return
         end
     end
     
     if self.mainFrame:IsShown() then
         self.mainFrame:Hide()
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Window hidden")
+        self:Debug("ui", "Window hidden")
     else
         self.mainFrame:Show()
         
-        -- Force update content if first time opening
-        if not self.initialized then
-            self:LoadSavedAssignments()
-            self.initialized = true
-        end
+        -- Debug current view status
+        self:Debug("ui", "Current view is: " .. (self.currentView or "nil"))
         
-        -- Make sure we're showing main view, not options
+        -- Force update content
         if self.currentView == "options" then
+            self:Debug("ui", "Switching to main view from options view")
             self:ShowMainView()
+        else
+            self:Debug("ui", "Already in main view - refreshing content")
+            self:RefreshAssignmentTable()
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Window shown")
+        self:Debug("ui", "Window shown")
     end
 end
 
@@ -1237,5 +1246,288 @@ SlashCmdList["TWRATEST"] = function(msg)
         TWRA:ToggleTestButton()
     else
         TWRA:TestDisplayCurrentSection()
+    end
+end
+
+-- Add CreateMinimapButton function - moved from OSD.lua to TWRA.lua as requested
+function TWRA:CreateMinimapButton()
+    self:Debug("general", "Creating minimap button")
+    
+    -- Create a frame for our minimap button
+    local miniButton = CreateFrame("Button", "TWRAMinimapButton", Minimap)
+    miniButton:SetWidth(32)
+    miniButton:SetHeight(32)
+    miniButton:SetFrameStrata("MEDIUM")
+    miniButton:SetFrameLevel(8)
+    
+    -- Set position (default to 180 degrees)
+    local defaultAngle = 180
+    local angle = defaultAngle
+    
+    -- Use saved angle if available
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.minimapAngle then
+        angle = TWRA_SavedVariables.options.minimapAngle
+    end
+    
+    -- Calculate position
+    local radius = 80
+    local radian = math.rad(angle)
+    local x = math.cos(radian) * radius
+    local y = math.sin(radian) * radius
+    
+    miniButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    
+    -- Set icon texture
+    local icon = miniButton:CreateTexture(nil, "BACKGROUND")
+    icon:SetTexture("Interface\\AddOns\\TWRA\\textures\\minimap_icon")
+    
+    -- If the custom texture doesn't exist, use a default
+    if not icon:GetTexture() then
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Book_11")
+    end
+    
+    icon:SetAllPoints(miniButton)
+    miniButton.icon = icon
+    
+    -- Add highlight texture
+    local highlight = miniButton:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    highlight:SetBlendMode("ADD")
+    highlight:SetAllPoints(miniButton)
+    miniButton.highlight = highlight
+    
+    -- Set up scripts
+    miniButton:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(miniButton, "ANCHOR_LEFT")
+        GameTooltip:AddLine("TWRA - Raid Assignments")
+        GameTooltip:AddLine("Left-click: Toggle assignments window", 1, 1, 1)
+        GameTooltip:AddLine("Right-click: Toggle assignments OSD", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    
+    miniButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    miniButton:SetScript("OnClick", function()
+        if arg1 == "RightButton" then
+            -- Right click: Toggle OSD
+            if TWRA.ToggleOSD then
+                TWRA:ToggleOSD()
+            end
+        else
+            -- Left click: Toggle main window
+            if TWRA.ToggleMainFrame then
+                TWRA:ToggleMainFrame()
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Main window not available")
+            end
+        end
+    end)
+    
+    -- Make the button draggable
+    miniButton:RegisterForDrag("LeftButton")
+    miniButton:SetScript("OnDragStart", function()
+        this:LockHighlight()
+        this:StartMoving()
+    end)
+    
+    miniButton:SetScript("OnDragStop", function()
+        this:StopMovingOrSizing()
+        this:UnlockHighlight()
+        
+        -- Calculate and save angle
+        local x, y = this:GetCenter()
+        local mx, my = Minimap:GetCenter()
+        local angle = math.deg(math.atan2(y - my, x - mx))
+        
+        -- Save to settings
+        if TWRA_SavedVariables and TWRA_SavedVariables.options then
+            TWRA_SavedVariables.options.minimapAngle = angle
+        end
+    end)
+    
+    -- Store reference in addon
+    self.minimapButton = miniButton
+    
+    self:Debug("general", "Minimap button created")
+    return miniButton
+end
+
+-- Add message handling system functions to TWRA.lua
+-- These were previously in OSD.lua but should be core functionality
+function TWRA:RegisterMessageHandler(message, callback)
+    -- Initialize the message handlers table if it doesn't exist
+    self.messageHandlers = self.messageHandlers or {}
+    
+    -- Create array for this message type if needed
+    if not self.messageHandlers[message] then
+        self.messageHandlers[message] = {}
+    end
+    
+    -- Add the callback to the handlers array
+    table.insert(self.messageHandlers[message], callback)
+    self:Debug("general", "Registered message handler for: " .. message)
+end
+
+-- Send message function to complete the messaging system
+function TWRA:SendMessage(message, arg1, arg2, arg3, arg4, arg5)
+    -- Initialize the message handlers table if it doesn't exist
+    self.messageHandlers = self.messageHandlers or {}
+    
+    -- Check if we have any handlers for this message
+    if not self.messageHandlers[message] then
+        return -- No handlers registered
+    end
+    
+    self:Debug("general", "Sending message: " .. message)
+    
+    -- Call each registered handler with the arguments
+    for _, callback in ipairs(self.messageHandlers[message]) do
+        -- Use explicit arguments instead of varargs (... unpacking)
+        callback(arg1, arg2, arg3, arg4, arg5)
+    end
+end
+
+-- Enhanced NavigateToSection function with better debugging
+function TWRA:NavigateToSection(targetSection, suppressSync)
+    -- Extended debug output
+    self:Debug("nav", string.format("NavigateToSection(%s, %s) - mainFrame:%s, isShown:%s, currentView:%s",
+        tostring(targetSection), 
+        tostring(suppressSync),
+        tostring(self.mainFrame),
+        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
+        tostring(self.currentView)))
+    
+    -- Ensure navigation exists
+    if not self.navigation then
+        self.navigation = { handlers = {}, currentIndex = 1 }
+    end
+    
+    local handlers = self.navigation.handlers
+    local numSections = table.getn(handlers)
+    
+    if numSections == 0 then 
+        self:Debug("nav", "No sections available")
+        return false 
+    end
+    
+    local sectionIndex = targetSection
+    local sectionName = nil
+    
+    -- If sectionIndex is a string, find its index
+    if type(targetSection) == "string" then
+        for i, name in ipairs(handlers) do
+            if name == targetSection then
+                sectionIndex = i
+                sectionName = name
+                break
+            end
+        end
+    else
+        -- Make sure targetSection is within bounds
+        sectionIndex = math.max(1, math.min(numSections, targetSection))
+        sectionName = handlers[sectionIndex]
+    end
+    
+    if not sectionName then
+        self:Debug("nav", "Invalid section index: "..tostring(targetSection))
+        return false
+    end
+    
+    -- Update current index
+    self.navigation.currentIndex = sectionIndex
+    
+    -- Save current section immediately
+    self:SaveCurrentSection()
+    
+    -- Update display based on current view
+    if self.currentView == "options" then
+        self:Debug("nav", "In options view - clearing rows and skipping display update")
+        self:ClearRows()
+    else
+        self:Debug("nav", "In main view - updating display with section: " .. sectionName)
+        
+        -- Force the view to main view to ensure content is visible
+        if self.currentView ~= "main" then
+            self.currentView = "main"
+            
+            -- Show and hide appropriate frames
+            if self.contentFrame then self.contentFrame:Show() end
+            if self.optionsFrame then self.optionsFrame:Hide() end
+        end
+        
+        self:FilterAndDisplayHandler(sectionName)
+    end
+    
+    -- Determine if we should show OSD
+    local shouldShowOSD = false
+    
+    -- Case 1: Main frame doesn't exist or isn't shown
+    if not self.mainFrame or not self.mainFrame:IsShown() then
+        shouldShowOSD = true
+    -- Case 2: We're in options view
+    elseif self.currentView == "options" then
+        shouldShowOSD = true
+    -- Case 3: This is a sync-triggered navigation
+    elseif suppressSync == "fromSync" then
+        shouldShowOSD = true
+    end
+    
+    self:Debug("nav", string.format("shouldShowOSD=%s (mainFrame:%s, isShown:%s, currentView:%s)",
+        tostring(shouldShowOSD),
+        tostring(self.mainFrame),
+        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
+        self.currentView or "nil"))
+    
+    if shouldShowOSD and self.ShowSectionNameOverlay then
+        self:ShowSectionNameOverlay(sectionName, sectionIndex, numSections)
+    end
+    
+    -- Broadcast to group if sync enabled and not suppressed
+    if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
+        self:BroadcastSectionChange(sectionIndex)
+    end
+    
+    -- If enabled, update tanks
+    if self.SYNC and self.SYNC.tankSync and self:IsORA2Available() then
+        self:UpdateTanks()
+    end
+    
+    return true
+end
+
+-- Enhanced ToggleMainFrame function with better debugging
+function TWRA:ToggleMainFrame()
+    -- Make sure frame exists
+    if not self.mainFrame then
+        self:Debug("ui", "Main frame doesn't exist - creating it")
+        if self.CreateMainFrame then
+            self:CreateMainFrame()
+        else
+            self:Error("Unable to create main frame - function not found")
+            return
+        end
+    end
+    
+    if self.mainFrame:IsShown() then
+        self.mainFrame:Hide()
+        self:Debug("ui", "Window hidden")
+    else
+        self.mainFrame:Show()
+        
+        -- Debug current view status
+        self:Debug("ui", "Current view is: " .. (self.currentView or "nil"))
+        
+        -- Force update content
+        if self.currentView == "options" then
+            self:Debug("ui", "Switching to main view from options view")
+            self:ShowMainView()
+        else
+            self:Debug("ui", "Already in main view - refreshing content")
+            self:RefreshAssignmentTable()
+        end
+        
+        self:Debug("ui", "Window shown")
     end
 end

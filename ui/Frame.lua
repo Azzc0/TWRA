@@ -79,15 +79,20 @@ function TWRA:CloseDropdownMenu()
     end
 end
 
--- Enhance CreateMainFrame to add ESC key functionality
+-- Enhance CreateMainFrame to use the standardized dropdown and remove Edit button
 function TWRA:CreateMainFrame()
+    -- Check if frame already exists
+    if self.mainFrame then
+        return self.mainFrame
+    end
+
     self.navigation = { handlers = {}, currentIndex = 1 }
     self.mainFrame = CreateFrame("Frame", "TWRAMainFrame", UIParent)
     self.mainFrame:SetWidth(800)
     self.mainFrame:SetHeight(300)
     self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     
-    -- Fix the backdrop by adding a complete backdrop definition
+    -- Add a proper backdrop with all required properties
     self.mainFrame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -117,13 +122,10 @@ function TWRA:CreateMainFrame()
     optionsButton:SetPoint("TOPRIGHT", -20, -15)
     optionsButton:SetText("Options")
     optionsButton:SetScript("OnClick", function() 
-        if self.currentView == "options" then
-            self:ShowMainView()
-            optionsButton:SetText("Options")
-        else
-            TWRA:ClearRows()
+        if self.currentView == "main" then
             self:ShowOptionsView()
-            optionsButton:SetText("Back")
+        else
+            self:ShowMainView()
         end
     end)
     self.optionsButton = optionsButton
@@ -350,6 +352,9 @@ function TWRA:CreateMainFrame()
         -- Update display
         self:DisplayCurrentSection()
     end
+
+    self:Debug("ui", "Main frame created")
+    return self.mainFrame
 end
 
 -- Helper function for handler management
@@ -379,6 +384,7 @@ function TWRA:NavigateHandler(delta)
     
     -- Safety check for handlers
     if not nav.handlers or table.getn(nav.handlers) == 0 then
+        self:Debug("nav", "No sections available to navigate")
         return
     end
     
@@ -1109,7 +1115,7 @@ end
 -- Look for a CreateOptionsFrame function or similar and add:
 
 -- AutoMarker toggle (only shown if SuperWoW is available)
-if TWRA:CheckSuperWoWSupport() then
+if SUPERWOW_VERSION ~= nil then
     -- Create checkbox for AutoMarker
     local autoNavigateCheckbox = CreateFrame("CheckButton", "TWRA_AutoMarkerCheckbox", optionsFrame, "UICheckButtonTemplate")
     autoNavigateCheckbox:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 0, -10)
@@ -1146,50 +1152,33 @@ if TWRA:CheckSuperWoWSupport() then
     end
 end
 
--- Add this function after CreateMainFrame or at the end of the file
-
 -- Improve ShowOptionsView to properly set current view and hide all main view elements
-
 function TWRA:ShowOptionsView()
     -- Set the view state
     self.currentView = "options"
     
-    -- Hide main UI elements
+    -- Debug output to trace flow
+    self:Debug("ui", "ShowOptionsView called - mainFrame exists: " .. tostring(self.mainFrame ~= nil))
+    
+    -- Change the options button text
+    if self.optionsButton then
+        self.optionsButton:SetText("Back")
+    end
+    
+    -- Change the title text to indicate options mode
+    if self.mainFrame and self.mainFrame.titleText then
+        self.mainFrame.titleText:SetText("TWRA Options")
+    end
+    
+    -- Hide navigation elements
     if self.navigation then
         if self.navigation.prevButton then self.navigation.prevButton:Hide() end
         if self.navigation.nextButton then self.navigation.nextButton:Hide() end
-        if self.navigation.handlerText and self.navigation.handlerText.GetParent then 
-            local menuButton = self.navigation.handlerText:GetParent()
-            if menuButton then menuButton:Hide() end
+        if self.navigation.dropdown and self.navigation.dropdown.container then
+            self.navigation.dropdown.container:Hide()
         end
-        if self.navigation.dropdownMenu then self.navigation.dropdownMenu:Hide() end
-    end
-    
-    -- Hide rows
-    if self.rowFrames then
-        for _, row in pairs(self.rowFrames) do
-            for _, cell in pairs(row) do
-                if cell.textObj then cell.textObj:Hide() end
-                if cell.iconTexture then cell.iconTexture:Hide() end
-                if cell.frame then cell.frame:Hide() end
-            end
-        end
-    end
-    
-    -- Hide highlights
-    if self.rowHighlights then
-        for _, highlight in pairs(self.rowHighlights) do
-            highlight:Hide()
-        end
-    end
-    
-    -- Hide footers
-    if self.footers then
-        for _, footer in pairs(self.footers) do
-            if footer.bg then footer.bg:Hide() end
-            if footer.icon then footer.icon:Hide() end
-            if footer.text then footer.text:Hide() end
-            if footer.texture then footer.texture:Hide() end
+        if self.navigation.dropdown and self.navigation.dropdown.arrow then 
+            self.navigation.dropdown.arrow:Hide()
         end
     end
     
@@ -1197,20 +1186,63 @@ function TWRA:ShowOptionsView()
     if self.announceButton then self.announceButton:Hide() end
     if self.updateTanksButton then self.updateTanksButton:Hide() end
     
-    -- Create options content directly in the main frame
-    self:CreateOptionsInMainFrame()
+    -- Clear rows and footers
+    self:ClearRows()
+    self:ClearFooters()
+    
+    -- Clean up any existing options container
+    if self.optionsContainer then
+        self.optionsContainer:Hide()
+        self.optionsContainer:SetParent(nil)
+        self.optionsContainer = nil
+    end
+    
+    -- Reset options elements array
+    self.optionsElements = {}
+    
+    -- Create options content using the dedicated function from the Options.lua
+    if self.CreateOptionsInMainFrame then
+        self:CreateOptionsInMainFrame()
+    else
+        self:Error("Options module not loaded - CreateOptionsInMainFrame missing")
+    end
+    
+    self:Debug("ui", "Switched to options view")
 end
 
--- Fix ShowMainView to properly handle pending navigation and restore UI
+-- Fix ShowMainView to properly handle view transition
 function TWRA:ShowMainView()
     -- Set the view state
     self.currentView = "main"
     
-    -- Hide options elements
+    -- Debug output to trace flow
+    self:Debug("ui", "ShowMainView called")
+    
+    -- Reset options button text
+    if self.optionsButton then
+        self.optionsButton:SetText("Options")
+    end
+    
+    -- Reset title text to default
+    if self.mainFrame and self.mainFrame.titleText then
+        self.mainFrame.titleText:SetText("Raid Assignments")
+    end
+    
+    -- Hide options container and all its elements
+    if self.optionsContainer then
+        self.optionsContainer:Hide()
+        
+        -- Clean up options container to avoid memory leaks
+        self.optionsContainer:SetParent(nil)
+        self.optionsContainer = nil
+    end
+    
+    -- Clean up options elements
     if self.optionsElements then
         for _, element in pairs(self.optionsElements) do
-            if element.Hide then  -- Check if the element has a Hide method
+            if element and element ~= self.mainFrame and element.Hide then
                 element:Hide()
+                element:SetParent(nil)
             end
         end
         self.optionsElements = {}
@@ -1220,27 +1252,25 @@ function TWRA:ShowMainView()
     if self.navigation then
         if self.navigation.prevButton then self.navigation.prevButton:Show() end
         if self.navigation.nextButton then self.navigation.nextButton:Show() end
-        if self.navigation.handlerText and self.navigation.handlerText.GetParent then 
-            local menuButton = self.navigation.handlerText:GetParent()
-            if menuButton then menuButton:Show() end
+        if self.navigation.dropdown and self.navigation.dropdown.container then
+            self.navigation.dropdown.container:Show()
         end
+        if self.navigation.dropdown and self.navigation.dropdown.arrow then 
+            self.navigation.dropdown.arrow:Show()
+        end
+    end
+    
+    -- Check for pending navigation
+    if self.pendingNavigation then
+        self:NavigateToSection(self.pendingNavigation)
+        self.pendingNavigation = nil
+    else
+        self:DisplayCurrentSection()
     end
     
     -- Show other buttons
     if self.announceButton then self.announceButton:Show() end
     if self.updateTanksButton then self.updateTanksButton:Show() end
     
-    -- Check for pending navigation
-    if self.pendingNavigation then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Processing pending navigation to section " .. self.pendingNavigation)
-        
-        -- We already updated the navigation index and saved it, just need to display
-        self:DisplayCurrentSection()
-        
-        -- Clear the pending navigation
-        self.pendingNavigation = nil
-    else
-        -- Just display current section
-        self:DisplayCurrentSection()
-    end
+    self:Debug("ui", "Switched to main view")
 end
