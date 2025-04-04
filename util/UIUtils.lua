@@ -424,3 +424,47 @@ function TWRA.UI:CreateIconWithTooltip(parent, texturePath, tooltipTitle, toolti
     
     return icon, iconFrame
 end
+
+-- Find rows relevant to the current player (either by name or class group)
+function TWRA.UI:GetPlayerRelevantRows(sectionData)
+    if not sectionData or type(sectionData) ~= "table" then
+        return {}
+    end
+    
+    local relevantRows = {}
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    playerClass = playerClass and string.upper(playerClass) or nil
+    
+    -- Scan through all rows to find matches
+    for rowIndex, rowData in ipairs(sectionData) do
+        -- Skip header row and special rows
+        if rowIndex > 1 and rowData[2] ~= "Icon" and rowData[2] ~= "Note" and 
+           rowData[2] ~= "Warning" and rowData[2] ~= "GUID" then
+           
+            local isRelevantRow = false
+            
+            -- Check each cell for player name or player class group match
+            for _, cellData in ipairs(rowData) do
+                -- Match player name directly
+                if cellData == playerName then
+                    isRelevantRow = true
+                    break
+                end
+                
+                -- Match player class group (like "Warriors" for a Warrior)
+                if playerClass and TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellData] and 
+                   string.upper(TWRA.CLASS_GROUP_NAMES[cellData]) == playerClass then
+                    isRelevantRow = true
+                    break
+                end
+            end
+            
+            if isRelevantRow then
+                table.insert(relevantRows, rowIndex)
+            end
+        end
+    end
+    
+    return relevantRows
+end

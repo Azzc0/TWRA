@@ -199,20 +199,6 @@ TWRA.ROLE_ICONS = {
 }
 
 
--- Function to save the current section index
-function TWRA:SaveCurrentSection()
-    -- Only save if we have assignments already
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and self.navigation then
-        -- Make sure currentIndex exists before trying to save it
-        if self.navigation.currentIndex then
-            TWRA_SavedVariables.assignments.currentSection = self.navigation.currentIndex
-        else
-            -- If no current index, default to 1
-            TWRA_SavedVariables.assignments.currentSection = 1
-        end
-    end
-end
-
 -- Main initialization - called only once
 function TWRA:Initialize()
     local frame = CreateFrame("Frame")
@@ -353,107 +339,6 @@ function TWRA:LoadSavedAssignments()
     
     DEFAULT_CHAT_FRAME:AddMessage("TWRA: Loaded assignments")
     return true
-end
-
-
-
--- Improved Base64 decoding function with support for special characters
-function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
-    if not base64Str then 
-        self:Error("Decode failed - nil string")
-        return nil 
-    end
-    
-    -- Clean up the string
-    base64Str = string.gsub(base64Str, " ", "")
-    base64Str = string.gsub(base64Str, "\n", "")
-    base64Str = string.gsub(base64Str, "\r", "")
-    base64Str = string.gsub(base64Str, "\t", "")
-    
-    self:Debug("data", "Decoding base64 string")
-    
-    -- Convert Base64 to binary string
-    local luaCode = ""
-    local bits = 0
-    local bitCount = 0
-    
-    for i = 1, string.len(base64Str) do
-        local b64char = string.sub(base64Str, i, i)
-        local b64value = b64Table[b64char]
-        
-        if b64value and b64value >= 0 then
-            -- Left shift bits by 6 and add new value
-            bits = bits * 64 + b64value
-            bitCount = bitCount + 6
-            
-            -- Extract 8-bit bytes when we have enough bits
-            while bitCount >= 8 do
-                bitCount = bitCount - 8
-                -- Extract next byte (shift right)
-                local byte = math.floor(bits / (2^bitCount))
-                -- Keep only the lowest 8 bits by subtracting multiples of 256
-                byte = byte - math.floor(byte / 256) * 256
-                
-                luaCode = luaCode .. string.char(byte)
-                
-                -- Clear the used bits
-                bits = bits - math.floor(bits / (2^bitCount)) * (2^bitCount)
-            end
-        end
-    end
-    
-    self:Debug("data", "Decoded string length: " .. string.len(luaCode))
-    self:Debug("data", "String begins with: " .. string.sub(luaCode, 1, 40) .. "...")
-    
-    -- The decoded string may contain Unicode escape sequences like \u00e5
-    -- We need to convert these to actual UTF-8 characters
-    luaCode = string.gsub(luaCode, "\\u(%x%x%x%x)", function(hex)
-        local charCode = tonumber(hex, 16)
-        if charCode then
-            -- Convert Unicode code point to UTF-8 bytes
-            if charCode < 128 then
-                return string.char(charCode)
-            elseif charCode < 2048 then
-                return string.char(
-                    192 + math.floor(charCode / 64),
-                    128 + (charCode - math.floor(charCode / 64) * 64)
-                )
-            else
-                return string.char(
-                    224 + math.floor(charCode / 4096),
-                    128 + math.floor((charCode - math.floor(charCode / 4096) * 4096) / 64),
-                    128 + (charCode - math.floor(charCode / 64) * 64)
-                )
-            end
-        end
-        return "?"  -- Fallback for invalid codes
-    end)
-    
-    -- Execute the Lua code to get the table
-    local func, err = loadstring(luaCode)
-    if not func then
-        self:Error("Error parsing Lua code: " .. (err or "unknown error"))
-        return nil
-    end
-    
-    -- Execute the function to get the table
-    local success, result = pcall(func)
-    if not success then
-        self:Error("Error executing Lua code: " .. (result or "unknown error"))
-        return nil
-    end
-    
-    -- If we get here, we have a valid table
-    self:Debug("data", "Successfully decoded table with " .. table.getn(result) .. " entries")
-    
-    -- If this is a sync operation with timestamp, handle it directly
-    if syncTimestamp then
-        self:Debug("sync", "Using provided timestamp: " .. syncTimestamp)
-        -- Store data with sync timestamp
-        self:SaveAssignments(result, base64Str, syncTimestamp, noAnnounce or true)
-    end
-    
-    return result
 end
 
 -- Utility functions
@@ -625,6 +510,68 @@ function TWRA:UpdateTanks()
     end
     
     DEFAULT_CHAT_FRAME:AddMessage("TWRA: Tank updates completed")
+end
+
+-- Basic function to display section name overlay when navigating with window closed
+-- Enhanced version is in OSD.lua
+function TWRA:ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
+    -- Forward to OSD module if available
+    if self.OSD and self.OSD.ShowSectionNameOverlay then
+        self.OSD.ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
+        return
+    end
+    
+    -- Create the overlay frame if it doesn't exist
+    if not self.sectionOverlay then
+        self.sectionOverlay = CreateFrame("Frame", "TWRA_SectionOverlay", UIParent)
+        self.sectionOverlay:SetFrameStrata("DIALOG")
+        self.sectionOverlay:SetWidth(400)
+        self.sectionOverlay:SetHeight(60)
+        self.sectionOverlay:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+        
+        -- Add background
+        local bg = self.sectionOverlay:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture(0, 0, 0, 0.7)
+        
+        -- Add border
+        local border = CreateFrame("Frame", nil, self.sectionOverlay)
+        border:SetPoint("TOPLEFT", -2, 2)
+        border:SetPoint("BOTTOMRIGHT", 2, -2)
+        border:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        
+        -- Section name text
+        self.sectionOverlayText = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        self.sectionOverlayText:SetPoint("TOP", self.sectionOverlay, "TOP", 0, -10)
+        self.sectionOverlayText:SetTextColor(1, 0.82, 0)
+        
+        -- Section count text
+        self.sectionOverlayCount = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        self.sectionOverlayCount:SetPoint("BOTTOM", self.sectionOverlay, "BOTTOM", 0, 10)
+        self.sectionOverlayCount:SetTextColor(1, 1, 1)
+    end
+    
+    -- Update the text
+    self.sectionOverlayText:SetText(sectionName)
+    self.sectionOverlayCount:SetText("Section " .. currentIndex .. " of " .. totalSections)
+    
+    -- Show the overlay
+    self.sectionOverlay:Show()
+    
+    -- Hide after 2 seconds
+    if self.sectionOverlayTimer then
+        self:CancelTimer(self.sectionOverlayTimer)
+    end
+    
+    self.sectionOverlayTimer = self:ScheduleTimer(function()
+        if self.sectionOverlay then
+            self.sectionOverlay:Hide()
+        end
+    end, 2)
 end
 
 -- Timer functionality for older WoW versions
@@ -955,115 +902,6 @@ SlashCmdList["TWRATEST"] = function(msg)
     TWRA:TestDisplayCurrentSection()
 end
 
--- Helper function to navigate to a specific section (supports both name and index)
-function TWRA:NavigateToSection(targetSection, suppressSync)
-    -- Debug output
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("TWRA Debug: NavigateToSection(%s, %s) called - mainFrame:%s, isShown:%s", 
-        tostring(targetSection), tostring(suppressSync),
-        tostring(self.mainFrame), 
-        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil"))
-    
-    -- Ensure navigation exists
-    if not self.navigation then
-        self.navigation = { handlers = {}, currentIndex = 1 }
-    end
-    
-    local handlers = self.navigation.handlers
-    local numSections = table.getn(handlers)
-    
-    if numSections == 0 then 
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No sections available")
-        return false 
-    end
-    
-    local sectionIndex = targetSection
-    local sectionName = nil
-    
-    -- If sectionIndex is a string, find its index
-    if type(targetSection) == "string" then
-        for i, name in ipairs(handlers) do
-            if name == targetSection then
-                sectionIndex = i
-                sectionName = name
-                break
-            end
-        end
-    else
-        -- Make sure targetSection is within bounds
-        sectionIndex = math.max(1, math.min(numSections, targetSection))
-        sectionName = handlers[sectionIndex]
-    end
-    
-    if not sectionName then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Invalid section index: "..tostring(targetSection))
-        return false
-    end
-    
-    -- Update current index
-    self.navigation.currentIndex = sectionIndex
-    
-    -- Always update the dropdown text
-    if self.navigation.handlerText then
-        self.navigation.handlerText:SetText(sectionName)
-    end
-    
-    -- Save current section
-    self:SaveCurrentSection()
-    
-    -- Update display based on current view
-    if self.currentView == "options" then
-        self:ClearRows()
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Skipping display update while in options view")
-    else
-        self:FilterAndDisplayHandler(sectionName)
-    end
-    
-    -- Determine if we should show OSD
-    local shouldShowOSD = false
-    
-    -- Case 1: Main frame doesn't exist or isn't shown
-    if not self.mainFrame or not self.mainFrame:IsShown() then
-        shouldShowOSD = true
-    -- Case 2: We're in options view
-    elseif self.currentView == "options" then
-        shouldShowOSD = true
-    -- Case 3: This is a sync-triggered navigation
-    elseif suppressSync == "fromSync" then
-        shouldShowOSD = true
-    end
-    
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("TWRA Debug: shouldShowOSD=%s (mainFrame:%s, isShown:%s, currentView:%s)",
-        tostring(shouldShowOSD),
-        tostring(self.mainFrame),
-        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
-        self.currentView or "nil"))
-    
-    if shouldShowOSD and self.ShowSectionNameOverlay then
-        self:ShowSectionNameOverlay(sectionName, sectionIndex, numSections)
-    end
-    
-    -- Broadcast to group if sync enabled and not suppressed
-    if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
-        self:BroadcastSectionChange(sectionIndex)
-    end
-    
-    -- If enabled, update tanks
-    if self.SYNC and self.SYNC.tankSync and self:IsORA2Available() then
-        self:UpdateTanks()
-    end
-    
-    return true
-end
-
--- Add a function to immediately save the current section when it changes
-function TWRA:SaveCurrentSection()
-    -- Only save if we have assignments already
-    if TWRA_SavedVariables.assignments and self.navigation and self.navigation.currentIndex then
-        TWRA_SavedVariables.assignments.currentSection = self.navigation.currentIndex
-        -- No need for a message here as it would be too spammy
-    end
-end
-
 -- Update the HandleSectionCommand to save the current section when changed via sync
 function TWRA:HandleSectionCommand(args, sender)
     -- Split parts
@@ -1190,41 +1028,6 @@ end
 -- Add this to your dropdown menu selection handler if it exists
 function TWRA:SectionDropdownSelected(index)
     self:NavigateToSection(index)  -- This will now save the section
-end
-
--- Add to the end of the file or replace existing ToggleMainFrame function if it exists
-function TWRA:ToggleMainFrame()
-    -- Make sure frame exists
-    if not self.mainFrame then
-        self:Debug("ui", "Main frame doesn't exist - creating it")
-        if self.CreateMainFrame then
-            self:CreateMainFrame()
-        else
-            self:Error("Unable to create main frame - function not found")
-            return
-        end
-    end
-    
-    if self.mainFrame:IsShown() then
-        self.mainFrame:Hide()
-        self:Debug("ui", "Window hidden")
-    else
-        self.mainFrame:Show()
-        
-        -- Debug current view status
-        self:Debug("ui", "Current view is: " .. (self.currentView or "nil"))
-        
-        -- Force update content
-        if self.currentView == "options" then
-            self:Debug("ui", "Switching to main view from options view")
-            self:ShowMainView()
-        else
-            self:Debug("ui", "Already in main view - refreshing content")
-            self:RefreshAssignmentTable()
-        end
-        
-        self:Debug("ui", "Window shown")
-    end
 end
 
 -- Add slash command to test keybinding functionality
@@ -1530,4 +1333,233 @@ function TWRA:ToggleMainFrame()
         
         self:Debug("ui", "Window shown")
     end
+end
+
+-- Improve ShowOptionsView to properly set current view and safely handle UI elements
+function TWRA:ShowOptionsView()
+    -- Debug at start of function to diagnose issues
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowOptionsView started - preparing UI elements")
+    
+    -- Set the view state
+    self.currentView = "options"
+    
+    -- Debug tracking
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowOptionsView - frame exists: " .. tostring(self.mainFrame ~= nil))
+    
+    -- Safety check for main frame
+    if not self.mainFrame then
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ERROR - Main frame doesn't exist!")
+        return
+    end
+    
+    -- Change the options button text with safety check
+    if self.optionsButton and self.optionsButton.SetText then
+        pcall(function() self.optionsButton:SetText("Back") end)
+    end
+    
+    -- Change the title text with safety check
+    if self.mainFrame and self.mainFrame.titleText then
+        pcall(function() self.mainFrame.titleText:SetText("TWRA Options") end)
+    end
+    
+    -- Hide navigation elements - use pcall to prevent crashes
+    if self.navigation then
+        if self.navigation.prevButton then 
+            pcall(function() self.navigation.prevButton:Hide() end)
+        end
+        if self.navigation.nextButton then 
+            pcall(function() self.navigation.nextButton:Hide() end)
+        end
+        if self.navigation.dropdownMenu then 
+            pcall(function() self.navigation.dropdownMenu:Hide() end)
+        end
+        -- Hide the middle navigation element (menu button)
+        if self.navigation.menuButton then
+            pcall(function() self.navigation.menuButton:Hide() end)
+        end
+    end
+    
+    -- Clear rows and footers
+    pcall(function() self:ClearRows() end)
+    pcall(function() self:ClearFooters() end)
+    
+    -- Clean up any existing options container safely
+    if self.optionsContainer then
+        pcall(function() self.optionsContainer:Hide() end)
+        self.optionsContainer = nil
+    end
+    
+    -- Reset options elements array
+    self.optionsElements = {}
+    
+    -- Create options content using the dedicated function from the Options.lua
+    if type(self.CreateOptionsInMainFrame) == "function" then
+        -- Use pcall to catch any errors during options creation
+        local success, errorMsg = pcall(function() self:CreateOptionsInMainFrame() end)
+        
+        if not success then
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Error creating options: " .. tostring(errorMsg))
+        end
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Options module not loaded properly")
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Switched to options view - currentView = " .. self.currentView)
+end
+
+-- Fix ShowMainView to safely handle view transition
+function TWRA:ShowMainView()
+    -- Debug at start of function to diagnose issues
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowMainView started - preparing UI elements")
+    
+    -- Set the view state FIRST, before anything else
+    self.currentView = "main"
+    
+    -- Safety check for main frame
+    if not self.mainFrame then
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ERROR - Main frame doesn't exist!")
+        return
+    end
+    
+    -- Debug output to trace flow
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: ShowMainView - currentView now = " .. self.currentView)
+    
+    -- Reset options button text with safety check
+    if self.optionsButton and self.optionsButton.SetText then
+        pcall(function() self.optionsButton:SetText("Options") end)
+    end
+    
+    -- Reset title text with safety check
+    if self.mainFrame and self.mainFrame.titleText then
+        pcall(function() self.mainFrame.titleText:SetText("Raid Assignments") end)
+    end
+    
+    -- Clean up options elements safely
+    if self.optionsContainer then
+        pcall(function() self.optionsContainer:Hide() end)
+        self.optionsContainer = nil
+    end
+    
+    -- Clean up options elements
+    if self.optionsElements then
+        for _, element in pairs(self.optionsElements) do
+            if element and element ~= self.mainFrame and type(element.Hide) == "function" then
+                pcall(function() element:Hide() end)
+            end
+        end
+        self.optionsElements = {}
+    end
+    
+    -- Show navigation elements with safety checks
+    if self.navigation then
+        if self.navigation.prevButton then 
+            pcall(function() self.navigation.prevButton:Show() end)
+        end
+        if self.navigation.nextButton then 
+            pcall(function() self.navigation.nextButton:Show() end)
+        end
+        if self.navigation.dropdownMenu then 
+            pcall(function() self.navigation.dropdownMenu:Show() end)
+        end
+        -- Show the middle navigation element (menu button)
+        if self.navigation.menuButton then
+            pcall(function() self.navigation.menuButton:Show() end)
+        end
+    end
+    
+    -- Show other buttons with safety checks
+    if self.announceButton then 
+        pcall(function() self.announceButton:Show() end)
+    end
+    if self.updateTanksButton then 
+        pcall(function() self.updateTanksButton:Show() end)
+    end
+    
+    -- Clear existing display content
+    pcall(function() self:ClearRows() end)
+    
+    -- Update display with current section data - only if nav data exists
+    if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
+        local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
+        if currentHandler then
+            -- Use pcall to avoid crashes during display
+            local success, errorMsg = pcall(function() self:FilterAndDisplayHandler(currentHandler) end)
+            
+            if not success then
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Error displaying content: " .. tostring(errorMsg))
+            end
+        end
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Switched to main view - final currentView = " .. self.currentView)
+end
+
+-- Find rows relevant to the current player (either by name or class group)
+function TWRA:GetPlayerRelevantRows(sectionData)
+    if not sectionData or type(sectionData) ~= "table" then
+        return {}
+    end
+    
+    local relevantRows = {}
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    playerClass = playerClass and string.upper(playerClass) or nil
+    
+    -- Find player's group number (1-8)
+    local playerGroup = nil
+    for i = 1, GetNumRaidMembers() do
+        local name, _, subgroup = GetRaidRosterInfo(i)
+        if name == playerName then
+            playerGroup = subgroup
+            break
+        end
+    end
+    
+    -- Scan through all rows to find matches
+    for rowIndex, rowData in ipairs(sectionData) do
+        -- Skip header row and special rows
+        if rowIndex > 1 and rowData[2] ~= "Icon" and rowData[2] ~= "Note" and 
+           rowData[2] ~= "Warning" and rowData[2] ~= "GUID" then
+           
+            local isRelevantRow = false
+            
+            -- Check each cell for player name, class group, or player's group number
+            for _, cellData in ipairs(rowData) do
+                -- Only check string data
+                if type(cellData) == "string" then
+                    -- Match player name directly
+                    if cellData == playerName then
+                        isRelevantRow = true
+                        break
+                    end
+                    
+                    -- Match player class group (like "Warriors" for a Warrior)
+                    if playerClass and self.CLASS_GROUP_NAMES and self.CLASS_GROUP_NAMES[cellData] and 
+                       string.upper(self.CLASS_GROUP_NAMES[cellData]) == playerClass then
+                        isRelevantRow = true
+                        break
+                    end
+                    
+                    -- Check for player's group number using a simple word boundary pattern
+                    -- This will match any instance of the group number as a distinct "word"
+                    -- Examples that would match for group 1: "Group 1", "G1", "1", "group 1"
+                    -- But won't match group 1 in "Group 10" or "G12"
+                    if playerGroup then
+                        -- The pattern \b matches a word boundary
+                        local groupPattern = "%f[%a%d]" .. playerGroup .. "%f[^%a%d]"
+                        if string.find(cellData, groupPattern) then
+                            isRelevantRow = true
+                            break
+                        end
+                    end
+                end
+            end
+            
+            if isRelevantRow then
+                table.insert(relevantRows, rowIndex)
+            end
+        end
+    end
+    
+    return relevantRows
 end

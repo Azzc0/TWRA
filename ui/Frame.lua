@@ -8,66 +8,6 @@ function TWRA:IsExampleData(data)
     return data == self.EXAMPLE_DATA
 end
 
--- Get player status (in raid and online status)
-function TWRA:GetPlayerStatus(name)
-    if self.usingExampleData then
-        if not name or name == "" then return false, nil end
-        if self.EXAMPLE_PLAYERS[name] then
-            local isOffline = string.find(self.EXAMPLE_PLAYERS[name], "OFFLINE")
-            return true, not isOffline
-        end
-        return false, nil
-    end
-    
-    -- Default behavior for real raid data
-    if not name or name == "" then return false, nil end
-    for i = 1, GetNumRaidMembers() do
-        local raidName, _, _, _, _, _, online = GetRaidRosterInfo(i)
-        if raidName == name then
-            return true, online
-        end
-    end
-    return false, nil
-end
-
--- Get class for a player
-function TWRA:GetPlayerClass(name)
-    if self.usingExampleData and self.EXAMPLE_PLAYERS[name] then
-        return string.gsub(self.EXAMPLE_PLAYERS[name], "|OFFLINE", "")
-    end
-    
-    -- Default behavior for real raid data
-    for i = 1, GetNumRaidMembers() do
-        local raidName, _, _, _, _, class = GetRaidRosterInfo(i)
-        if raidName == name then
-            return class
-        end
-    end
-    return nil
-end
-
--- Override class check for example data
-function TWRA:HasClassInRaid(className)
-    -- If using example data, check against EXAMPLE_PLAYERS
-    if self.usingExampleData then
-        for _, classInfo in pairs(self.EXAMPLE_PLAYERS) do
-            local playerClass = string.gsub(classInfo, "|OFFLINE", "")
-            if string.upper(className) == playerClass then
-                return true
-            end
-        end
-        return false
-    end
-    
-    -- Default behavior for real raid data
-    for i = 1, GetNumRaidMembers() do
-        local _, _, _, _, _, class = GetRaidRosterInfo(i)
-        if string.upper(class) == string.upper(className) then
-            return true
-        end
-    end
-    return false
-end
 
 -- UI-specific functions
 TWRA.currentView = "main"  -- Either "main" or "options"
@@ -121,12 +61,20 @@ function TWRA:CreateMainFrame()
     optionsButton:SetHeight(20)
     optionsButton:SetPoint("TOPRIGHT", -20, -15)
     optionsButton:SetText("Options")
+    
+    -- Add debugging to the click handler
     optionsButton:SetScript("OnClick", function() 
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Options button clicked, currentView=" .. self.currentView)
+        
         if self.currentView == "main" then
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Will call ShowOptionsView")
             self:ShowOptionsView()
         else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: Will call ShowMainView")
             self:ShowMainView()
         end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA FRAME.LUA: After options button click, currentView=" .. self.currentView)
     end)
     self.optionsButton = optionsButton
 
@@ -214,6 +162,7 @@ function TWRA:CreateMainFrame()
     self.navigation.prevButton = prevButton
     self.navigation.nextButton = nextButton
     self.navigation.handlerText = menuText  -- Use the same reference name for compatibility
+    self.navigation.menuButton = menuButton  -- Store reference to the menu button
 
     -- Create the dropdown menu
     local dropdownMenu = CreateFrame("Frame", nil, self.mainFrame) 
@@ -373,110 +322,6 @@ local function getUniqueHandlers(data)
     return handlers
 end
 
--- Enhanced navigation handler that respects current view
-function TWRA:NavigateHandler(delta)
-    -- Ensure navigation exists
-    if not self.navigation then
-        self.navigation = { handlers = {}, currentIndex = 1 }
-    end
-    
-    local nav = self.navigation
-    
-    -- Safety check for handlers
-    if not nav.handlers or table.getn(nav.handlers) == 0 then
-        self:Debug("nav", "No sections available to navigate")
-        return
-    end
-    
-    local newIndex = nav.currentIndex + delta
-    
-    if newIndex < 1 then 
-        newIndex = table.getn(nav.handlers)
-    elseif newIndex > table.getn(nav.handlers) then
-        newIndex = 1
-    end
-    
-    -- Use NavigateToSection which now correctly handles UI updates
-    self:NavigateToSection(newIndex)
-end
-
--- New function to display section name overlay when navigating with window closed
-function TWRA:ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
-    -- Create the overlay frame if it doesn't exist
-    if not self.sectionOverlay then
-        self.sectionOverlay = CreateFrame("Frame", "TWRA_SectionOverlay", UIParent)
-        self.sectionOverlay:SetFrameStrata("DIALOG")
-        self.sectionOverlay:SetWidth(400)
-        self.sectionOverlay:SetHeight(60)
-        self.sectionOverlay:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-        
-        -- Add background
-        local bg = self.sectionOverlay:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture(0, 0, 0, 0.7)
-        
-        -- Add border
-        local border = CreateFrame("Frame", nil, self.sectionOverlay)
-        border:SetPoint("TOPLEFT", -2, 2)
-        border:SetPoint("BOTTOMRIGHT", 2, -2)
-        border:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        
-        -- Section name text
-        self.sectionOverlayText = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        self.sectionOverlayText:SetPoint("TOP", self.sectionOverlay, "TOP", 0, -10)
-        self.sectionOverlayText:SetTextColor(1, 0.82, 0)
-        
-        -- Section count text
-        self.sectionOverlayCount = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        self.sectionOverlayCount:SetPoint("BOTTOM", self.sectionOverlay, "BOTTOM", 0, 10)
-        self.sectionOverlayCount:SetTextColor(1, 1, 1)
-    end
-    
-    -- Update the text
-    self.sectionOverlayText:SetText(sectionName)
-    self.sectionOverlayCount:SetText("Section " .. currentIndex .. " of " .. totalSections)
-    
-    -- Show the overlay
-    self.sectionOverlay:Show()
-    
-    -- Hide after 2 seconds
-    if self.sectionOverlayTimer then
-        self:CancelTimer(self.sectionOverlayTimer)
-    end
-    
-    self.sectionOverlayTimer = self:ScheduleTimer(function()
-        if self.sectionOverlay then
-            self.sectionOverlay:Hide()
-        end
-    end, 2)
-end
-
--- Add the Timer functionality if it doesn't exist yet
-if not TWRA.ScheduleTimer then
-    function TWRA:ScheduleTimer(func, delay)
-        local timer = CreateFrame("Frame")
-        timer.start = GetTime()
-        timer.delay = delay
-        timer.func = func
-        timer:SetScript("OnUpdate", function()
-            if GetTime() >= timer.start + timer.delay then
-                timer:SetScript("OnUpdate", nil)
-                timer.func()
-            end
-        end)
-        return timer
-    end
-
-    function TWRA:CancelTimer(timer)
-        if timer then
-            timer:SetScript("OnUpdate", nil)
-        end
-    end
-end
 
 -- Update the FilterAndDisplayHandler function to ignore GUID rows
 
@@ -548,9 +393,21 @@ function TWRA:CreateRows(data, forceHeader)
         self.rowFrames = {}
     end
     
+    -- Get rows relevant to current player for highlighting
+    local relevantRows = self:GetPlayerRelevantRows(data)
+    
     -- Create rows based on data
     for i = 1, table.getn(data) do
-        self.rowFrames[i] = self:CreateRow(i, data[i])
+        -- Check if this row should be highlighted
+        local shouldHighlight = false
+        for _, rowIdx in ipairs(relevantRows) do
+            if i == rowIdx then
+                shouldHighlight = true
+                break
+            end
+        end
+        
+        self.rowFrames[i] = self:CreateRow(i, data[i], shouldHighlight)
     end
 end
 
@@ -589,7 +446,7 @@ function TWRA:ClearRows()
 end
 
 -- Row creation with proper formatting
-function TWRA:CreateRow(rowNum, data)
+function TWRA:CreateRow(rowNum, data, shouldHighlight)
     local rowFrames = {}
     local yOffset = -40 - (rowNum * 20)
     local fontStyle = rowNum == 1 and "GameFontNormalLarge" or "GameFontNormal"
@@ -597,30 +454,15 @@ function TWRA:CreateRow(rowNum, data)
     local isSpecialRow = data[1] == "Warning" or data[1] == "Note"
     
     -- Player row highlighting logic
-    if not isHeader then
-        local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        playerClass = string.upper(playerClass)
-        
-        local isPlayerRow = false
-        for _, cellData in ipairs(data) do
-            if cellData == playerName or (TWRA.CLASS_GROUP_NAMES[cellData] and 
-               string.upper(TWRA.CLASS_GROUP_NAMES[cellData]) == playerClass) then
-                isPlayerRow = true
-                break
-            end
-        end
-        
-        if isPlayerRow then
-            local highlight = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, -2)
-            highlight:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 22, yOffset + 1)
-            highlight:SetPoint("BOTTOMRIGHT", self.mainFrame, "TOPRIGHT", -22, yOffset - 15)
-            highlight:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "REPEAT", "REPEAT")
-            highlight:SetTexCoord(0.05, 0.95, 0.1, 0.9)
-            highlight:SetBlendMode("ADD")
-            highlight:SetVertexColor(1, 1, 0.5, 0.2)
-            table.insert(self.rowHighlights, highlight)
-        end
+    if not isHeader and shouldHighlight then
+        local highlight = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, -2)
+        highlight:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 22, yOffset + 1)
+        highlight:SetPoint("BOTTOMRIGHT", self.mainFrame, "TOPRIGHT", -22, yOffset - 15)
+        highlight:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "REPEAT", "REPEAT")
+        highlight:SetTexCoord(0.05, 0.95, 0.1, 0.9)
+        highlight:SetBlendMode("ADD")
+        highlight:SetVertexColor(1, 1, 0.5, 0.2)
+        table.insert(self.rowHighlights, highlight)
     end
     
     -- For special rows (Notes and Warnings) - handle differently with full width span
@@ -1111,8 +953,6 @@ function TWRA:DisplayCurrentSection()
     self:FilterAndDisplayHandler(currentHandler)
 end
 
--- Add AutoMarker toggle to the options frame (if one exists)
--- Look for a CreateOptionsFrame function or similar and add:
 
 -- AutoMarker toggle (only shown if SuperWoW is available)
 if SUPERWOW_VERSION ~= nil then
@@ -1150,127 +990,4 @@ if SUPERWOW_VERSION ~= nil then
         
         lastElement = debugCheckbox
     end
-end
-
--- Improve ShowOptionsView to properly set current view and hide all main view elements
-function TWRA:ShowOptionsView()
-    -- Set the view state
-    self.currentView = "options"
-    
-    -- Debug output to trace flow
-    self:Debug("ui", "ShowOptionsView called - mainFrame exists: " .. tostring(self.mainFrame ~= nil))
-    
-    -- Change the options button text
-    if self.optionsButton then
-        self.optionsButton:SetText("Back")
-    end
-    
-    -- Change the title text to indicate options mode
-    if self.mainFrame and self.mainFrame.titleText then
-        self.mainFrame.titleText:SetText("TWRA Options")
-    end
-    
-    -- Hide navigation elements
-    if self.navigation then
-        if self.navigation.prevButton then self.navigation.prevButton:Hide() end
-        if self.navigation.nextButton then self.navigation.nextButton:Hide() end
-        if self.navigation.dropdown and self.navigation.dropdown.container then
-            self.navigation.dropdown.container:Hide()
-        end
-        if self.navigation.dropdown and self.navigation.dropdown.arrow then 
-            self.navigation.dropdown.arrow:Hide()
-        end
-    end
-    
-    -- Hide other buttons
-    if self.announceButton then self.announceButton:Hide() end
-    if self.updateTanksButton then self.updateTanksButton:Hide() end
-    
-    -- Clear rows and footers
-    self:ClearRows()
-    self:ClearFooters()
-    
-    -- Clean up any existing options container
-    if self.optionsContainer then
-        self.optionsContainer:Hide()
-        self.optionsContainer:SetParent(nil)
-        self.optionsContainer = nil
-    end
-    
-    -- Reset options elements array
-    self.optionsElements = {}
-    
-    -- Create options content using the dedicated function from the Options.lua
-    if self.CreateOptionsInMainFrame then
-        self:CreateOptionsInMainFrame()
-    else
-        self:Error("Options module not loaded - CreateOptionsInMainFrame missing")
-    end
-    
-    self:Debug("ui", "Switched to options view")
-end
-
--- Fix ShowMainView to properly handle view transition
-function TWRA:ShowMainView()
-    -- Set the view state
-    self.currentView = "main"
-    
-    -- Debug output to trace flow
-    self:Debug("ui", "ShowMainView called")
-    
-    -- Reset options button text
-    if self.optionsButton then
-        self.optionsButton:SetText("Options")
-    end
-    
-    -- Reset title text to default
-    if self.mainFrame and self.mainFrame.titleText then
-        self.mainFrame.titleText:SetText("Raid Assignments")
-    end
-    
-    -- Hide options container and all its elements
-    if self.optionsContainer then
-        self.optionsContainer:Hide()
-        
-        -- Clean up options container to avoid memory leaks
-        self.optionsContainer:SetParent(nil)
-        self.optionsContainer = nil
-    end
-    
-    -- Clean up options elements
-    if self.optionsElements then
-        for _, element in pairs(self.optionsElements) do
-            if element and element ~= self.mainFrame and element.Hide then
-                element:Hide()
-                element:SetParent(nil)
-            end
-        end
-        self.optionsElements = {}
-    end
-    
-    -- Show main UI elements
-    if self.navigation then
-        if self.navigation.prevButton then self.navigation.prevButton:Show() end
-        if self.navigation.nextButton then self.navigation.nextButton:Show() end
-        if self.navigation.dropdown and self.navigation.dropdown.container then
-            self.navigation.dropdown.container:Show()
-        end
-        if self.navigation.dropdown and self.navigation.dropdown.arrow then 
-            self.navigation.dropdown.arrow:Show()
-        end
-    end
-    
-    -- Check for pending navigation
-    if self.pendingNavigation then
-        self:NavigateToSection(self.pendingNavigation)
-        self.pendingNavigation = nil
-    else
-        self:DisplayCurrentSection()
-    end
-    
-    -- Show other buttons
-    if self.announceButton then self.announceButton:Show() end
-    if self.updateTanksButton then self.updateTanksButton:Show() end
-    
-    self:Debug("ui", "Switched to main view")
 end

@@ -686,10 +686,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                         tankName:SetText(tank.name)
                         
                         if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                            TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA.UI:ApplyClassColoring(tankName, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         else
                             -- Fallback if UI utils not available
-                            TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankName, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         end
                         
                         currentXPos = tankName
@@ -753,10 +761,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                         tankName:SetText(tank.name)
                         
                         if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                            TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA.UI:ApplyClassColoring(tankName, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         else
                             -- Fallback if UI utils not available
-                            TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankName, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         end
                         
                         currentXPos = tankName
@@ -822,10 +838,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                             tankName:SetText(tank.name)
                             
                             if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                                TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                                TWRA.UI:ApplyClassColoring(tankName, 
+                                    self:SafeGetTankProperty(tank, "name", ""), 
+                                    self:SafeGetTankProperty(tank, "class", ""),
+                                    self:SafeGetTankProperty(tank, "inRaid", false),
+                                    self:SafeGetTankProperty(tank, "online", false))
                             else
                                 -- Fallback if UI utils not available
-                                TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                                TWRA:ApplyPlayerNameColoring(tankName, 
+                                    self:SafeGetTankProperty(tank, "name", ""), 
+                                    self:SafeGetTankProperty(tank, "class", ""),
+                                    self:SafeGetTankProperty(tank, "inRaid", false),
+                                    self:SafeGetTankProperty(tank, "online", false))
                             end
                             
                             currentXPos = tankName
@@ -889,10 +913,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                             healerName:SetText(healer.name)
                             
                             if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                                TWRA.UI:ApplyClassColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
+                                TWRA.UI:ApplyClassColoring(healerName, 
+                                    self:SafeGetTankProperty(healer, "name", ""), 
+                                    self:SafeGetTankProperty(healer, "class", ""),
+                                    self:SafeGetTankProperty(healer, "inRaid", false),
+                                    self:SafeGetTankProperty(healer, "online", false))
                             else
                                 -- Fallback if UI utils not available
-                                TWRA:ApplyPlayerNameColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
+                                TWRA:ApplyPlayerNameColoring(healerName, 
+                                    self:SafeGetTankProperty(healer, "name", ""), 
+                                    self:SafeGetTankProperty(healer, "class", ""),
+                                    self:SafeGetTankProperty(healer, "inRaid", false),
+                                    self:SafeGetTankProperty(healer, "online", false))
                             end
                             
                             currentXPos = healerName
@@ -954,10 +986,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                         tankText:SetText(tank.name)
                         
                         if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                            TWRA.UI:ApplyClassColoring(tankText, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA.UI:ApplyClassColoring(tankText, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         else
                             -- Fallback if UI utils not available
-                            TWRA:ApplyPlayerNameColoring(tankText, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankText, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         end
                         
                         currentXPos = tankText
@@ -1074,10 +1114,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                         tankName:SetText(tank.name)
                         
                         if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                            TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA.UI:ApplyClassColoring(tankName, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         else
                             -- Fallback if UI utils not available
-                            TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                            TWRA:ApplyPlayerNameColoring(tankName, 
+                                self:SafeGetTankProperty(tank, "name", ""), 
+                                self:SafeGetTankProperty(tank, "class", ""),
+                                self:SafeGetTankProperty(tank, "inRaid", false),
+                                self:SafeGetTankProperty(tank, "online", false))
                         end
                         
                         currentXPos = tankName
@@ -1143,10 +1191,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                             tankName:SetText(tank.name)
                             
                             if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                                TWRA.UI:ApplyClassColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                                TWRA.UI:ApplyClassColoring(tankName, 
+                                    self:SafeGetTankProperty(tank, "name", ""), 
+                                    self:SafeGetTankProperty(tank, "class", ""),
+                                    self:SafeGetTankProperty(tank, "inRaid", false),
+                                    self:SafeGetTankProperty(tank, "online", false))
                             else
                                 -- Fallback if UI utils not available
-                                TWRA:ApplyPlayerNameColoring(tankName, tank.name, tank.class, tank.inRaid, tank.online)
+                                TWRA:ApplyPlayerNameColoring(tankName, 
+                                    self:SafeGetTankProperty(tank, "name", ""), 
+                                    self:SafeGetTankProperty(tank, "class", ""),
+                                    self:SafeGetTankProperty(tank, "inRaid", false),
+                                    self:SafeGetTankProperty(tank, "online", false))
                             end
                             
                             currentXPos = tankName
@@ -1210,10 +1266,18 @@ function TWRA:UpdateSectionOverlayContent(sectionName)
                             healerName:SetText(healer.name)
                             
                             if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                                TWRA.UI:ApplyClassColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
+                                TWRA.UI:ApplyClassColoring(healerName, 
+                                    self:SafeGetTankProperty(healer, "name", ""), 
+                                    self:SafeGetTankProperty(healer, "class", ""),
+                                    self:SafeGetTankProperty(healer, "inRaid", false),
+                                    self:SafeGetTankProperty(healer, "online", false))
                             else
                                 -- Fallback if UI utils not available
-                                TWRA:ApplyPlayerNameColoring(healerName, healer.name, healer.class, healer.inRaid, healer.online)
+                                TWRA:ApplyPlayerNameColoring(healerName, 
+                                    self:SafeGetTankProperty(healer, "name", ""), 
+                                    self:SafeGetTankProperty(healer, "class", ""),
+                                    self:SafeGetTankProperty(healer, "inRaid", false),
+                                    self:SafeGetTankProperty(healer, "online", false))
                             end
                             
                             currentXPos = healerName
@@ -1278,139 +1342,15 @@ function TWRA:ApplyPlayerNameColoring(textElement, playerName, playerClass, isIn
     end
 end
 
--- Add the missing CreateMinimapButton function
-function TWRA:CreateMinimapButton()
-    -- Create a frame for our minimap button
-    local miniButton = CreateFrame("Button", "TWRAMinimapButton", Minimap)
-    miniButton:SetWidth(32)
-    miniButton:SetHeight(32)
-    miniButton:SetFrameStrata("MEDIUM")
-    miniButton:SetFrameLevel(8)
-    
-    -- Set position (default to 180 degrees)
-    local defaultAngle = 180
-    local angle = defaultAngle
-    
-    -- Use saved angle if available
-    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.minimapAngle then
-        angle = TWRA_SavedVariables.options.minimapAngle
+-- Add this function to safely access tank properties
+function TWRA:SafeGetTankProperty(tankObj, propertyName, defaultValue)
+    if not tankObj then
+        return defaultValue
     end
     
-    -- Calculate position
-    local radius = 80
-    local radian = math.rad(angle)
-    local x = math.cos(radian) * radius
-    local y = math.sin(radian) * radius
-    
-    miniButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
-    
-    -- Set icon texture
-    local icon = miniButton:CreateTexture(nil, "BACKGROUND")
-    icon:SetTexture("Interface\\AddOns\\TWRA\\textures\\minimap_icon")
-    
-    -- If the custom texture doesn't exist, use a default
-    if not icon:GetTexture() then
-        icon:SetTexture("Interface\\Icons\\INV_Misc_Book_11")
-    end
-    
-    icon:SetAllPoints(miniButton)
-    miniButton.icon = icon
-    
-    -- Add highlight texture
-    local highlight = miniButton:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    highlight:SetBlendMode("ADD")
-    highlight:SetAllPoints(miniButton)
-    miniButton.highlight = highlight
-    
-    -- Set up scripts
-    miniButton:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(miniButton, "ANCHOR_LEFT")
-        GameTooltip:AddLine("TWRA - Raid Assignments")
-        GameTooltip:AddLine("Left-click: Toggle assignments window", 1, 1, 1)
-        GameTooltip:AddLine("Right-click: Toggle assignments OSD", 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    
-    miniButton:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    
-    miniButton:SetScript("OnClick", function()
-        if arg1 == "RightButton" then
-            -- Right click: Toggle OSD
-            if TWRA.ToggleOSD then
-                TWRA:ToggleOSD()
-            end
-        else
-            -- Left click: Toggle main window
-            if TWRA.ToggleMainFrame then
-                TWRA:ToggleMainFrame()
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Main window not available")
-            end
-        end
-    end)
-    
-    -- Make the button draggable
-    miniButton:RegisterForDrag("LeftButton")
-    miniButton:SetScript("OnDragStart", function()
-        this:LockHighlight()
-        this:StartMoving()
-    end)
-    
-    miniButton:SetScript("OnDragStop", function()
-        this:StopMovingOrSizing()
-        this:UnlockHighlight()
-        
-        -- Calculate and save angle
-        local x, y = this:GetCenter()
-        local mx, my = Minimap:GetCenter()
-        local angle = math.deg(math.atan2(y - my, x - mx))
-        
-        -- Save to settings
-        if TWRA_SavedVariables and TWRA_SavedVariables.options then
-            TWRA_SavedVariables.options.minimapAngle = angle
-        end
-    end)
-    
-    -- Store reference in addon
-    self.minimapButton = miniButton
-    
-    self:Debug("osd", "Minimap button created")
-    return miniButton
+    return tankObj[propertyName] or defaultValue
 end
 
--- Add the missing RegisterMessageHandler function
-function TWRA:RegisterMessageHandler(message, callback)
-    -- Initialize the message handlers table if it doesn't exist
-    self.messageHandlers = self.messageHandlers or {}
-    
-    -- Create array for this message type if needed
-    if not self.messageHandlers[message] then
-        self.messageHandlers[message] = {}
-    end
-    
-    -- Add the callback to the handlers array
-    table.insert(self.messageHandlers[message], callback)
-    self:Debug("general", "Registered message handler for: " .. message)
-end
-
--- Also add the SendMessage function to complete the messaging system
-function TWRA:SendMessage(message, arg1, arg2, arg3, arg4, arg5)
-    -- Initialize the message handlers table if it doesn't exist
-    self.messageHandlers = self.messageHandlers or {}
-    
-    -- Check if we have any handlers for this message
-    if not self.messageHandlers[message] then
-        return -- No handlers registered
-    end
-    
-    self:Debug("general", "Sending message: " .. message)
-    
-    -- Call each registered handler with the arguments
-    for _, callback in ipairs(self.messageHandlers[message]) do
-        -- Use explicit arguments instead of varargs (... unpacking)
-        callback(arg1, arg2, arg3, arg4, arg5)
-    end
-end
+-- Then use this in the problematic area where tank is being indexed
+-- Replace references like tank.name with:
+-- TWRA:SafeGetTankProperty(tank, "name", "")
