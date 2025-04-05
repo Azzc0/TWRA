@@ -742,3 +742,11 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         self:SendAddonMessage(announceMsg)
     end
 end
+
+-- Add this function to be called from the main slash command handler in Core.lua
+function TWRA:HandleDebugCommand(args)
+    -- Show help if no arguments
+    if not args or table.getn(args) == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug Commands|r:")
+    end
+end

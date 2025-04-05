@@ -200,12 +200,12 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     end
 end
 
+-- Enhanced LoadSavedAssignments to update OSD after loading
 function TWRA:LoadSavedAssignments()
     local saved = TWRA_SavedVariables.assignments
     
     -- Case 1: No saved data exists
     if not saved or not saved.data then 
-        self:Debug("data", "No saved assignments found - loading example data")
         return self:LoadExampleData()
     end
     
@@ -225,7 +225,7 @@ function TWRA:LoadSavedAssignments()
             if name == saved.currentSectionName then
                 self.navigation.currentIndex = i
                 sectionRestored = true
-                self:Debug("nav", "Restored section by name: " .. saved.currentSectionName)
+                self:Debug("nav", "Restored section by name: " .. name)
                 break
             end
         end
@@ -233,10 +233,27 @@ function TWRA:LoadSavedAssignments()
     
     -- If section wasn't restored by name, try by index
     if not sectionRestored then
-        local currentSection = saved.currentSection or 1
-        if self.navigation then
-            self.navigation.currentIndex = math.min(currentSection, table.getn(self.navigation.handlers))
-            self:Debug("nav", "Restored section by index: " .. self.navigation.currentIndex)
+        local index = saved.currentSection or 1
+        if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
+            self.navigation.currentIndex = index
+            self:Debug("nav", "Restored section by index: " .. index)
+        else
+            self.navigation.currentIndex = 1
+            self:Debug("nav", "Using default section index: 1")
+        end
+    end
+    
+    -- Update OSD with current section after loading (important for UI reload)
+    if self.navigation and self.navigation.currentIndex and 
+       self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
+        
+        local currentIndex = self.navigation.currentIndex
+        local sectionName = self.navigation.handlers[currentIndex]
+        local totalSections = table.getn(self.navigation.handlers)
+        
+        -- Update OSD content without showing it
+        if self.UpdateOSDContent then
+            self:UpdateOSDContent(sectionName, currentIndex, totalSections)
         end
     end
     
@@ -1001,21 +1018,13 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     
     -- Update display based on current view
     if self.currentView == "options" then
-        self:Debug("nav", "In options view - clearing rows and skipping display update")
-        self:ClearRows()
-    else
-        self:Debug("nav", "In main view - updating display with section: " .. sectionName)
-        
-        -- Force the view to main view to ensure content is visible
-        if self.currentView ~= "main" then
-            self.currentView = "main"
-            
-            -- Show and hide appropriate frames
-            if self.contentFrame then self.contentFrame:Show() end
-            if self.optionsFrame then self.optionsFrame:Hide() end
+        if self.ClearRows then
+            self:ClearRows()
         end
-        
-        self:FilterAndDisplayHandler(sectionName)
+    else
+        if self.FilterAndDisplayHandler then
+            self:FilterAndDisplayHandler(sectionName)
+        end
     end
     
     -- Determine if we should show OSD
@@ -1037,10 +1046,16 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
         self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
         self.currentView or "nil"))
     
-    -- Use the new OSD module directly
-    if shouldShowOSD and self.ShowOSD then
-        self:ShowOSD(sectionName, sectionIndex, numSections)
-    end
+    -- Create context for section change message - with forceUpdate flag
+    local context = {
+        isMainFrameVisible = self.mainFrame and self.mainFrame:IsShown() or false,
+        inOptionsView = self.currentView == "options" or false,
+        fromSync = suppressSync == "fromSync",
+        forceUpdate = true  -- Always force OSD content update
+    }
+    
+    -- Send section changed message which triggers OSD if appropriate
+    self:SendMessage("SECTION_CHANGED", sectionName, sectionIndex, numSections, context)
     
     -- Broadcast to group if sync enabled and not suppressed
     if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
@@ -1092,133 +1107,98 @@ end
 
 -- Improve ShowOptionsView to properly set current view and safely handle UI elements
 function TWRA:ShowOptionsView()
-    -- Check if mainFrame exists
-    if not self.mainFrame then
-        self:CreateMainFrame()
+    -- Set view state
+    self.currentView = "options"
+
+    -- Create options interface if it doesn't exist yet
+    if not self.optionsElements or table.getn(self.optionsElements) == 0 then
+        self:CreateOptionsInMainFrame()
+    end
+
+    -- Show options elements
+    if self.optionsElements then
+        for _, element in pairs(self.optionsElements) do
+            if element.Show then
+                element:Show()
+            end
+        end
+    end
+
+    -- Clear any footers and rows
+    self:ClearFooters()
+    self:ClearRows()
+    
+    -- Hide navigation elements
+    if self.navigation then
+        if self.navigation.prevButton then self.navigation.prevButton:Hide() end
+        if self.navigation.nextButton then self.navigation.nextButton:Hide() end
+        if self.navigation.menuButton then self.navigation.menuButton:Hide() end
+        if self.navigation.dropdownMenu then self.navigation.dropdownMenu:Hide() end
+        if self.navigation.handlerText then self.navigation.handlerText:Hide() end
     end
     
-    -- Safety: Use pcall to avoid errors
-    local success, err = pcall(function()
-                
-        -- Clear any footers and rows
-        self:ClearFooters()
-        self:ClearRows()
-        
-        -- Hide navigation elements
-        if self.navigation then
-            if self.navigation.prevButton then self.navigation.prevButton:Hide() end
-            if self.navigation.nextButton then self.navigation.nextButton:Hide() end
-            if self.navigation.menuButton then self.navigation.menuButton:Hide() end
-            if self.navigation.dropdownMenu then self.navigation.dropdownMenu:Hide() end
-            if self.navigation.handlerText then self.navigation.handlerText:Hide() end
-        end
-        
-        -- Hide action buttons
-        if self.announceButton then self.announceButton:Hide() end
-        if self.updateTanksButton then self.updateTanksButton:Hide() end
-        
-        -- Reset frame height to default while in options
-        self.mainFrame:SetHeight(300)
-        
-        -- Change "Options" button text to "Back"
-        if self.optionsButton then 
-            self.optionsButton:SetText("Back")
-        end
-        
-        -- Create options panel if it doesn't exist
-        if not self.optionsPanel then
-            self:CreateOptionsPanel()
-        end
-        
-        -- Show options panel
-        if self.optionsPanel then
-            self.optionsPanel:Show()
-        end
-        
-        -- Update current view state
-        self.currentView = "options"
-    end)
-    
-    if not success then
-        self:Error("Error in ShowOptionsView: " .. tostring(err))
+    -- Reset frame height to default while in options
+    self.mainFrame:SetHeight(300)
+
+    -- Change button text if options button exists
+    if self.optionsButton then
+        self.optionsButton:SetText("Back")
     end
+    
+    -- -- Hide main view elements if they exist
+    -- if self.navigation then
+    --     if self.navigation.prevButton then self.navigation.prevButton:Hide() end
+    --     if self.navigation.nextButton then self.navigation.nextButton:Hide() end
+    --     if self.navigation.handlerText then self.navigation.handlerText:Hide() end
+    --     if self.navigation.dropdown and self.navigation.dropdown.container then
+    --         self.navigation.dropdown.container:Hide()
+    --     end
+    -- end
+    
+    -- Hide other main view buttons
+    if self.announceButton then self.announceButton:Hide() end
+    if self.updateTanksButton then self.updateTanksButton:Hide() end
     
     self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
 end
 
 -- Fix ShowMainView to better handle section restoration after import
 function TWRA:ShowMainView()
-    -- Check if mainFrame exists
-    if not self.mainFrame then
-        self:CreateMainFrame()
+    -- Set view state first
+    self.currentView = "main"
+    
+    -- Hide options UI elements if they exist
+    if self.optionsElements then
+        for _, element in pairs(self.optionsElements) do
+            if element.Hide then
+                element:Hide()
+            end
+        end
     end
     
-    -- Hide options panel if it exists
-    if self.optionsPanel then
-        self.optionsPanel:Hide()
+    -- Change button text if options button exists
+    if self.optionsButton then
+        self.optionsButton:SetText("Options")
     end
     
-    -- Show navigation elements
+    -- Show navigation elements if they exist
     if self.navigation then
         if self.navigation.prevButton then self.navigation.prevButton:Show() end
         if self.navigation.nextButton then self.navigation.nextButton:Show() end
         if self.navigation.menuButton then self.navigation.menuButton:Show() end
         if self.navigation.handlerText then self.navigation.handlerText:Show() end
+        if self.navigation.dropdown and self.navigation.dropdown.container then
+            self.navigation.dropdown.container:Show()
+        end
     end
     
-    -- Show action buttons
+
+    -- Show other main view buttons
     if self.announceButton then self.announceButton:Show() end
     if self.updateTanksButton then self.updateTanksButton:Show() end
     
-    -- Change button text back to "Options"
-    if self.optionsButton then 
-        self.optionsButton:SetText("Options")
-    end
-    
-    -- Update the current view state
-    self.currentView = "main"
-    
-    -- Check if we have pending navigation from an import
-    if self.pendingSectionName or self.pendingSectionIndex then
-        self:Debug("nav", "Found pending section navigation after import: " .. 
-                        (self.pendingSectionName or "unnamed") .. 
-                        " (index: " .. (self.pendingSectionIndex or "unknown") .. ")")
-                        
-        -- Try to navigate to the previously selected section by name first
-        local sectionRestored = false
-        
-        if self.pendingSectionName and self.navigation and self.navigation.handlers then
-            for i, name in ipairs(self.navigation.handlers) do
-                if name == self.pendingSectionName then
-                    self:Debug("nav", "Navigating to section by name: " .. self.pendingSectionName)
-                    self.navigation.currentIndex = i
-                    self:SaveCurrentSection() -- Store selected section in saved vars
-                    sectionRestored = true
-                    break
-                end
-            end
-        end
-        
-        -- If we couldn't find by name, try by index
-        if not sectionRestored and self.pendingSectionIndex and self.navigation then
-            local maxIndex = table.getn(self.navigation.handlers or {})
-            if maxIndex > 0 then
-                local safeIndex = math.min(self.pendingSectionIndex, maxIndex)
-                self:Debug("nav", "Navigating to section by index: " .. safeIndex)
-                self.navigation.currentIndex = safeIndex
-                self:SaveCurrentSection() -- Store selected section in saved vars
-                sectionRestored = true
-            end
-        end
-        
-        -- Clear pending navigation
-        self.pendingSectionName = nil
-        self.pendingSectionIndex = nil
-        
-        -- Display the section content
-        self:DisplayCurrentSection()
-    else
-        -- No pending navigation, just display current section
+    -- Display current section content
+    if self.DisplayCurrentSection then
         self:DisplayCurrentSection()
     end
     

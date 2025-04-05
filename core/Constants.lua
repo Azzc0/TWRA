@@ -226,6 +226,18 @@ TWRA.DEFAULT_OPTIONS = {
     announceChannel = "GROUP"  -- Default announcement channel
 }
 
+-- Default OSD settings
+TWRA.DEFAULT_OSD_SETTINGS = {
+    point = "CENTER",
+    xOffset = 0,
+    yOffset = 100,
+    scale = 1.0,
+    duration = 2,
+    locked = false,
+    enabled = true,           -- Master OSD enabled toggle
+    showOnNavigation = true   -- Auto-show on navigation
+}
+
 -- Export version information
 TWRA.VERSION = {
     MAJOR = 0,
