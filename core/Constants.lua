@@ -204,26 +204,26 @@ TWRA.ROLE_ICONS = {
 -- Default options
 TWRA.DEFAULT_OPTIONS = {
     -- UI options
-    hideFrameByDefault = true,  -- Hide main frame on login
-    lockFramePosition = false,  -- Allow frame movement
-    frameScale = 1.0,          -- Default frame scale
-    frameWidth = 800,          -- Default frame width
-    frameHeight = 300,         -- Default frame height
+    hideFrameByDefault = true,    -- Hide main frame on login (changed to boolean)
+    lockFramePosition = false,    -- Allow frame movement (changed to boolean)
+    frameScale = 1.0,             -- Default frame scale
+    frameWidth = 800,             -- Default frame width
+    frameHeight = 300,            -- Default frame height
     
     -- OSD options
-    enableOSD = true,          -- Enable on-screen display
-    osdScale = 1.0,            -- Default OSD scale
-    osdPoint = "CENTER",       -- Default OSD position
-    osdXOffset = 0,            -- Default X offset
-    osdYOffset = 100,          -- Default Y offset
-    osdDuration = 2,           -- Default duration in seconds
-    osdLocked = false,         -- Allow OSD movement
+    enableOSD = true,             -- Enable on-screen display (changed to boolean)
+    osdScale = 1.0,               -- Default OSD scale
+    osdPoint = "CENTER",          -- Default OSD position
+    osdXOffset = 0,               -- Default X offset
+    osdYOffset = 100,             -- Default Y offset
+    osdDuration = 2,              -- Default duration in seconds
+    osdLocked = false,            -- Allow OSD movement (changed to boolean)
     
     -- Sync options
-    enableLiveSync = true,     -- Enable section sync with group
-    tankSync = true,           -- Enable tank syncing with oRA2
-    customChannel = "",        -- Default custom channel name
-    announceChannel = "GROUP"  -- Default announcement channel
+    enableLiveSync = true,        -- Enable section sync with group (changed to boolean)
+    tankSync = true,              -- Enable tank syncing with oRA2 (changed to boolean)
+    customChannel = "",           -- Default custom channel name
+    announceChannel = "GROUP"     -- Default announcement channel
 }
 
 -- Default OSD settings
@@ -233,9 +233,9 @@ TWRA.DEFAULT_OSD_SETTINGS = {
     yOffset = 100,
     scale = 1.0,
     duration = 2,
-    locked = false,
-    enabled = true,           -- Master OSD enabled toggle
-    showOnNavigation = true   -- Auto-show on navigation
+    locked = false,       -- Changed to boolean
+    enabled = true,       -- Changed to boolean
+    showOnNavigation = true -- Changed to boolean
 }
 
 -- Export version information

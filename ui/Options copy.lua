@@ -1,6 +1,44 @@
 -- TWRA Options Module
--- Streamlined implementation with improved structure
 TWRA = TWRA or {}
+
+-- Helper function to safely enable/disable UI elements with null checking
+function TWRA:SafeToggleUIElement(element, enabled, textElement)
+    if not element then return end
+    
+    if enabled then
+        -- Enable element
+        if element.SetEnabled then
+            element:SetEnabled(true)
+        else
+            -- Manual enable for various element types
+            element:EnableMouse(true)
+            element:SetAlpha(1.0)
+        end
+        
+        -- Update text color
+        if textElement then
+            if textElement.SetTextColor then
+                textElement:SetTextColor(1, 1, 1)
+            end
+        end
+    else
+        -- Disable element
+        if element.SetEnabled then
+            element:SetEnabled(false)
+        else
+            -- Manual disable for various element types
+            element:EnableMouse(false)
+            element:SetAlpha(0.5)
+        end
+        
+        -- Update text color
+        if textElement then
+            if textElement.SetTextColor then
+                textElement:SetTextColor(0.5, 0.5, 0.5)
+            end
+        end
+    end
+end
 
 -- Initialize options with defaults if they don't exist
 function TWRA:InitOptions()
@@ -18,8 +56,10 @@ function TWRA:InitOptions()
         customChannel = ""
     }
     
-    -- Apply defaults for any missing options
+    -- For each option, use saved value or default
     local options = TWRA_SavedVariables.options
+    
+    -- Apply defaults for any missing options
     for key, defaultValue in pairs(defaults) do
         if options[key] == nil then
             options[key] = defaultValue
@@ -63,79 +103,8 @@ function TWRA:InitOptions()
     end
     
     self:Debug("general", "Options initialized")
+    
     return true
-end
-
--- Helper function to safely enable/disable UI elements with null checking
-function TWRA:SafeToggleUIElement(element, enabled, textElement)
-    if not element then return end
-    
-    if enabled then
-        -- Enable element
-        if element.SetEnabled then
-            element:SetEnabled(true)
-        else
-            -- Manual enable for various element types
-            element:EnableMouse(true)
-            element:SetAlpha(1.0)
-        end
-        
-        -- Update text color
-        if textElement and textElement.SetTextColor then
-            textElement:SetTextColor(1, 1, 1)
-        end
-    else
-        -- Disable element
-        if element.SetEnabled then
-            element:SetEnabled(false)
-        else
-            -- Manual disable for various element types
-            element:EnableMouse(false)
-            element:SetAlpha(0.5)
-        end
-        
-        -- Update text color
-        if textElement and textElement.SetTextColor then
-            textElement:SetTextColor(0.5, 0.5, 0.5)
-        end
-    end
-end
-
--- Helper function to update slider text and state
-function TWRA:UpdateSliderState(slider, enabled)
-    if not slider then return end
-    
-    -- Set mouse interaction
-    slider:EnableMouse(enabled)
-    
-    -- Update text colors
-    local color = enabled and 1.0 or 0.5
-    
-    local sliderText = getglobal(slider:GetName() .. "Text")
-    local sliderLow = getglobal(slider:GetName() .. "Low")
-    local sliderHigh = getglobal(slider:GetName() .. "High")
-    
-    if sliderText then sliderText:SetTextColor(color, color, color) end
-    if sliderLow then sliderLow:SetTextColor(color, color, color) end
-    if sliderHigh then sliderHigh:SetTextColor(color, color, color) end
-end
-
--- Helper function to create a checkbox with label
-function TWRA:CreateCheckbox(parent, text, point, relativeFrame, relativePoint, x, y)
-    local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-    checkbox:SetWidth(24)
-    checkbox:SetHeight(24)
-    checkbox:SetPoint(point or "TOPLEFT", relativeFrame or parent, relativePoint or (point or "TOPLEFT"), x or 0, y or 0)
-    
-    -- Create text element explicitly
-    local checkboxText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    checkboxText:SetPoint("LEFT", checkbox, "RIGHT", 5, 0)
-    checkboxText:SetText(text)
-    
-    -- Attach text reference to checkbox for easy access
-    checkbox.textElement = checkboxText
-    
-    return checkbox, checkboxText
 end
 
 -- Create options content in the main frame - PRIMARY OPTIONS FUNCTION
@@ -143,7 +112,6 @@ function TWRA:CreateOptionsInMainFrame()
     if self.optionsElements then
         return self.optionsElements
     end
-    
     -- Clear any existing options UI
     if self.optionsElements then
         for _, element in pairs(self.optionsElements) do
@@ -154,7 +122,7 @@ function TWRA:CreateOptionsInMainFrame()
         end
     end
     
-    -- Create a container for all options elements
+    -- Create a container for all options elements to track them
     self.optionsElements = {}
     
     -- Make sure main frame exists
@@ -174,19 +142,21 @@ function TWRA:CreateOptionsInMainFrame()
     title:SetText("Options")
     table.insert(self.optionsElements, title)
     
-    -- Create the three columns
+    -- Create left column (Sync settings)
     local leftColumn = CreateFrame("Frame", nil, self.mainFrame)
     leftColumn:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 20, -50)
     leftColumn:SetWidth(240)
     leftColumn:SetHeight(400)
     table.insert(self.optionsElements, leftColumn)
     
+    -- Create middle column (OSD settings)
     local middleColumn = CreateFrame("Frame", nil, self.mainFrame)
     middleColumn:SetPoint("TOP", self.mainFrame, "TOP", 0, -50)
     middleColumn:SetWidth(240)
     middleColumn:SetHeight(400)
     table.insert(self.optionsElements, middleColumn)
     
+    -- Create right column (Import functionality)
     local rightColumn = CreateFrame("Frame", nil, self.mainFrame)
     rightColumn:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, -50)
     rightColumn:SetWidth(240)
@@ -215,52 +185,181 @@ function TWRA:CreateOptionsInMainFrame()
     syncTitle:SetText("Synchronization & Features")
     table.insert(self.optionsElements, syncTitle)
     
-    -- Live Sync Option
-    local liveSync, liveSyncText = self:CreateCheckbox(leftColumn, "Live Section Sync", "TOPLEFT", syncTitle, "BOTTOMLEFT", 0, -10)
+    -- Live Sync Option - fixed restored text and added debug
+    local liveSync = CreateFrame("CheckButton", nil, leftColumn, "UICheckButtonTemplate")
+    liveSync:SetPoint("TOPLEFT", syncTitle, "BOTTOMLEFT", 0, -10)
+    liveSync:SetWidth(24)
+    liveSync:SetHeight(24)
+    
+    -- Create text element explicitly
+    local liveSyncText = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    liveSyncText:SetPoint("LEFT", liveSync, "RIGHT", 5, 0)
+    liveSyncText:SetText("Live Section Sync")
+    
+    -- Set initial value correctly (1 = checked = enabled)
+    local liveSyncEnabled = (TWRA_SavedVariables.options.liveSync == 1)
+    liveSync:SetChecked(liveSyncEnabled)
+    
+    -- Set click handler to store 1/0 properly with additional debug
+    liveSync:SetScript("OnClick", function()
+        local checked = (this:GetChecked() == 1)
+        TWRA_SavedVariables.options.liveSync = checked and true or false
+        TWRA.SYNC.liveSync = checked  -- Set the runtime value to match
+        
+        -- Add debug output
+        TWRA:Debug("sync", "Option 'Live Section Sync' set to " .. (checked and "ON" or "OFF") .. " (value: " .. TWRA_SavedVariables.options.liveSync .. ")")
+        
+        -- Update dependent options
+        if not checked then
+            tankSyncCheckbox:SetChecked(false)
+            TWRA_SavedVariables.options.tankSync = 0
+            TWRA.SYNC.tankSync = false
+            TWRA:Debug("sync", "Option 'Tank Sync' auto-disabled because Live Section Sync was turned off")
+        end
+    end)
+    
     table.insert(self.optionsElements, liveSync)
     table.insert(self.optionsElements, liveSyncText)
     
-    -- Tank Sync Option
-    local tankSyncCheckbox, tankSyncText = self:CreateCheckbox(leftColumn, "Tank Sync", "TOPLEFT", liveSync, "BOTTOMLEFT", 20, -5)
+    -- Tank Sync Option - added debug
+    local tankSyncCheckbox = CreateFrame("CheckButton", nil, leftColumn, "UICheckButtonTemplate")
+    tankSyncCheckbox:SetPoint("TOPLEFT", liveSync, "BOTTOMLEFT", 20, -5)
+    tankSyncCheckbox:SetWidth(24)
+    tankSyncCheckbox:SetHeight(24)
+    
+    -- Create text element explicitly
+    local tankSyncText = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tankSyncText:SetPoint("LEFT", tankSyncCheckbox, "RIGHT", 5, 0)
+    tankSyncText:SetText("Tank Sync")
+    
+    -- Set initial value from saved variable (using == 1)
+    local tankSyncEnabled = (TWRA_SavedVariables.options.tankSync == 1)
+    tankSyncCheckbox:SetChecked(tankSyncEnabled)
+    
+    -- Set click handler to store 1/0 properly with additional debug
+    tankSyncCheckbox:SetScript("OnClick", function()
+        local checked = (this:GetChecked() == 1)
+        TWRA_SavedVariables.options.tankSync = checked and true or false
+        TWRA.SYNC.tankSync = checked  -- Set the runtime value to match
+        
+        -- Add debug output
+        TWRA:Debug("tank", "Option 'Tank Sync' set to " .. (checked and "ON" or "OFF") .. " (value: " .. TWRA_SavedVariables.options.tankSync .. ")")
+        
+        -- Enable liveSync if tank sync is enabled (requires liveSync)
+        if checked and TWRA_SavedVariables.options.liveSync ~= 1 then
+            liveSync:SetChecked(true)
+            TWRA_SavedVariables.options.liveSync = 1
+            TWRA.SYNC.liveSync = true
+            TWRA:Debug("sync", "Option 'Live Section Sync' auto-enabled because Tank Sync was turned on")
+        end
+    end)
+    
     table.insert(self.optionsElements, tankSyncCheckbox)
     table.insert(self.optionsElements, tankSyncText)
     
-    -- Add info icon for tank sync
+
+    -- Ensure text is created and positioned properly
+    local tankSyncText = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tankSyncText:SetPoint("LEFT", tankSyncCheckbox, "RIGHT", 5, 0)
+    tankSyncText:SetText("Tank Sync")
+    
+    -- Add info icon for tank sync with tooltip - fixed icon
     local tankSyncIcon, tankSyncIconFrame = self.UI:CreateIconWithTooltip(
         leftColumn,
-        "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",
+        "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",  -- Updated icon
         "Tank Sync",
         "When enabled, tanks will be automatically assigned in oRA2 based on the currently selected section.",
         tankSyncText,
-        5, 22, 22
+        5,
+        22,
+        22
     )
     
+    -- Adjust icon vertical positioning to center with text
     tankSyncIcon:ClearAllPoints()
     tankSyncIcon:SetPoint("LEFT", tankSyncText, "RIGHT", 5, 0)
     
+    table.insert(self.optionsElements, tankSyncText)
     table.insert(self.optionsElements, tankSyncIcon)
     table.insert(self.optionsElements, tankSyncIconFrame)
     
-    -- AutoNavigate Option
-    local autoNavigate, autoNavigateText = self:CreateCheckbox(leftColumn, "AutoNavigate", "TOPLEFT", tankSyncCheckbox, "BOTTOMLEFT", -20, -8)
+    -- AutoNavigate Option - fixed reversed logic
+    local autoNavigate = CreateFrame("CheckButton", nil, leftColumn, "UICheckButtonTemplate")
+    autoNavigate:SetPoint("TOPLEFT", tankSyncCheckbox, "BOTTOMLEFT", -20, -8)
+    autoNavigate:SetWidth(24)
+    autoNavigate:SetHeight(24)
+    
+    -- Set initial value correctly (1 = checked = enabled)
+    local autoNavEnabled = (TWRA_SavedVariables.options.autoNavigate == 1)
+    autoNavigate:SetChecked(autoNavEnabled)
+    
+    -- Set click handler to properly update the runtime value
+    autoNavigate:SetScript("OnClick", function()
+        local checked = (this:GetChecked() == 1)
+        TWRA_SavedVariables.options.autoNavigate = checked and true or false
+        TWRA.AUTONAVIGATE.enabled = checked  -- Update the runtime value directly
+        
+        -- Add debug output
+        TWRA:Debug("nav", "Option 'AutoNavigate' set to " .. (checked and "ON" or "OFF") .. " (value: " .. tostring(TWRA_SavedVariables.options.autoNavigate) .. ")")
+        
+        -- Enable or disable scanning based on checkbox state
+        if checked then
+            TWRA:StartAutoNavigateScan()
+            TWRA:Debug("nav", "AutoNavigate scanning started")
+        else
+            TWRA:StopAutoNavigateScan()
+            TWRA:Debug("nav", "AutoNavigate scanning stopped")
+        end
+        
+        -- Toggle scan frequency slider based on AutoNavigate state
+        if scanSlider then  -- Make sure slider exists
+            if checked then
+                -- Enable the slider
+                scanSlider:EnableMouse(true)
+                -- Use getglobal instead of _G for older WoW versions
+                local sliderText = getglobal(scanSlider:GetName() .. "Text")
+                local sliderLow = getglobal(scanSlider:GetName() .. "Low")
+                local sliderHigh = getglobal(scanSlider:GetName() .. "High")
+                
+                if sliderText then sliderText:SetTextColor(1, 1, 1) end
+                if sliderLow then sliderLow:SetTextColor(1, 1, 1) end
+                if sliderHigh then sliderHigh:SetTextColor(1, 1, 1) end
+                
+                TWRA:Debug("nav", "AutoNavigate frequency slider enabled")
+            else
+                -- Disable the slider
+                scanSlider:EnableMouse(false)
+                -- Use getglobal instead of _G for older WoW versions
+                local sliderText = getglobal(scanSlider:GetName() .. "Text")
+                local sliderLow = getglobal(scanSlider:GetName() .. "Low")
+                local sliderHigh = getglobal(scanSlider:GetName() .. "High")
+                
+                if sliderText then sliderText:SetTextColor(0.5, 0.5, 0.5) end
+                if sliderLow then sliderLow:SetTextColor(0.5, 0.5, 0.5) end
+                if sliderHigh then sliderHigh:SetTextColor(0.5, 0.5, 0.5) end
+                
+                TWRA:Debug("nav", "AutoNavigate frequency slider disabled")
+            end
+        end
+    end)
     table.insert(self.optionsElements, autoNavigate)
+    
+    local autoNavigateText = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    autoNavigateText:SetPoint("LEFT", autoNavigate, "RIGHT", 5, 0)
+    autoNavigateText:SetText("AutoNavigate")
     table.insert(self.optionsElements, autoNavigateText)
     
-    -- Add info icon for autonavigate
+    -- Add info icon for autonavigate with tooltip - fixed icon
     local autoNavIcon, autoNavIconFrame = self.UI:CreateIconWithTooltip(
-        leftColumn,
-        "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",
+        leftColumn, 
+        "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",  -- Updated icon
         "AutoNavigate",
         "Automatically navigate to the appropriate section based on raid markers or target selection.",
-        autoNavigateText,
-        5, 22, 22
+        autoNavigateText,  -- Position relative to text element
+        5,                 -- Offset from text 
+        22,                -- Increased size to 22px
+        22                 -- Increased size to 22px
     )
-    
-    autoNavIcon:ClearAllPoints()
-    autoNavIcon:SetPoint("LEFT", autoNavigateText, "RIGHT", 5, 0)
-    
-    table.insert(self.optionsElements, autoNavIcon)
-    table.insert(self.optionsElements, autoNavIconFrame)
     
     -- Scan frequency slider (indented)
     local scanSlider = CreateFrame("Slider", "TWRA_ScanFrequencySlider", leftColumn, "OptionsSliderTemplate")
@@ -272,9 +371,6 @@ function TWRA:CreateOptionsInMainFrame()
     scanSlider:SetOrientation("HORIZONTAL")
     table.insert(self.optionsElements, scanSlider)
     
-    -- Set slider text
-    getglobal(scanSlider:GetName() .. "Low"):SetText("Fast")
-    getglobal(scanSlider:GetName() .. "High"):SetText("Slow")
     
     -- Announcement section
     local announceTitle = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -282,7 +378,7 @@ function TWRA:CreateOptionsInMainFrame()
     announceTitle:SetText("Announcement Channel")
     table.insert(self.optionsElements, announceTitle)
     
-    -- Group Radio Button
+    -- Group Radio Button - use UIRadioButtonTemplate
     local groupRadio = CreateFrame("CheckButton", "TWRA_GroupRadioButton", leftColumn, "UIRadioButtonTemplate")
     groupRadio:SetPoint("TOPLEFT", announceTitle, "BOTTOMLEFT", 0, -10)
     groupRadio:SetWidth(16)
@@ -292,71 +388,177 @@ function TWRA:CreateOptionsInMainFrame()
     groupText:SetPoint("LEFT", groupRadio, "RIGHT", 5, 0)
     groupText:SetText("Group")
     
+    -- Set initial state based on saved options
+    local isGroupSelected = (not TWRA_SavedVariables.options.announceChannel or 
+                           TWRA_SavedVariables.options.announceChannel == "GROUP")
+    groupRadio:SetChecked(isGroupSelected)
+    
     table.insert(self.optionsElements, groupRadio)
     table.insert(self.optionsElements, groupText)
     
-    -- Channel Radio Button
+    -- Channel Radio Button - use UIRadioButtonTemplate
     local channelRadio = CreateFrame("CheckButton", "TWRA_ChannelRadioButton", leftColumn, "UIRadioButtonTemplate")
     channelRadio:SetPoint("TOPLEFT", groupRadio, "BOTTOMLEFT", 0, -5)
     channelRadio:SetWidth(16)
     channelRadio:SetHeight(16)
     
+    -- Set initial state - opposite of group radio
+    channelRadio:SetChecked(not isGroupSelected)
+    
     local channelText = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     channelText:SetPoint("LEFT", channelRadio, "RIGHT", 5, 0)
     channelText:SetText("Channel:")
     
+    -- Add radio button functionality - click handlers for both buttons
+    groupRadio:SetScript("OnClick", function()
+        -- When group is selected, unselect channel
+        groupRadio:SetChecked(true)
+        channelRadio:SetChecked(false)
+        
+        -- Save selection
+        TWRA_SavedVariables.options.announceChannel = "GROUP"
+    end)
+    
+    channelRadio:SetScript("OnClick", function()
+        -- When channel is selected, unselect group
+        channelRadio:SetChecked(true)
+        groupRadio:SetChecked(false)
+        
+        -- Save selection
+        TWRA_SavedVariables.options.announceChannel = "CHANNEL"
+    end)
+    
     table.insert(self.optionsElements, channelRadio)
     table.insert(self.optionsElements, channelText)
     
-    -- Add info icon for group option
+    -- Add info icon for group option with tooltip - updated icon and description
     local groupIcon, groupIconFrame = self.UI:CreateIconWithTooltip(
         leftColumn,
-        "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",
+        "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",  -- Updated icon
         "Group Channel",
-        "Announcements will be sent to your current group or raid. Raid warnings will be used for warnings when in a raid.",
-        groupText,
-        5, 22, 22
+        "Announcements will be sent to your current group or raid. Raid warnings will be used for warnings when in a raid.",  -- Updated description
+        groupText,  -- Position relative to text element
+        5,          -- Offset from text
+        22,         -- Increased size to 22px
+        22          -- Increased size to 22px
     )
     
+    -- Adjust icon vertical positioning to center with text
     groupIcon:ClearAllPoints()
     groupIcon:SetPoint("LEFT", groupText, "RIGHT", 5, 0)
     
     table.insert(self.optionsElements, groupIcon)
     table.insert(self.optionsElements, groupIconFrame)
     
-    -- Channel input box
+    -- Make channel input wider
+    -- Channel number input box - WIDER
     local channelInput = CreateFrame("EditBox", nil, leftColumn, "InputBoxTemplate")
-    channelInput:SetWidth(160)
+    channelInput:SetWidth(160) -- Much wider
     channelInput:SetHeight(20)
     channelInput:SetPoint("LEFT", channelText, "RIGHT", 5, 0)
-    channelInput:SetNumeric(false)
+    channelInput:SetNumeric(false) -- Allow channel names
     channelInput:SetAutoFocus(false)
-    channelInput:SetMaxLetters(20)
+    channelInput:SetMaxLetters(20) -- Allow longer channel names
     table.insert(self.optionsElements, channelInput)
     
     -- ====================== MIDDLE COLUMN: OSD SETTINGS ======================
     -- Column title
     local osdTitle = middleColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    osdTitle:SetPoint("TOPLEFT", middleColumn, "TOPLEFT", 10, 0)
+    osdTitle:SetPoint("TOPLEFT", middleColumn, "TOPLEFT", 10, 0) -- Added 10 padding on left
     osdTitle:SetText("On-Screen Display")
     table.insert(self.optionsElements, osdTitle)
     
-    -- OSD Enable checkbox
-    local enableOSD, enableOSDText = self:CreateCheckbox(middleColumn, "Enable OSD", "TOPLEFT", osdTitle, "BOTTOMLEFT", 0, -10)
+    -- OSD Enable checkbox - added debug
+    local enableOSD = CreateFrame("CheckButton", nil, middleColumn, "UICheckButtonTemplate")
+    enableOSD:SetPoint("TOPLEFT", osdTitle, "BOTTOMLEFT", 0, -10)
+    enableOSD:SetWidth(24)
+    enableOSD:SetHeight(24)
+    
+    -- Create text element explicitly
+    local enableOSDText = middleColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    enableOSDText:SetPoint("LEFT", enableOSD, "RIGHT", 5, 0)
+    enableOSDText:SetText("Enable OSD")
+    
+    -- Set initial state from saved variables
+    local osdEnabled = TWRA_SavedVariables.options.osd and 
+                      TWRA_SavedVariables.options.osd.enabled == 1
+    enableOSD:SetChecked(osdEnabled)
+    
+    -- Add click handler to update settings with debug
+    enableOSD:SetScript("OnClick", function()
+        local checked = (this:GetChecked() == 1)
+        TWRA:Debug("osd", "Option 'Enable OSD' set to " .. (checked and "ON" or "OFF"))
+        TWRA:ToggleOSDEnabled(checked)  -- Pass the actual boolean state
+    end)
+    
     table.insert(self.optionsElements, enableOSD)
     table.insert(self.optionsElements, enableOSDText)
     
-    -- OSD on Navigation checkbox
-    local showOnNavOSD, showOnNavOSDText = self:CreateCheckbox(middleColumn, "Show on Navigation", "TOPLEFT", enableOSD, "BOTTOMLEFT", 0, -5)
+    -- OSD on Navigation checkbox - added debug
+    local showOnNavOSD = CreateFrame("CheckButton", nil, middleColumn, "UICheckButtonTemplate")
+    showOnNavOSD:SetPoint("TOPLEFT", enableOSD, "BOTTOMLEFT", 0, -5)
+    showOnNavOSD:SetWidth(24)
+    showOnNavOSD:SetHeight(24)
+    
+    -- Create text element explicitly
+    local showOnNavOSDText = middleColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    showOnNavOSDText:SetPoint("LEFT", showOnNavOSD, "RIGHT", 5, 0)
+    showOnNavOSDText:SetText("Show on Navigation")
+    
+    -- Set initial state from saved variables
+    local showOnNav = TWRA_SavedVariables.options.osd and 
+                     TWRA_SavedVariables.options.osd.showOnNavigation == 1
+    showOnNavOSD:SetChecked(showOnNav)
+    
+    -- Add click handler to update settings with debug
+    showOnNavOSD:SetScript("OnClick", function()
+        local checked = (this:GetChecked() == 1)
+        TWRA:Debug("osd", "Option 'Show on Navigation' set to " .. (checked and "ON" or "OFF"))
+        TWRA:ToggleOSDOnNavigation(checked)  -- Pass the actual boolean state
+    end)
+    
     table.insert(self.optionsElements, showOnNavOSD)
     table.insert(self.optionsElements, showOnNavOSDText)
     
-    -- Lock Position checkbox
-    local lockOSD, lockOSDText = self:CreateCheckbox(middleColumn, "Lock Position", "TOPLEFT", showOnNavOSD, "BOTTOMLEFT", 0, -10)
+    -- Lock Position checkbox - added debug
+    local lockOSD = CreateFrame("CheckButton", nil, middleColumn, "UICheckButtonTemplate")
+    lockOSD:SetPoint("TOPLEFT", showOnNavOSD, "BOTTOMLEFT", 0, -10)
+    lockOSD:SetWidth(24)
+    lockOSD:SetHeight(24)
+    
+    -- Create text element explicitly
+    local lockOSDText = middleColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lockOSDText:SetPoint("LEFT", lockOSD, "RIGHT", 5, 0)
+    lockOSDText:SetText("Lock Position")
+    
+    -- Set initial state from saved variables
+    local isLocked = TWRA_SavedVariables.options.osd and 
+                    TWRA_SavedVariables.options.osd.locked == 1
+    lockOSD:SetChecked(isLocked)
+    
+    -- Add click handler with debug
+    lockOSD:SetScript("OnClick", function()
+        local checked = (this:GetChecked() == 1)
+        
+        -- Debug output
+        TWRA:Debug("osd", "Option 'Lock Position' set to " .. (checked and "ON" or "OFF") .. " (value: " .. (checked and true or false) .. ")")
+        
+        -- Update OSD values
+        TWRA.OSD.locked = checked
+        
+        -- Save to saved variables
+        if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+        if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
+        TWRA_SavedVariables.options.osd.locked = checked and true or false
+        
+        -- Update OSD frame if it exists
+        TWRA:UpdateOSDSettings()
+    end)
+    
     table.insert(self.optionsElements, lockOSD)
     table.insert(self.optionsElements, lockOSDText)
     
-    -- OSD Duration slider
+    -- OSD Duration
     local durationSlider = CreateFrame("Slider", "TWRA_OSDDurationSlider", middleColumn, "OptionsSliderTemplate")
     durationSlider:SetPoint("TOPLEFT", lockOSD, "BOTTOMLEFT", 0, -20)
     durationSlider:SetWidth(180)
@@ -370,7 +572,7 @@ function TWRA:CreateOptionsInMainFrame()
     getglobal(durationSlider:GetName() .. "Low"):SetText("1s")
     getglobal(durationSlider:GetName() .. "High"):SetText("10s")
     
-    -- OSD Scale slider
+    -- OSD Scale
     local scaleSlider = CreateFrame("Slider", "TWRA_OSDScaleSlider", middleColumn, "OptionsSliderTemplate")
     scaleSlider:SetPoint("TOPLEFT", durationSlider, "BOTTOMLEFT", 0, -20)
     scaleSlider:SetWidth(180)
@@ -384,16 +586,16 @@ function TWRA:CreateOptionsInMainFrame()
     getglobal(scaleSlider:GetName() .. "Low"):SetText("Small")
     getglobal(scaleSlider:GetName() .. "High"):SetText("Large")
     
-    -- OSD action buttons
+    -- OSD action buttons in a row
     local testOSDBtn = CreateFrame("Button", nil, middleColumn, "UIPanelButtonTemplate")
-    testOSDBtn:SetWidth(80)
+    testOSDBtn:SetWidth(80)  -- Reduced width
     testOSDBtn:SetHeight(22)
     testOSDBtn:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -15)
     testOSDBtn:SetText("Test")
     table.insert(self.optionsElements, testOSDBtn)
     
     local resetPosBtn = CreateFrame("Button", nil, middleColumn, "UIPanelButtonTemplate")
-    resetPosBtn:SetWidth(80)
+    resetPosBtn:SetWidth(80)  -- Reduced width
     resetPosBtn:SetHeight(22)
     resetPosBtn:SetPoint("LEFT", testOSDBtn, "RIGHT", 10, 0)
     resetPosBtn:SetText("Reset")
@@ -420,7 +622,7 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- Create the edit box
     local importBox = CreateFrame("EditBox", nil, scrollFrame)
-    importBox:SetWidth(220)
+    importBox:SetWidth(220)  -- Match container width
     importBox:SetFontObject(ChatFontNormal)
     importBox:SetMultiLine(true)
     importBox:SetAutoFocus(false)
@@ -451,14 +653,14 @@ function TWRA:CreateOptionsInMainFrame()
     table.insert(self.optionsElements, importBtn)
     
     local clearBtn = CreateFrame("Button", nil, rightColumn, "UIPanelButtonTemplate")
-    clearBtn:SetWidth(70)
+    clearBtn:SetWidth(70)  -- Reduced width
     clearBtn:SetHeight(22)
     clearBtn:SetPoint("LEFT", importBtn, "RIGHT", 5, 0)
     clearBtn:SetText("Clear")
     table.insert(self.optionsElements, clearBtn)
     
     local exampleBtn = CreateFrame("Button", nil, rightColumn, "UIPanelButtonTemplate")
-    exampleBtn:SetWidth(70)
+    exampleBtn:SetWidth(70)  -- Reduced width
     exampleBtn:SetHeight(22)
     exampleBtn:SetPoint("LEFT", clearBtn, "RIGHT", 5, 0)
     exampleBtn:SetText("Example")
@@ -519,7 +721,7 @@ function TWRA:CreateOptionsInMainFrame()
     local osdEnabled = true
     if options.osd.enabled ~= nil then
         osdEnabled = options.osd.enabled
-    elseif self.OSD and self.OSD.enabled ~= nil then
+    elseif self.OSD.enabled ~= nil then
         osdEnabled = self.OSD.enabled
     end
     enableOSD:SetChecked(osdEnabled)
@@ -566,7 +768,7 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- Live Sync checkbox behavior
     liveSync:SetScript("OnClick", function()
-        local isChecked = (this:GetChecked() == 1)
+        local isChecked = liveSync:GetChecked() and true or false
         TWRA_SavedVariables.options.liveSync = isChecked
         
         -- Update memory value
@@ -574,10 +776,7 @@ function TWRA:CreateOptionsInMainFrame()
             self.SYNC.liveSync = isChecked
         end
         
-        -- Debug output
-        self:Debug("sync", "Option 'Live Section Sync' set to " .. (isChecked and "ON" or "OFF"))
-        
-        -- Update tank sync state based on live sync
+        -- Update tank sync UI state - tank sync depends on live sync
         if not isChecked then
             -- If turning off Live Sync, also turn off Tank Sync
             tankSyncCheckbox:SetChecked(false)
@@ -585,7 +784,6 @@ function TWRA:CreateOptionsInMainFrame()
                 self.SYNC.tankSync = false
             end
             TWRA_SavedVariables.options.tankSync = false
-            self:Debug("sync", "Option 'Tank Sync' auto-disabled because Live Section Sync was turned off")
             
             -- Disable the Tank Sync UI
             self:SafeToggleUIElement(tankSyncCheckbox, false, tankSyncText)
@@ -597,29 +795,18 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- Tank Sync checkbox behavior
     tankSyncCheckbox:SetScript("OnClick", function()
-        if liveSync:GetChecked() ~= 1 then
+        if not liveSync:GetChecked() then
             tankSyncCheckbox:SetChecked(false)
             DEFAULT_CHAT_FRAME:AddMessage("TWRA: Tank sync requires Live Sync to be enabled.")
             return
         end
         
-        local isChecked = (this:GetChecked() == 1)
+        local isChecked = tankSyncCheckbox:GetChecked() and true or false
         TWRA_SavedVariables.options.tankSync = isChecked
         
         -- Update memory value
         if self.SYNC then
             self.SYNC.tankSync = isChecked
-        end
-        
-        -- Debug output
-        self:Debug("tank", "Option 'Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
-        
-        -- Enable liveSync if tank sync is enabled (requires liveSync)
-        if isChecked and TWRA_SavedVariables.options.liveSync ~= 1 then
-            liveSync:SetChecked(true)
-            TWRA_SavedVariables.options.liveSync = true
-            self.SYNC.liveSync = true
-            self:Debug("sync", "Option 'Live Section Sync' auto-enabled because Tank Sync was turned on")
         end
     end)
     
@@ -630,69 +817,64 @@ function TWRA:CreateOptionsInMainFrame()
         self:SafeToggleUIElement(tankSyncCheckbox, true, tankSyncText)
     end
     
-    -- AutoNavigate checkbox behavior
-    autoNavigate:SetScript("OnClick", function()
-        local isChecked = (this:GetChecked() == 1)
-        TWRA_SavedVariables.options.autoNavigate = isChecked
-        self.AUTONAVIGATE.enabled = isChecked
-        
-        -- Debug output
-        self:Debug("nav", "Option 'AutoNavigate' set to " .. (isChecked and "ON" or "OFF"))
-        
-        -- Enable or disable scanning based on checkbox state
-        if isChecked then
-            if self.StartAutoNavigateScan then
-                self:StartAutoNavigateScan()
-                self:Debug("nav", "AutoNavigate scanning started")
-            end
-        else
-            if self.StopAutoNavigateScan then
-                self:StopAutoNavigateScan()
-                self:Debug("nav", "AutoNavigate scanning stopped")
-            end
-        end
-        
-        -- Update slider state
-        self:UpdateSliderState(scanSlider, isChecked)
-    end)
     
-    -- Update initial AutoNavigate UI state
+    -- Update AutoNavigate UI state
     if not SUPERWOW_VERSION then
         -- SuperWoW not available, gray out everything
         autoNavigateText:SetTextColor(0.5, 0.5, 0.5)
-        self:UpdateSliderState(scanSlider, false)
+        getglobal(scanSlider:GetName() .. "Text"):SetTextColor(0.5, 0.5, 0.5)
+        getglobal(scanSlider:GetName() .. "Low"):SetTextColor(0.5, 0.5, 0.5)
+        getglobal(scanSlider:GetName() .. "High"):SetTextColor(0.5, 0.5, 0.5)
+        scanSlider:EnableMouse(false)
         autoNavigate:EnableMouse(false)
     else
         -- SuperWoW is available, ensure AutoNavigate text is normal color
         autoNavigateText:SetTextColor(1, 1, 1)
         autoNavigate:EnableMouse(true)
         
-        -- Initialize slider state based on AutoNavigate state
-        self:UpdateSliderState(scanSlider, autoNavEnabled)
+        -- Enable or disable scan slider based on AutoNavigate state
+        -- (This is already handled in autoNavigate's OnClick handler, so just set initial state)
+        if autoNavEnabled then
+            getglobal(scanSlider:GetName() .. "Text"):SetTextColor(1, 1, 1)
+            getglobal(scanSlider:GetName() .. "Low"):SetTextColor(1, 1, 1)
+            getglobal(scanSlider:GetName() .. "High"):SetTextColor(1, 1, 1)
+            scanSlider:EnableMouse(true)
+        else
+            getglobal(scanSlider:GetName() .. "Text"):SetTextColor(0.5, 0.5, 0.5)
+            getglobal(scanSlider:GetName() .. "Low"):SetTextColor(0.5, 0.5, 0.5)
+            getglobal(scanSlider:GetName() .. "High"):SetTextColor(0.5, 0.5, 0.5)
+            scanSlider:EnableMouse(false)
+        end
     end
     
     -- Scan frequency slider behavior
     scanSlider:SetScript("OnValueChanged", function()
-        local value = math.floor(this:GetValue())
+        local value = math.floor(scanSlider:GetValue())
         
-        -- Save to config and update runtime value
+        -- Save to config
         TWRA_SavedVariables.options.scanFrequency = value
+        
+        -- Update memory value
         if self.AUTONAVIGATE then
             self.AUTONAVIGATE.scanFreq = value
         end
         
         -- Update display text
-        getglobal(this:GetName() .. "Text"):SetText("Scan: " .. value .. "s")
+        getglobal(scanSlider:GetName() .. "Text"):SetText("Scan: " .. value .. "s")
         
         -- Restart AutoNavigate timer with new frequency if enabled
-        if self.AUTONAVIGATE and self.AUTONAVIGATE.enabled and self.RestartAutoNavigateTimer then
-            self:RestartAutoNavigateTimer()
+        if self.AUTONAVIGATE and self.AUTONAVIGATE.enabled then
+            if self.StartAutoNavigate then
+                self:StartAutoNavigate()
+            end
         end
     end)
     
-    -- Radio button behaviors for announcement channels
+    -- Radio button behaviors for announcement channels - fixed radio button behavior
     groupRadio:SetScript("OnClick", function()
-        groupRadio:SetChecked(true)
+        if not groupRadio:GetChecked() then
+            groupRadio:SetChecked(true)
+        end
         channelRadio:SetChecked(false)
         TWRA_SavedVariables.options.announceChannel = "GROUP"
         
@@ -702,7 +884,9 @@ function TWRA:CreateOptionsInMainFrame()
     end)
     
     channelRadio:SetScript("OnClick", function()
-        channelRadio:SetChecked(true)
+        if not channelRadio:GetChecked() then
+            channelRadio:SetChecked(true)
+        end
         groupRadio:SetChecked(false)
         TWRA_SavedVariables.options.announceChannel = "CHANNEL"
         
@@ -711,38 +895,29 @@ function TWRA:CreateOptionsInMainFrame()
         channelInput:EnableMouse(true)
     end)
     
-    -- Channel input behaviors
+    -- Save channel text when it changes
     channelInput:SetScript("OnTextChanged", function()
-        TWRA_SavedVariables.options.customChannel = this:GetText()
+        TWRA_SavedVariables.options.customChannel = channelInput:GetText()
     end)
     
     channelInput:SetScript("OnEnterPressed", function() 
-        this:ClearFocus()
+        channelInput:ClearFocus()
     end)
     
     channelInput:SetScript("OnEscapePressed", function() 
-        this:ClearFocus()
+        channelInput:ClearFocus()
     end)
     
     -- OSD Enable checkbox behavior
     enableOSD:SetScript("OnClick", function()
-        local isChecked = (this:GetChecked() == 1)
-        
-        -- Ensure OSD settings structure exists
-        if not TWRA_SavedVariables.options.osd then 
-            TWRA_SavedVariables.options.osd = {} 
-        end
-        
-        -- Save setting
+        local isChecked = enableOSD:GetChecked() and true or false
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
         TWRA_SavedVariables.options.osd.enabled = isChecked
         
-        -- Update runtime value
+        -- Update memory value
         if self.OSD then
             self.OSD.enabled = isChecked
         end
-        
-        -- Debug output
-        self:Debug("osd", "Option 'Enable OSD' set to " .. (isChecked and "ON" or "OFF"))
         
         -- Call the toggle function if it exists
         if self.ToggleOSDEnabled then
@@ -752,23 +927,14 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- OSD on Navigation checkbox behavior
     showOnNavOSD:SetScript("OnClick", function()
-        local isChecked = (this:GetChecked() == 1)
-        
-        -- Ensure OSD settings structure exists
-        if not TWRA_SavedVariables.options.osd then 
-            TWRA_SavedVariables.options.osd = {} 
-        end
-        
-        -- Save setting
+        local isChecked = showOnNavOSD:GetChecked() and true or false
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
         TWRA_SavedVariables.options.osd.showOnNavigation = isChecked
         
-        -- Update runtime value
+        -- Update memory value
         if self.OSD then
             self.OSD.showOnNavigation = isChecked
         end
-        
-        -- Debug output
-        self:Debug("osd", "Option 'Show on Navigation' set to " .. (isChecked and "ON" or "OFF"))
         
         -- Call the toggle function if it exists
         if self.ToggleOSDOnNavigation then
@@ -778,25 +944,16 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- OSD Lock checkbox behavior
     lockOSD:SetScript("OnClick", function()
-        local isChecked = (this:GetChecked() == 1)
-        
-        -- Ensure OSD settings structure exists
-        if not TWRA_SavedVariables.options.osd then 
-            TWRA_SavedVariables.options.osd = {} 
-        end
-        
-        -- Save setting
+        local isChecked = lockOSD:GetChecked() and true or false
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
         TWRA_SavedVariables.options.osd.locked = isChecked
         
-        -- Update runtime value
+        -- Update memory value
         if self.OSD then
             self.OSD.locked = isChecked
         end
         
-        -- Debug output
-        self:Debug("osd", "Option 'Lock Position' set to " .. (isChecked and "ON" or "OFF"))
-        
-        -- Update OSD frame if needed
+        -- Apply the setting if needed
         if self.UpdateOSDSettings then
             self:UpdateOSDSettings()
         end
@@ -804,67 +961,52 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- Duration slider behavior
     durationSlider:SetScript("OnValueChanged", function()
-        local value = math.floor(this:GetValue() * 2) / 2  -- Round to nearest 0.5
-        
-        -- Ensure OSD settings structure exists
-        if not TWRA_SavedVariables.options.osd then 
-            TWRA_SavedVariables.options.osd = {} 
-        end
-        
-        -- Save setting
+        local value = math.floor(durationSlider:GetValue() * 2) / 2  -- Round to nearest 0.5
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
         TWRA_SavedVariables.options.osd.duration = value
         
-        -- Update runtime value
+        -- Update memory value
         if self.OSD then
             self.OSD.duration = value
         end
         
         -- Update display text
-        getglobal(this:GetName() .. "Text"):SetText("Display Duration: " .. value .. " seconds")
+        getglobal(durationSlider:GetName() .. "Text"):SetText("Display Duration: " .. value .. " seconds")
     end)
     
     -- Scale slider behavior
     scaleSlider:SetScript("OnValueChanged", function()
-        local value = math.floor(this:GetValue() * 10) / 10  -- Round to nearest 0.1
-        
-        -- Ensure OSD settings structure exists
-        if not TWRA_SavedVariables.options.osd then 
-            TWRA_SavedVariables.options.osd = {} 
-        end
-        
-        -- Save setting
+        local value = math.floor(scaleSlider:GetValue() * 10) / 10  -- Round to nearest 0.1
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
         TWRA_SavedVariables.options.osd.scale = value
         
-        -- Update runtime value
+        -- Update memory value
         if self.OSD then
             self.OSD.scale = value
         end
         
         -- Update display text
-        getglobal(this:GetName() .. "Text"):SetText("Scale: " .. value)
+        getglobal(scaleSlider:GetName() .. "Text"):SetText("Scale: " .. value)
         
-        -- Update OSD frame if needed
+        -- Apply the new scale if needed
         if self.UpdateOSDSettings then
             self:UpdateOSDSettings()
         end
     end)
     
-    -- Test OSD button behavior
+    -- OSD Test button behavior
     testOSDBtn:SetScript("OnClick", function()
         if self.TestOSD then
             self:TestOSD()
         end
     end)
     
-    -- Reset OSD position button behavior
+    -- OSD Reset button behavior
     resetPosBtn:SetScript("OnClick", function()
-        if self.ResetOSDPosition then
-            self:ResetOSDPosition()
-        end
-        
-        -- Update OSD settings if needed
-        if self.UpdateOSDSettings then
-            self:UpdateOSDSettings()
+        TWRA:ResetOSDPosition()
+        -- Force update all settings to saved variables too
+        if TWRA.UpdateOSDSettings then
+            TWRA:UpdateOSDSettings()
         end
     end)
     
@@ -876,10 +1018,11 @@ function TWRA:CreateOptionsInMainFrame()
             return
         end
         
-        -- Save current section information before import
+        -- Check if we have navigation information
         local currentSectionName = nil
         local currentSectionIndex = 1
         
+        -- Capture current section info before import
         if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
             currentSectionName = TWRA_SavedVariables.assignments.currentSectionName
             currentSectionIndex = TWRA_SavedVariables.assignments.currentSection or 1
@@ -887,27 +1030,28 @@ function TWRA:CreateOptionsInMainFrame()
                        (currentSectionName or "unnamed") .. " (" .. currentSectionIndex .. ")")
         end
         
-        -- Try to decode the data
+        -- Try to decode the data first
         local decodedData = self:DecodeBase64(importText)
         if not decodedData then
-            self:Debug("data", "Failed to decode data")
+            self:Debug("data","Failed to decode data")
             return
         end
         
-        -- Process the import
+        -- Only clear data after successful decode
         if self.ClearData then
             self:ClearData()
         end
         
+        -- Save the data (will rebuild navigation)
         if self.SaveAssignments then
             self:SaveAssignments(decodedData, importText)
         end
         
-        -- Restore section preference if possible
+        -- Now restore section preference based on saved info
         if self.navigation and self.navigation.handlers then
             local sectionFound = false
             
-            -- Try to find by name first (more reliable)
+            -- First try to find by name (more reliable)
             if currentSectionName then
                 for i, name in ipairs(self.navigation.handlers) do
                     if name == currentSectionName then
@@ -922,7 +1066,7 @@ function TWRA:CreateOptionsInMainFrame()
                 end
             end
             
-            -- If not found by name, try by index
+            -- If not found by name, try by index as fallback
             if not sectionFound and currentSectionIndex then
                 local maxIndex = table.getn(self.navigation.handlers)
                 if maxIndex > 0 then
@@ -936,11 +1080,10 @@ function TWRA:CreateOptionsInMainFrame()
             end
         end
         
-        -- Success message and cleanup
         self:Debug("data", "Assignment data imported successfully")
         importBox:SetText("")
         
-        -- Switch to main view
+        -- Switch to main view to show the imported data
         if self.ShowMainView then
             self:ShowMainView()
         end
@@ -959,24 +1102,62 @@ function TWRA:CreateOptionsInMainFrame()
         end
         
         -- Load example data
-        if self.LoadExampleData and self:LoadExampleData() then
-            -- Save the example assignments
-            if self.SaveAssignments then
-                self:SaveAssignments(self.EXAMPLE_DATA, "example_data", nil, true)
-            end
-            
-            self:Debug("ui", "Example data loaded successfully!")
-            
-            -- Switch to main view
-            if self.ShowMainView then
-                self:ShowMainView()
+        if self.LoadExampleData then
+            if self:LoadExampleData() then
+                -- Save the example assignments
+                if self.SaveAssignments then
+                    self:SaveAssignments(self.EXAMPLE_DATA, "example_data", nil, true)
+                end
+                
+                self:Debug("ui", "Example data loaded successfully!")
+                
+                -- Switch to main view to show the example data
+                if self.ShowMainView then
+                    self:ShowMainView()
+                end
+            else
+                self:Debug("error", "Failed to load example data")
             end
         else
-            self:Debug("error", "Failed to load example data")
+            self:Debug("error", "LoadExampleData function not found")
         end
     end)
+end
+-- Helper function to create a section header
+function TWRA:CreateSectionHeader(parent, text, yOffset)
+    if not parent then
+        self:Error("Cannot create section header: parent is nil")
+        return nil
+    end
     
-    return self.optionsElements
+    local section = nil
+    local success = pcall(function()
+        section = CreateFrame("Frame", nil, parent)
+        section:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, yOffset or 0)
+        section:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, yOffset or 0)
+        section:SetHeight(30)
+        
+        local title = section:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOPLEFT", 0, 0)
+        title:SetText(text)
+        
+        -- Add a subtle separator line below the header
+        local line = section:CreateTexture(nil, "ARTWORK")
+        line:SetTexture(0.5, 0.5, 0.5, 0.3)
+        line:SetHeight(1)
+        line:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
+        line:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -2)
+        
+        section.title = title
+        section.line = line
+    end)
+    
+    if not success then
+        self:Error("Failed to create section header: " .. text)
+        return nil
+    end
+    
+    return section
 end
 
 -- Function to restart the AutoNavigate timer when settings change
@@ -997,61 +1178,47 @@ function TWRA:RestartAutoNavigateTimer()
         self.AUTONAVIGATE.timer = nil
     end
     
-    -- Start a new timer if enabled
-    if self.AUTONAVIGATE.enabled then
-        if self.StartAutoNavigate then
-            self:Debug("auto", "Restarting AutoNavigate timer with frequency: " .. self.AUTONAVIGATE.scanFreq)
-            self:StartAutoNavigate()
-        end
+    -- Start a new timer if enabled and StartAutoNavigate function exists
+    if self.AUTONAVIGATE.enabled and self.StartAutoNavigate then
+        self:Debug("auto", "Restarting AutoNavigate timer with frequency: " .. self.AUTONAVIGATE.scanFreq)
+        self:StartAutoNavigate()
     else
         self:Debug("auto", "AutoNavigate is disabled, timer not restarted")
     end
 end
 
+
 -- Initialize saved variables
 function TWRA:InitializeSavedOptions()
     -- Ensure options structure exists
-    if not TWRA_SavedVariables then TWRA_SavedVariables = {} end
-    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    if not TWRA_SavedVariables then
+        TWRA_SavedVariables = {}
+    end
+    
+    if not TWRA_SavedVariables.options then
+        TWRA_SavedVariables.options = {}
+    end
     
     -- Apply defaults for any missing options
-    local defaults = self.DEFAULT_OPTIONS or {
-        liveSync = false,
-        tankSync = true,
-        autoNavigate = false,
-        scanFrequency = 3,
-        announceChannel = "GROUP",
-        customChannel = ""
-    }
-    
-    for key, value in pairs(defaults) do
+    for key, value in pairs(self.DEFAULT_OPTIONS) do
         if TWRA_SavedVariables.options[key] == nil then
             TWRA_SavedVariables.options[key] = value
         end
     end
     
     -- Initialize OSD options
-    if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
+    if not TWRA_SavedVariables.options.osd then
+        TWRA_SavedVariables.options.osd = {}
+    end
     
     -- Apply OSD defaults
-    local osdDefaults = self.DEFAULT_OSD_SETTINGS or {
-        point = "CENTER",
-        xOffset = 0,
-        yOffset = 100,
-        scale = 1.0,
-        duration = 2,
-        locked = false,
-        enabled = true,
-        showOnNavigation = true
-    }
-    
-    for key, value in pairs(osdDefaults) do
+    for key, value in pairs(self.DEFAULT_OSD_SETTINGS) do
         if TWRA_SavedVariables.options.osd[key] == nil then
             TWRA_SavedVariables.options.osd[key] = value
         end
     end
     
-    -- Initialize runtime modules
+    -- Initialize sync settings
     if self.SYNC then
         self.SYNC.liveSync = TWRA_SavedVariables.options.liveSync or false
         self.SYNC.tankSync = TWRA_SavedVariables.options.tankSync or false
@@ -1061,6 +1228,4 @@ function TWRA:InitializeSavedOptions()
     if not TWRA_SavedVariables.options.announceChannel then
         TWRA_SavedVariables.options.announceChannel = "GROUP"
     end
-    
-    self:Debug("general", "Saved options initialized")
 end

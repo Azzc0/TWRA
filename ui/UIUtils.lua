@@ -287,24 +287,28 @@ function TWRA.UI:AddTooltip(frame, title, text)
     end)
 end
 
--- Create an icon with tooltip
-function TWRA.UI:CreateIconWithTooltip(parent, iconTexture, tooltipTitle, tooltipText, x, y, width, height)
+-- Create an icon with tooltip - improve positioning logic
+function TWRA.UI:CreateIconWithTooltip(parent, iconTexture, tooltipTitle, tooltipText, relativeObject, xOffset, width, height)
     local icon = parent:CreateTexture(nil, "OVERLAY")
     icon:SetTexture(iconTexture)
-    icon:SetWidth(width or 20)  -- Increased default size from 16 to 20
-    icon:SetHeight(height or 20)  -- Increased default size from 16 to 20
+    icon:SetWidth(width or 22)  -- Default to 22px now
+    icon:SetHeight(height or 22)  -- Default to 22px now
     
-    -- If x is a frame or fontstring, position relative to it
-    if type(x) == "table" and x.GetWidth then
-        icon:SetPoint("LEFT", x, "RIGHT", 5, 0)
+    -- If relativeObject is a frame or fontstring, position relative to it
+    if type(relativeObject) == "table" and relativeObject.GetWidth then
+        -- Position icon to the right of the relative object
+        icon:SetPoint("LEFT", relativeObject, "RIGHT", xOffset or 5, 0)
     else
+        -- Fall back to old behavior if relativeObject is just a number
+        local x = relativeObject
+        local y = xOffset
         icon:SetPoint("LEFT", parent, "LEFT", x or 0, y or 0)
     end
     
     -- Create a frame over the icon to handle mouse events
     local frame = CreateFrame("Frame", nil, parent)
-    frame:SetWidth(width or 20)  -- Match icon size
-    frame:SetHeight(height or 20)  -- Match icon size
+    frame:SetWidth(width or 22)  -- Match icon size
+    frame:SetHeight(height or 22)  -- Match icon size
     frame:SetPoint("CENTER", icon, "CENTER", 0, 0)
     
     -- Set up the tooltip

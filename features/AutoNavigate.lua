@@ -35,7 +35,7 @@ function TWRA:CheckSuperWoWSupport(quiet)
     return hasSuperWow
 end
 
--- Initialize AutoNavigate function
+-- Initialize AutoNavigate function with explicit boolean check
 function TWRA:InitializeAutoNavigate()
     self:Debug("nav", "Initializing AutoNavigate module")
     
@@ -45,50 +45,105 @@ function TWRA:InitializeAutoNavigate()
         self.AUTONAVIGATE.timer = nil
     end
     
-    -- Set up the scanning timer if enabled
-    if self.AUTONAVIGATE.enabled then
-        self:StartAutoNavigate()
+    -- Load enabled state from SavedVariables with explicit boolean conversion
+    if TWRA_SavedVariables and TWRA_SavedVariables.options then
+        if TWRA_SavedVariables.options.autoNavigate ~= nil then
+            -- Convert to boolean if it's not already
+            if type(TWRA_SavedVariables.options.autoNavigate) ~= "boolean" then
+                self.AUTONAVIGATE.enabled = (TWRA_SavedVariables.options.autoNavigate == 1 or 
+                                            TWRA_SavedVariables.options.autoNavigate == true)
+                -- Update stored value to be true boolean
+                TWRA_SavedVariables.options.autoNavigate = self.AUTONAVIGATE.enabled
+            else
+                -- Use existing boolean value
+                self.AUTONAVIGATE.enabled = TWRA_SavedVariables.options.autoNavigate
+            end
+        end
+    end
+
+    -- Start scanning if enabled using explicit boolean check
+    if self.AUTONAVIGATE.enabled == true then
+        self:StartAutoNavigateScan()
+        self:Debug("nav", "AutoNavigate activated during initialization")
     end
     
     self:Debug("nav", "AutoNavigate initialized with scan frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
 end
 
--- Toggle AutoNavigate on/off
-function TWRA:ToggleAutoNavigate(enable)
-    if enable then
-        self.AUTONAVIGATE.enabled = true
-        self:StartAutoNavigate()
-        self:Debug("nav", "AutoNavigate enabled")
+-- Toggle AutoNavigate feature on/off with explicit debugging
+function TWRA:ToggleAutoNavigate(state)
+    -- Debug the function call
+    self:Debug("nav", "ToggleAutoNavigate called with state: " .. tostring(state))
+    self:Debug("nav", "Current state: " .. tostring(self.AUTONAVIGATE.enabled))
+    
+    -- Set state if provided, otherwise toggle
+    if state ~= nil then
+        self.AUTONAVIGATE.enabled = state
     else
-        self.AUTONAVIGATE.enabled = false
-        if self.AUTONAVIGATE.timer then
-            self:CancelTimer(self.AUTONAVIGATE.timer)
-            self.AUTONAVIGATE.timer = nil
-        end
-        self:Debug("nav", "AutoNavigate disabled")
+        self.AUTONAVIGATE.enabled = not self.AUTONAVIGATE.enabled
     end
     
-    -- Save setting
-    if TWRA_SavedVariables and TWRA_SavedVariables.options then
-        TWRA_SavedVariables.options.autoNavigate = self.AUTONAVIGATE.enabled
+    -- Save to config with explicit debug output
+    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    TWRA_SavedVariables.options.autoNavigate = self.AUTONAVIGATE.enabled
+    
+    -- Debug message with explicit state info
+    self:Debug("nav", "AutoNavigate toggled: new state=" .. tostring(self.AUTONAVIGATE.enabled) .. 
+              " (saved=" .. tostring(TWRA_SavedVariables.options.autoNavigate) .. ")")
+    
+    -- Start/stop scanning based on state with debug feedback
+    if self.AUTONAVIGATE.enabled then
+        self:StartAutoNavigateScan()
+        self:Debug("nav", "AutoNavigate scanning activated with frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
+    else
+        self:StopAutoNavigateScan()
+        self:Debug("nav", "AutoNavigate scanning deactivated")
     end
+    
+    return self.AUTONAVIGATE.enabled
 end
 
--- Start the AutoNavigate scanning timer
-function TWRA:StartAutoNavigate()
+-- Start the AutoNavigate scanning - make sure this function exists
+function TWRA:StartAutoNavigateScan()
+    -- Debug output to verify this function is being called
+    self:Debug("nav", "StartAutoNavigateScan called")
+
     -- Clear any existing timer
     if self.AUTONAVIGATE.timer then
         self:CancelTimer(self.AUTONAVIGATE.timer)
+        self.AUTONAVIGATE.timer = nil
+        self:Debug("nav", "Cleared existing AutoNavigate timer")
     end
     
-    -- Create the scanning timer
+    -- Create a new timer
     self.AUTONAVIGATE.timer = self:ScheduleTimer(function()
-        self:ScanForTargetAndNavigate()
-        -- Re-schedule timer recursively if still enabled
+        -- Debug that scanning is happening
+        self:Debug("nav", "Running AutoNavigate scan...")
+        
+        -- Call the actual scan function
+        self:ScanMarkedTargets()
+        
+        -- Only reschedule if still enabled
         if self.AUTONAVIGATE.enabled then
-            self:StartAutoNavigate()
+            self:StartAutoNavigateScan()
         end
-    end, self.AUTONAVIGATE.scanFreq)
+    end, self.AUTONAVIGATE.scanFreq or 1)
+    
+    self:Debug("nav", "AutoNavigate scan timer created with frequency: " .. 
+               (self.AUTONAVIGATE.scanFreq or 1) .. "s")
+end
+
+-- Stop scanning for marked targets
+function TWRA:StopAutoNavigateScan()
+    -- Debug output to verify this function is being called
+    self:Debug("nav", "StopAutoNavigateScan called")
+    
+    -- Clear the timer if it exists
+    if self.AUTONAVIGATE.timer then
+        self:CancelTimer(self.AUTONAVIGATE.timer)
+        self.AUTONAVIGATE.timer = nil
+        self:Debug("nav", "AutoNavigate scan stopped")
+    end
 end
 
 -- Core function to scan for target and navigate to the appropriate section
@@ -190,9 +245,12 @@ end
 
 -- Simplified scan function that uses only the direct SuperWoW approach
 function TWRA:ScanMarkedTargets()
+    -- Add debug message to confirm scan is running
+    self:Debug("nav", "Scanning for marked targets...")
+    
     -- Make sure SuperWoW is available
     if not self:CheckSuperWoWSupport(true) then 
-        if self.AUTONAVIGATE.debug then
+        if self.AUTONAVIGATE.debug == true then
             self:Debug("nav", "SuperWoW not available, skipping scan")
         end
         return 

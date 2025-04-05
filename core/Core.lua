@@ -18,8 +18,25 @@ function TWRA:OnLoad()
     
     -- Set default for main frame visibility if it doesn't exist
     if TWRA_SavedVariables.options.hideFrameByDefault == nil then
-        TWRA_SavedVariables.options.hideFrameByDefault = true
+        TWRA_SavedVariables.options.hideFrameByDefault = true  -- Changed to boolean
     end
+    
+    -- Initialize options with proper boolean values if needed
+    if not TWRA_SavedVariables.options then
+        TWRA_SavedVariables.options = {}
+    end
+    
+    -- Convert any existing numeric values to booleans
+    if TWRA_SavedVariables.options.autoNavigate ~= nil and 
+       type(TWRA_SavedVariables.options.autoNavigate) ~= "boolean" then
+        TWRA_SavedVariables.options.autoNavigate = 
+            (TWRA_SavedVariables.options.autoNavigate == 1 or 
+             TWRA_SavedVariables.options.autoNavigate == true)
+    end
+    
+    -- Initialize AUTONAVIGATE with consistent value
+    self.AUTONAVIGATE = self.AUTONAVIGATE or {}
+    self.AUTONAVIGATE.enabled = TWRA_SavedVariables.options.autoNavigate or false
     
     -- Initialize Debug system
     if self.InitDebug then
@@ -41,8 +58,48 @@ function TWRA:OnLoad()
     
     self:Debug("general", "Addon loaded. Type /twra for options.")
 
+    -- Create minimap button during load
+    self:Debug("general", "Creating minimap button during load")
+    self:CreateMinimapButton()
+    
     -- Initialize UI systems
     TWRA.UI:InitializeDropdowns()
+    
+    -- Initialize AutoNavigate module with proper boolean handling
+    if self.AUTONAVIGATE then
+        -- Make sure saved variable exists
+        if not TWRA_SavedVariables.options then
+            TWRA_SavedVariables.options = {}
+        end
+        
+        -- Convert autoNavigate option to boolean if needed
+        if TWRA_SavedVariables.options.autoNavigate ~= nil then
+            if type(TWRA_SavedVariables.options.autoNavigate) ~= "boolean" then
+                local wasEnabled = (TWRA_SavedVariables.options.autoNavigate == 1 or 
+                                   TWRA_SavedVariables.options.autoNavigate == true)
+                TWRA_SavedVariables.options.autoNavigate = wasEnabled
+                self:Debug("nav", "Converted autoNavigate from " .. 
+                          type(TWRA_SavedVariables.options.autoNavigate) .. 
+                          " to boolean: " .. tostring(wasEnabled))
+            end
+        else
+            -- Default to disabled
+            TWRA_SavedVariables.options.autoNavigate = false
+        end
+        
+        -- Apply the setting
+        self.AUTONAVIGATE.enabled = TWRA_SavedVariables.options.autoNavigate
+        
+        -- Start AutoNavigate if it's enabled
+        if self.AUTONAVIGATE.enabled then
+            self:Debug("nav", "Starting AutoNavigate during initialization")
+            if self.StartAutoNavigateScan then
+                self:StartAutoNavigateScan()
+            else
+                self:Debug("error", "StartAutoNavigateScan function not found")
+            end
+        end
+    end
 end
 
 function TWRA:OnEvent()
@@ -100,6 +157,12 @@ function TWRA:OnEvent()
         
         -- Handle addon messages for sync
         self:HandleAddonMessage(arg2, arg3, arg4)
+        
+        -- Create minimap button if it doesn't exist yet
+        if not self.minimapButton then
+            self:Debug("general", "Creating minimap button after addon loaded")
+            self:CreateMinimapButton()
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Initialize on entering world
         self:Debug("general", "Player entered world")
@@ -259,7 +322,7 @@ function TWRA:ToggleMainFrame()
         if self.CreateMainFrame then
             self:CreateMainFrame()
             -- Apply user preference for initial visibility (don't hide by default)
-            if TWRA_SavedVariables.options.hideFrameByDefault then
+            if TWRA_SavedVariables.options.hideFrameByDefault then  -- Changed to boolean comparison
                 self.mainFrame:Hide()
             else
                 self.mainFrame:Show()
@@ -564,46 +627,7 @@ end
 function TWRA:EnsureUIUtils()
     -- Ensure UI namespace exists
     TWRA.UI = TWRA.UI or {}
-    
-    -- Add CreateIconWithTooltip if it doesn't exist
-    if not TWRA.UI.CreateIconWithTooltip then
-        self:Debug("ui", "Creating fallback CreateIconWithTooltip function")
-        TWRA.UI.CreateIconWithTooltip = function(parent, texturePath, tooltipTitle, tooltipText, anchorFrame, offsetX, width, height)
-            -- Create a container frame for the icon
-            local iconFrame = CreateFrame("Frame", nil, parent)
-            iconFrame:SetWidth(width or 16)
-            iconFrame:SetHeight(height or 16)
-            
-            -- Position the frame
-            if anchorFrame then
-                iconFrame:SetPoint("LEFT", anchorFrame, "RIGHT", offsetX or 0, 0)
-            else
-                iconFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-            end
-            
-            -- Create the texture
-            local icon = iconFrame:CreateTexture(nil, "ARTWORK")
-            icon:SetAllPoints()
-            icon:SetTexture(texturePath)
-            
-            -- Add tooltip functionality
-            iconFrame:SetScript("OnEnter", function()
-                GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-                GameTooltip:SetText(tooltipTitle, 1, 1, 1)
-                if tooltipText then
-                    GameTooltip:AddLine(tooltipText, NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, true)
-                end
-                GameTooltip:Show()
-            end)
-            
-            iconFrame:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            
-            return icon, iconFrame
-        end
-    end
-    
+        
     -- Add other fallback functions if needed
     
     self:Debug("ui", "UI utils check complete")
@@ -750,3 +774,105 @@ function TWRA:HandleDebugCommand(args)
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug Commands|r:")
     end
 end
+
+-- Add CreateMinimapButton function - moved from OSD.lua to TWRA.lua as requested
+function TWRA:CreateMinimapButton()
+    self:Debug("general", "Creating minimap button")
+    
+    -- Create a frame for our minimap button
+    local miniButton = CreateFrame("Button", "TWRAMinimapButton", Minimap)
+    miniButton:SetWidth(32)
+    miniButton:SetHeight(32)
+    miniButton:SetFrameStrata("MEDIUM")
+    miniButton:SetFrameLevel(8)
+    
+    -- Set position (default to 180 degrees)
+    local defaultAngle = 180
+    local angle = defaultAngle
+    
+    -- Use saved angle if available
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.minimapAngle then
+        angle = TWRA_SavedVariables.options.minimapAngle
+    end
+    
+    -- Calculate position
+    local radius = 80
+    local radian = math.rad(angle)
+    local x = math.cos(radian) * radius
+    local y = math.sin(radian) * radius
+    miniButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    
+    -- Set icon texture
+    local icon = miniButton:CreateTexture(nil, "BACKGROUND")
+    icon:SetTexture("Interface\\AddOns\\TWRA\\textures\\minimap_icon")
+    
+    -- If the custom texture doesn't exist, use a default
+    if not icon:GetTexture() then
+        icon:SetTexture("Interface\\FriendsFrame\\FriendsFrameScrollIcon")
+    end
+    
+    icon:SetAllPoints(miniButton)
+    miniButton.icon = icon
+    
+    -- Add highlight texture
+    local highlight = miniButton:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    highlight:SetBlendMode("ADD")
+    highlight:SetAllPoints(miniButton)
+    miniButton.highlight = highlight
+    
+    -- Set up scripts
+    miniButton:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(miniButton, "ANCHOR_LEFT")
+        GameTooltip:AddLine("TWRA - Raid Assignments")
+        GameTooltip:AddLine("Left-click: Toggle assignments window", 1, 1, 1)
+        GameTooltip:AddLine("Right-click: Toggle assignments OSD", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    miniButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    miniButton:SetScript("OnClick", function()
+        if arg1 == "RightButton" then
+            -- Right click: Toggle OSD
+            if TWRA.ToggleOSD then
+                TWRA:ToggleOSD()
+            end
+        else
+            -- Left click: Toggle main window
+            if TWRA.ToggleMainFrame then
+                TWRA:ToggleMainFrame()
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Main window not available")
+            end
+        end
+    end)
+    
+    -- Make the button draggable
+    miniButton:RegisterForDrag("LeftButton")
+    miniButton:SetScript("OnDragStart", function()
+        this:LockHighlight()
+        this:StartMoving()
+    end)
+    miniButton:SetScript("OnDragStop", function()
+        this:StopMovingOrSizing()
+        this:UnlockHighlight()
+        
+        -- Calculate and save angle
+        local x, y = this:GetCenter()
+        local mx, my = Minimap:GetCenter()
+        local angle = math.deg(math.atan2(y - my, x - mx))
+        
+        -- Save to settings
+        if TWRA_SavedVariables and TWRA_SavedVariables.options then
+            TWRA_SavedVariables.options.minimapAngle = angle
+        end
+    end)
+    
+    -- Store reference in addon
+    self.minimapButton = miniButton
+    
+    self:Debug("general", "Minimap button created")
+    return miniButton
+end
+TWRA:CreateMinimapButton()

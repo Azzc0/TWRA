@@ -21,32 +21,32 @@ function TWRA:InitOSD()
             yOffset = 100,
             scale = 1.0,
             duration = 2,
-            locked = false,
-            enabled = true,           -- Master toggle for OSD functionality
-            showOnNavigation = true   -- NEW: Separate option for auto-display on navigation
+            locked = 0,
+            enabled = 1,           -- Master toggle for OSD functionality (1 = enabled)
+            showOnNavigation = 1   -- NEW: Separate option for auto-display on navigation (1 = enabled)
         }
     end
     
     -- Ensure new properties exist (might be missing in existing settings)
     if TWRA_SavedVariables.options.osd.enabled == nil then
-        TWRA_SavedVariables.options.osd.enabled = true
+        TWRA_SavedVariables.options.osd.enabled = 1
     end
     
     -- Add the new showOnNavigation option if it doesn't exist
     if TWRA_SavedVariables.options.osd.showOnNavigation == nil then
-        TWRA_SavedVariables.options.osd.showOnNavigation = true
+        TWRA_SavedVariables.options.osd.showOnNavigation = 1
     end
     
-    -- Apply settings to OSD module
+    -- Apply settings to OSD module, converting 0/1 to boolean for internal use
     local osdSettings = TWRA_SavedVariables.options.osd
     self.OSD.point = osdSettings.point
     self.OSD.xOffset = osdSettings.xOffset
     self.OSD.yOffset = osdSettings.yOffset
     self.OSD.scale = osdSettings.scale
     self.OSD.duration = osdSettings.duration
-    self.OSD.locked = osdSettings.locked
-    self.OSD.enabled = osdSettings.enabled
-    self.OSD.showOnNavigation = osdSettings.showOnNavigation
+    self.OSD.locked = osdSettings.locked == 1
+    self.OSD.enabled = osdSettings.enabled == 1
+    self.OSD.showOnNavigation = osdSettings.showOnNavigation == 1
     
     -- Create the OSD frame if needed
     if not self.osdFrame then
@@ -132,9 +132,12 @@ function TWRA:ToggleOSDEnabled(state)
         self.OSD.enabled = not self.OSD.enabled
     end
     
-    -- Save to config
-    TWRA_SavedVariables.options.osd.enabled = self.OSD.enabled
+    -- Save to config - ensure option path exists
+    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
+    TWRA_SavedVariables.options.osd.enabled = self.OSD.enabled -- Store as boolean
     
+    -- Debug message
     self:Debug("osd", "OSD " .. (self.OSD.enabled and "enabled" or "disabled"))
     
     -- If enabling and we have a current section, show a preview
@@ -159,9 +162,12 @@ function TWRA:ToggleOSDOnNavigation(state)
         self.OSD.showOnNavigation = not self.OSD.showOnNavigation
     end
     
-    -- Save to config
-    TWRA_SavedVariables.options.osd.showOnNavigation = self.OSD.showOnNavigation
+    -- Save to config - ensure option path exists
+    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
+    TWRA_SavedVariables.options.osd.showOnNavigation = self.OSD.showOnNavigation -- Store as boolean
     
+    -- Debug message
     self:Debug("osd", "OSD on Navigation " .. (self.OSD.showOnNavigation and "enabled" or "disabled"))
     
     return self.OSD.showOnNavigation
@@ -661,10 +667,30 @@ function TWRA:UpdateOSDSettings()
             TWRA.OSD.xOffset = xOffset
             TWRA.OSD.yOffset = yOffset
             
-            -- Update saved variables
+            -- Update saved variables - ensure options path exists
+            if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+            if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
             TWRA_SavedVariables.options.osd.point = point
             TWRA_SavedVariables.options.osd.xOffset = xOffset
             TWRA_SavedVariables.options.osd.yOffset = yOffset
         end)
     end
+    
+    -- Save all current settings to ensure consistency
+    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
+    
+    TWRA_SavedVariables.options.osd = {
+        point = self.OSD.point or "CENTER",
+        xOffset = self.OSD.xOffset or 0,
+        yOffset = self.OSD.yOffset or 100,
+        scale = self.OSD.scale or 1.0,
+        duration = self.OSD.duration or 2,
+        locked = self.OSD.locked,          -- Store as boolean
+        enabled = self.OSD.enabled,        -- Store as boolean
+        showOnNavigation = self.OSD.showOnNavigation  -- Store as boolean
+    }
+    
+    -- Debug message about settings
+    self:Debug("osd", "OSD settings updated and saved")
 end

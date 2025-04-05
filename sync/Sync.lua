@@ -818,3 +818,51 @@ function TWRA:BroadcastSectionChange(sectionIndex)
     
     self:SendAddonMessage(sectionMsg)
 end
+
+-- Toggle LiveSync feature
+function TWRA:ToggleLiveSync(state)
+    -- Set state if provided, otherwise toggle
+    if state ~= nil then
+        self.SYNC.liveSync = state
+    else
+        self.SYNC.liveSync = not self.SYNC.liveSync
+    end
+    
+    -- Save to config
+    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    TWRA_SavedVariables.options.liveSync = self.SYNC.liveSync -- Store as boolean
+    
+    -- Auto-disable tank sync if live sync is disabled
+    if not self.SYNC.liveSync and self.SYNC.tankSync then
+        self:ToggleTankSync(false)
+    end
+    
+    -- Debug message
+    self:Debug("sync", "LiveSync " .. (self.SYNC.liveSync and "enabled" or "disabled"))
+    
+    return self.SYNC.liveSync
+end
+
+-- Toggle Tank Sync feature
+function TWRA:ToggleTankSync(state)
+    -- Set state if provided, otherwise toggle
+    if state ~= nil then
+        self.SYNC.tankSync = state
+    else
+        self.SYNC.tankSync = not self.SYNC.tankSync
+    end
+    
+    -- Auto-enable live sync if tank sync is enabled
+    if self.SYNC.tankSync and not self.SYNC.liveSync then
+        self:ToggleLiveSync(true)
+    end
+    
+    -- Save to config
+    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    TWRA_SavedVariables.options.tankSync = self.SYNC.tankSync -- Store as boolean
+    
+    -- Debug message
+    self:Debug("sync", "TankSync " .. (self.SYNC.tankSync and "enabled" or "disabled"))
+    
+    return self.SYNC.tankSync
+end
