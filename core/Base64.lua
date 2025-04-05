@@ -85,10 +85,10 @@ function TWRA:EncodeBase64(data)
     return table.concat(result)
 end
 
--- Improved Base64 decoding function with safety checks
+-- Improved Base64 decoding function with better error handling through debug system
 function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     if not base64Str then 
-        self:Error("Decode failed - nil string")
+        self:Debug("error", "Decode failed - nil string", true)
         return nil 
     end
     
@@ -102,7 +102,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     
     -- Safety check for minimum length
     if string.len(base64Str) < 4 then
-        self:Error("Decode failed - string too short")
+        self:Debug("error", "Decode failed - string too short", true)
         return nil
     end
     
@@ -166,33 +166,33 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     
     -- Verify the string starts with "return {" - basic sanity check
     if string.sub(luaCode, 1, 8) ~= "return {" then
-        self:Error("Decoded text does not appear to be a valid Lua table")
-        self:Debug("error", "Expected 'return {' but found: " .. string.sub(luaCode, 1, 10))
+        self:Debug("error", "Decoded text does not appear to be a valid Lua table", true)
+        self:Debug("error", "Expected 'return {' but found: " .. string.sub(luaCode, 1, 10), true)
         return nil
     end
     
     -- Execute the Lua code to get the table - use pcall for safety
     local func, err = loadstring(luaCode)
     if not func then
-        self:Error("Error parsing Lua code: " .. (err or "unknown error"))
+        self:Debug("error", "Error parsing Lua code: " .. (err or "unknown error"), true)
         return nil
     end
     
     local success, result = pcall(func)
     if not success then
-        self:Error("Error executing Lua code: " .. (result or "unknown error"))
+        self:Debug("error", "Error executing Lua code: " .. (result or "unknown error"), true)
         return nil
     end
     
     -- Ensure we have a valid table
     if type(result) ~= "table" then
-        self:Error("Decoded result is not a table (type: " .. type(result) .. ")")
+        self:Debug("error", "Decoded result is not a table (type: " .. type(result) .. ")", true)
         return nil
     end
     
     -- Verify the table has at least one entry
     if table.getn(result) == 0 then
-        self:Error("Decoded table is empty")
+        self:Debug("error", "Decoded table is empty", true)
         return nil
     end
     

@@ -41,14 +41,6 @@ function TWRA:OnLoad()
     
     self:Debug("general", "Addon loaded. Type /twra for options.")
 
-    -- Check if debug slash command is already registered
-    if not SlashCmdList["TWRADEBUG"] then
-        SLASH_TWRADEBUG1 = "/twradebug"
-        SlashCmdList["TWRADEBUG"] = function(msg)
-            self:Debug("general", "Debug system not yet initialized. Try again in a moment.")
-        end
-    end
-
     -- Initialize UI systems
     TWRA.UI:InitializeDropdowns()
 end
@@ -113,8 +105,8 @@ function TWRA:OnEvent()
         self:Debug("general", "Player entered world")
         
         -- Ensure OSD is initialized when player enters world
-        if self.InitOSD and (not self.minimapButton or not self.minimapButton:IsShown()) then
-            self:Debug("ui", "Ensuring OSD is initialized on player enter world")
+        if self.InitOSD then
+            self:Debug("ui", "Initializing OSD system")
             self:InitOSD()
         end
     elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
@@ -135,6 +127,31 @@ SLASH_TWRA1 = "/twra"
 SlashCmdList["TWRA"] = function(msg)
     -- Basic slash command handling
     TWRA:Debug("general", "Command received: " .. (msg or ""))
+    
+    -- Parse the message into tokens (simple split by whitespace)
+    local args = {}
+    local i = 1
+    for word in string.gfind(msg, "%S+") do
+        args[i] = string.lower(word)
+        i = i + 1
+    end
+    
+    -- Check for debug command
+    if args[1] == "debug" then
+        -- Remove the first argument (debug) and pass the rest to HandleDebugCommand
+        local debugArgs = {}
+        for j = 2, i-1 do
+            debugArgs[j-1] = args[j]
+        end
+        
+        -- Call the debug command handler if it exists
+        if TWRA.HandleDebugCommand then
+            TWRA:HandleDebugCommand(debugArgs)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Debug system not initialized")
+        end
+        return
+    end
     
     -- Command to explicitly show options
     if msg == "options" then
@@ -175,6 +192,16 @@ SlashCmdList["TWRA"] = function(msg)
     -- Command to toggle the main frame
     elseif msg == "toggle" or msg == "" then
         TWRA:ToggleMainFrame()
+    else
+        -- Show help message
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Commands|r:")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra - Toggle main window")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra show - Show main window")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra hide - Hide main window")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra options - Open options panel")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra resetview - Reset to main view")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Access debug commands")
+        DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra debug' for detailed debug options")
     end
 end
 
@@ -627,43 +654,6 @@ function TWRA:DebugOptions()
     end
     
     return true
-end
-
--- Add this command to the slash commands in Core.lua
-SLASH_TWRADBG1 = "/twradbg"
-SlashCmdList["TWRADBG"] = function(msg)
-    if msg == "paths" then
-        TWRA:DebugFunctionPaths()
-    elseif msg == "reset" then
-        TWRA:ResetUI()
-    elseif msg == "options" then
-        TWRA:DebugOptions()
-    elseif msg == "forceoptions" then
-        -- Force options to show with our implementation
-        TWRA:Debug("ui", "Forcing options to show with custom implementation")
-        
-        -- Make sure main frame exists
-        if not TWRA.mainFrame then
-            TWRA:CreateMainFrame()
-        end
-        
-        -- Show the main frame
-        TWRA.mainFrame:Show()
-        
-        -- Hide any interface options frame
-        if InterfaceOptionsFrame then
-            InterfaceOptionsFrame:Hide()
-        end
-        
-        -- Switch to our options view
-        TWRA:ShowOptionsView()
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug Commands:")
-        DEFAULT_CHAT_FRAME:AddMessage("/twradbg paths - Check if required functions exist")
-        DEFAULT_CHAT_FRAME:AddMessage("/twradbg reset - Emergency UI reset")
-        DEFAULT_CHAT_FRAME:AddMessage("/twradbg options - Debug options system")
-        DEFAULT_CHAT_FRAME:AddMessage("/twradbg forceoptions - Force custom options panel")
-    end
 end
 
 -- Add emergency reset command for when things go wrong

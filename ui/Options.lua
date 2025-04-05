@@ -81,7 +81,7 @@ function TWRA:InitOptions()
     self.SYNC.tankSync = TWRA_SavedVariables.options.tankSync
     
     -- Debug message to verify sync state is loaded
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Initialized with liveSync = " .. 
+    TWRA:Debug("sync"," Initialized with liveSync = " .. 
                                  (self.SYNC.liveSync and "enabled" or "disabled"))
     
     -- Initialize AutoMarker options
@@ -633,7 +633,7 @@ function TWRA:CreateOptionsInMainFrame()
     importBtn:SetScript("OnClick", function()
         local importText = importBox:GetText()
         if not importText or importText == "" then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: No data to import")
+            TWRA:Debug("data", "No data to import")
             return
         end
         
@@ -652,7 +652,7 @@ function TWRA:CreateOptionsInMainFrame()
         -- Try to decode the data first
         local decodedData = TWRA:DecodeBase64(importText)
         if not decodedData then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Failed to decode data")
+            TWRA:Debug("data","Failed to decode data")
             return
         end
         
@@ -691,7 +691,7 @@ function TWRA:CreateOptionsInMainFrame()
             end
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assignment data imported successfully")
+        TWRA:Debug("data", "Assignment data imported successfully")
         importBox:SetText("")
         
         -- Switch to main view to show the imported data
@@ -706,7 +706,7 @@ function TWRA:CreateOptionsInMainFrame()
     -- Example button behavior
     exampleBtn:SetScript("OnClick", function()
         self:LoadExampleData()
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Example data loaded successfully!")
+        TWRA:Debug("data", "Example data loaded successfully!")
         self:ShowMainView()
         self.optionsButton:SetText("Options")
     end)
@@ -1220,7 +1220,7 @@ function TWRA:CreateOptionsPanel()
     importBtn:SetScript("OnClick", function()
         local importText = importBox:GetText()
         if not importText or importText == "" then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: No data to import")
+            TWRA:Debug("data", "No data to import")
             return
         end
         
@@ -1239,7 +1239,7 @@ function TWRA:CreateOptionsPanel()
         -- Try to decode the data first
         local decodedData = TWRA:DecodeBase64(importText)
         if not decodedData then
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Failed to decode data")
+            TWRA:Debug("data", "Failed to decode data")
             return
         end
         
@@ -1278,7 +1278,7 @@ function TWRA:CreateOptionsPanel()
             end
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assignment data imported successfully")
+        TWRA:Debug("data", "Assignment data imported successfully")
         importBox:SetText("")
         
         -- Switch to main view to show the imported data

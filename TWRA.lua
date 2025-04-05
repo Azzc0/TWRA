@@ -404,68 +404,6 @@ function TWRA:UpdateTanks()
     self:Debug("tank", "Tank updates completed")
 end
 
--- Basic function to display section name overlay when navigating with window closed
--- Enhanced version is in OSD.lua
-function TWRA:ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
-    -- Forward to OSD module if available
-    if self.OSD and self.OSD.ShowSectionNameOverlay then
-        self.OSD.ShowSectionNameOverlay(sectionName, currentIndex, totalSections)
-        return
-    end
-    
-    -- Create the overlay frame if it doesn't exist
-    if not self.sectionOverlay then
-        self.sectionOverlay = CreateFrame("Frame", "TWRA_SectionOverlay", UIParent)
-        self.sectionOverlay:SetFrameStrata("DIALOG")
-        self.sectionOverlay:SetWidth(400)
-        self.sectionOverlay:SetHeight(60)
-        self.sectionOverlay:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-        
-        -- Add background
-        local bg = self.sectionOverlay:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture(0, 0, 0, 0.7)
-        
-        -- Add border
-        local border = CreateFrame("Frame", nil, self.sectionOverlay)
-        border:SetPoint("TOPLEFT", -2, 2)
-        border:SetPoint("BOTTOMRIGHT", 2, -2)
-        border:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        
-        -- Section name text
-        self.sectionOverlayText = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        self.sectionOverlayText:SetPoint("TOP", self.sectionOverlay, "TOP", 0, -10)
-        self.sectionOverlayText:SetTextColor(1, 0.82, 0)
-        
-        -- Section count text
-        self.sectionOverlayCount = self.sectionOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        self.sectionOverlayCount:SetPoint("BOTTOM", self.sectionOverlay, "BOTTOM", 0, 10)
-        self.sectionOverlayCount:SetTextColor(1, 1, 1)
-    end
-    
-    -- Update the text
-    self.sectionOverlayText:SetText(sectionName)
-    self.sectionOverlayCount:SetText("Section " .. currentIndex .. " of " .. totalSections)
-    
-    -- Show the overlay
-    self.sectionOverlay:Show()
-    
-    -- Hide after 2 seconds
-    if self.sectionOverlayTimer then
-        self:CancelTimer(self.sectionOverlayTimer)
-    end
-    
-    self.sectionOverlayTimer = self:ScheduleTimer(function()
-        if self.sectionOverlay then
-            self.sectionOverlay:Hide()
-        end
-    end, 2)
-end
-
 -- Announcement functionality - completely rewritten
 function TWRA:AnnounceAssignments()
     -- Validate we have data
@@ -1099,8 +1037,9 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
         self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
         self.currentView or "nil"))
     
-    if shouldShowOSD and self.ShowSectionNameOverlay then
-        self:ShowSectionNameOverlay(sectionName, sectionIndex, numSections)
+    -- Use the new OSD module directly
+    if shouldShowOSD and self.ShowOSD then
+        self:ShowOSD(sectionName, sectionIndex, numSections)
     end
     
     -- Broadcast to group if sync enabled and not suppressed
@@ -1412,71 +1351,4 @@ function TWRA:ClearData()
     self.usingExampleData = false
     
     self:Debug("data", "Data cleared successfully")
-end
-
--- Add slash command to test example data status
-SLASH_TWRAEXAMPLE1 = "/twraexample"
-SlashCmdList["TWRAEXAMPLE"] = function(msg)
-    -- Check if example data is currently loaded
-    local isExampleActive = TWRA.usingExampleData or false
-    local saved = TWRA_SavedVariables.assignments or {}
-    
-    -- Print status to chat
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA Example Data Status:")
-    DEFAULT_CHAT_FRAME:AddMessage("- Using example data flag: " .. (isExampleActive and "TRUE" or "FALSE"))
-    DEFAULT_CHAT_FRAME:AddMessage("- Is example from source: " .. ((saved.isExample or saved.usingExampleData) and "TRUE" or "FALSE"))
-    DEFAULT_CHAT_FRAME:AddMessage("- Current data timestamp: " .. tostring(saved.timestamp or "none"))
-    DEFAULT_CHAT_FRAME:AddMessage("- Has source data: " .. (saved.source and "yes" or "no"))
-    
-    -- Count and test example players
-    if TWRA.EXAMPLE_PLAYERS then
-        local playerCount, offlineCount = 0, 0
-        for name, classInfo in pairs(TWRA.EXAMPLE_PLAYERS) do
-            playerCount = playerCount + 1
-            if string.find(classInfo, "|OFFLINE") then offlineCount = offlineCount + 1 end
-        end
-        DEFAULT_CHAT_FRAME:AddMessage("- Example players: " .. playerCount .. " (with " .. offlineCount .. " offline)")
-        
-        -- Test a few players
-        DEFAULT_CHAT_FRAME:AddMessage("Player status test:")
-        local function testPlayer(name)
-            local inRaid, online = TWRA:GetPlayerStatus(name)
-            DEFAULT_CHAT_FRAME:AddMessage("  - " .. name .. ": " .. 
-                (inRaid and (online and "OFFLINE") or "NOT IN RAID"))
-        end
-        testPlayer("Azzco")
-        testPlayer("Kaydaawg") -- Should be in example data
-    end
-    
-    -- Load example data if requested
-    if msg == "load" then
-        TWRA:LoadExampleData()
-        DEFAULT_CHAT_FRAME:AddMessage("Example data loaded!")
-        if TWRA.currentView == "options" then
-            TWRA:ShowMainView()
-        else
-            self:DisplayCurrentSection()
-        end
-    end
-    
-    -- Debug class coloring check command handler
-    if msg and string.find(msg, "check") then
-        local _, _, playerName = string.find(msg, "check%s+(%S+)")
-        if playerName then
-            local inRaid, online = TWRA:GetPlayerStatus(playerName)
-            local classInfo = TWRA.EXAMPLE_PLAYERS and TWRA.EXAMPLE_PLAYERS[playerName]
-            local class = classInfo and string.gsub(classInfo, "|OFFLINE", "")
-            
-            DEFAULT_CHAT_FRAME:AddMessage("Class coloring check for " .. playerName .. ":")
-            DEFAULT_CHAT_FRAME:AddMessage("  - In raid: " .. tostring(inRaid))
-            DEFAULT_CHAT_FRAME:AddMessage("  - Online: " .. tostring(online))
-            DEFAULT_CHAT_FRAME:AddMessage("  - Class info: " .. tostring(classInfo))
-            if class and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[class] then
-                local c = TWRA.VANILLA_CLASS_COLORS[class]
-                DEFAULT_CHAT_FRAME:AddMessage("  - Color: r=" .. c.r .. " g=" .. c.g .. " b=" .. c.b)
-            end
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /twraexample check PlayerName")
-        end
-    end
 end
