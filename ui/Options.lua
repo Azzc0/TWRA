@@ -62,6 +62,9 @@ function TWRA:InitOptions()
         self:InitOSD()
     end
     
+    -- Apply settings to activate features based on saved variables
+    self:ApplyInitialSettings()
+    
     self:Debug("general", "Options initialized")
     return true
 end
@@ -599,7 +602,7 @@ function TWRA:CreateOptionsInMainFrame()
     tankSyncCheckbox:SetScript("OnClick", function()
         if liveSync:GetChecked() ~= 1 then
             tankSyncCheckbox:SetChecked(false)
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Tank sync requires Live Sync to be enabled.")
+            self:Debug("tank", "Tank sync requires Live Sync to be enabled.")
             return
         end
         
@@ -1063,4 +1066,74 @@ function TWRA:InitializeSavedOptions()
     end
     
     self:Debug("general", "Saved options initialized")
+end
+
+-- Helper function to apply saved settings on load
+function TWRA:ApplyInitialSettings()
+    self:Debug("general", "Applying initial settings from saved variables")
+    
+    -- Get saved options
+    local options = TWRA_SavedVariables.options
+    if not options then
+        self:Debug("general", "No saved options found, using defaults")
+        return
+    end
+    
+    -- Apply Live Section Sync setting
+    if options.liveSync then
+        self:Debug("sync", "Initializing Live Section Sync: ENABLED")
+        -- Make sure SYNC module exists
+        self.SYNC = self.SYNC or {}
+        self.SYNC.liveSync = true
+        
+        -- Activate live sync functionality
+        if self.ActivateLiveSync then
+            self:ActivateLiveSync()
+            self:Debug("sync", "Live Section Sync activated on init")
+        else
+            self:Debug("sync", "Live Section Sync enabled but ActivateLiveSync function not found")
+        end
+    else
+        self:Debug("sync", "Live Section Sync disabled in settings")
+        -- Make sure it's deactivated
+        if self.SYNC and self.SYNC.isActive and self.DeactivateLiveSync then
+            self:DeactivateLiveSync()
+        end
+    end
+
+    -- Apply Tank Sync setting (only if Live Sync is also enabled)
+    if options.tankSync and options.liveSync then
+        self:Debug("tank", "Initializing Tank Sync: ENABLED")
+        -- Make sure SYNC module exists
+        self.SYNC = self.SYNC or {} 
+        self.SYNC.tankSync = true
+        
+        if self:IsORA2Available() then
+            self:Debug("tank", "oRA2 available, Tank Sync active")
+        else
+            self:Debug("tank", "oRA2 not available, Tank Sync will activate when available")
+        end
+    else
+        self:Debug("tank", "Tank Sync disabled in settings")
+    end
+    
+    -- Apply AutoNavigate setting
+    if options.autoNavigate then
+        self:Debug("nav", "Initializing AutoNavigate: ENABLED")
+        -- Start the AutoNavigate scan if SuperWoW is available
+        if SUPERWOW_VERSION and self.StartAutoNavigateScan then
+            self.AUTONAVIGATE = self.AUTONAVIGATE or {}
+            self.AUTONAVIGATE.enabled = true
+            -- Set scan frequency from saved value
+            if options.scanFrequency and options.scanFrequency > 0 then
+                self.AUTONAVIGATE.scanFreq = options.scanFrequency
+            end
+            self:StartAutoNavigateScan()
+            self:Debug("nav", "AutoNavigate activated with scan frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
+        else
+            self:Debug("nav", "SuperWoW not available, AutoNavigate remains disabled")
+        end
+    else
+        self:Debug("nav", "AutoNavigate disabled in settings")
+    end
 end

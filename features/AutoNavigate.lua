@@ -35,9 +35,63 @@ function TWRA:CheckSuperWoWSupport(quiet)
     return hasSuperWow
 end
 
--- Initialize AutoNavigate function with explicit boolean check
+-- Register AutoNavigate events and hooks
+function TWRA:RegisterAutoNavigateEvents()
+    self:Debug("nav", "Registering AutoNavigate events")
+    
+    -- Create a hook into OnLoad to ensure initialization
+    local originalOnLoad = self.OnLoad
+    self.OnLoad = function(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+        -- Call the original OnLoad function
+        if originalOnLoad then
+            originalOnLoad(self, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+        end
+        
+        -- Schedule AutoNavigate initialization after a short delay
+        self:ScheduleTimer(function()
+            self:Debug("nav", "Running InitializeAutoNavigate from OnLoad hook")
+            self:InitializeAutoNavigate()
+        end, 0.5)
+    end
+    
+    -- Add hook to ensure initialization during PLAYER_ENTERING_WORLD
+    local originalOnEvent = self.OnEvent
+    if originalOnEvent then
+        self.OnEvent = function(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+            -- Call the original event handler
+            originalOnEvent(self, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+            
+            -- Additional initialization for AutoNavigate during PLAYER_ENTERING_WORLD
+            if event == "PLAYER_ENTERING_WORLD" then
+                self:ScheduleTimer(function()
+                    if TWRA_SavedVariables and TWRA_SavedVariables.options and 
+                       TWRA_SavedVariables.options.autoNavigate then
+                        self:Debug("nav", "Re-initializing AutoNavigate from PLAYER_ENTERING_WORLD")
+                        self:InitializeAutoNavigate()
+                    end
+                end, 0.2)
+            end
+        end
+    end
+    
+    -- Force initialization after 1 second to handle any load order issues
+    self:ScheduleTimer(function()
+        if TWRA_SavedVariables and TWRA_SavedVariables.options and 
+           TWRA_SavedVariables.options.autoNavigate and not self.AUTONAVIGATE.initialized then
+            self:Debug("nav", "Forcing AutoNavigate initialization via timer")
+            self:InitializeAutoNavigate()
+        end
+    end, 1)
+end
+
+-- Improved initialization for AutoNavigate
 function TWRA:InitializeAutoNavigate()
     self:Debug("nav", "Initializing AutoNavigate module")
+    
+    -- Check if we've already initialized
+    if self.AUTONAVIGATE.initialized then
+        self:Debug("nav", "AutoNavigate already initialized, refreshing settings")
+    end
     
     -- Clear any existing timer
     if self.AUTONAVIGATE.timer then
@@ -45,56 +99,94 @@ function TWRA:InitializeAutoNavigate()
         self.AUTONAVIGATE.timer = nil
     end
     
-    -- Load enabled state from SavedVariables with explicit boolean conversion
+    -- Load enabled state from SavedVariables
     if TWRA_SavedVariables and TWRA_SavedVariables.options then
+        -- Convert settings to ensure proper boolean values
+        local autoNavigateEnabled = false
+        
+        -- Make sure we have the correct type for the setting
         if TWRA_SavedVariables.options.autoNavigate ~= nil then
-            -- Convert to boolean if it's not already
-            if type(TWRA_SavedVariables.options.autoNavigate) ~= "boolean" then
-                self.AUTONAVIGATE.enabled = (TWRA_SavedVariables.options.autoNavigate == 1 or 
-                                            TWRA_SavedVariables.options.autoNavigate == true)
-                -- Update stored value to be true boolean
-                TWRA_SavedVariables.options.autoNavigate = self.AUTONAVIGATE.enabled
+            if type(TWRA_SavedVariables.options.autoNavigate) == "boolean" then
+                autoNavigateEnabled = TWRA_SavedVariables.options.autoNavigate
             else
-                -- Use existing boolean value
-                self.AUTONAVIGATE.enabled = TWRA_SavedVariables.options.autoNavigate
+                -- Convert non-boolean to boolean
+                autoNavigateEnabled = (TWRA_SavedVariables.options.autoNavigate == 1 or 
+                                      TWRA_SavedVariables.options.autoNavigate == true)
+                TWRA_SavedVariables.options.autoNavigate = autoNavigateEnabled
+                self:Debug("nav", "Converted autoNavigate setting to boolean: " .. tostring(autoNavigateEnabled))
+            end
+        end
+        
+        -- Load scan frequency
+        if TWRA_SavedVariables.options.scanFrequency then
+            self.AUTONAVIGATE.scanFreq = TWRA_SavedVariables.options.scanFrequency
+        end
+        
+        -- Apply the enabled state using the toggle function which ensures proper activation
+        if autoNavigateEnabled ~= self.AUTONAVIGATE.enabled then
+            self:ToggleAutoNavigate(autoNavigateEnabled)
+            self:Debug("nav", "AutoNavigate " .. (autoNavigateEnabled and "enabled" or "disabled") .. " based on saved settings")
+        else
+            -- Even if the state matches, make sure scanning is active if it should be
+            if autoNavigateEnabled and not self.AUTONAVIGATE.timer and self:CheckSuperWoWSupport() then
+                self:StartAutoNavigateScan()
+                self:Debug("nav", "AutoNavigate scan started during initialization")
             end
         end
     end
 
-    -- Start scanning if enabled using explicit boolean check
-    if self.AUTONAVIGATE.enabled == true then
-        self:StartAutoNavigateScan()
-        self:Debug("nav", "AutoNavigate activated during initialization")
-    end
+    -- Ensure initialization completes properly
+    self.AUTONAVIGATE.initialized = true
     
-    self:Debug("nav", "AutoNavigate initialized with scan frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
+    self:Debug("nav", "AutoNavigate initialized with scan frequency: " .. 
+               (self.AUTONAVIGATE.scanFreq or "default") .. "s")
 end
 
 -- Toggle AutoNavigate feature on/off with explicit debugging
 function TWRA:ToggleAutoNavigate(state)
-    -- Debug the function call
-    self:Debug("nav", "ToggleAutoNavigate called with state: " .. tostring(state))
-    self:Debug("nav", "Current state: " .. tostring(self.AUTONAVIGATE.enabled))
+    -- Debug the function call with explicit information
+    self:Debug("nav", "ToggleAutoNavigate called with state: " .. tostring(state) .. 
+               " (current state: " .. tostring(self.AUTONAVIGATE.enabled) .. ")")
     
-    -- Set state if provided, otherwise toggle
+    -- Determine the new state
+    local newState
     if state ~= nil then
-        self.AUTONAVIGATE.enabled = state
+        -- Use provided state
+        newState = state
     else
-        self.AUTONAVIGATE.enabled = not self.AUTONAVIGATE.enabled
+        -- Toggle current state
+        newState = not self.AUTONAVIGATE.enabled
     end
     
-    -- Save to config with explicit debug output
+    -- Only proceed if state is actually changing
+    if newState == self.AUTONAVIGATE.enabled then
+        self:Debug("nav", "AutoNavigate already " .. (newState and "enabled" or "disabled") .. ", no action needed")
+        return self.AUTONAVIGATE.enabled
+    end
+    
+    -- Set the new state
+    self.AUTONAVIGATE.enabled = newState
+    
+    -- Save to config
     if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
-    TWRA_SavedVariables.options.autoNavigate = self.AUTONAVIGATE.enabled
+    TWRA_SavedVariables.options.autoNavigate = newState
     
-    -- Debug message with explicit state info
-    self:Debug("nav", "AutoNavigate toggled: new state=" .. tostring(self.AUTONAVIGATE.enabled) .. 
-              " (saved=" .. tostring(TWRA_SavedVariables.options.autoNavigate) .. ")")
+    -- Debug with explicit state info
+    self:Debug("nav", "AutoNavigate " .. (newState and "enabled" or "disabled") .. 
+              " (saved value: " .. tostring(TWRA_SavedVariables.options.autoNavigate) .. ")")
     
-    -- Start/stop scanning based on state with debug feedback
-    if self.AUTONAVIGATE.enabled then
-        self:StartAutoNavigateScan()
-        self:Debug("nav", "AutoNavigate scanning activated with frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
+    -- Start or stop scanning based on new state
+    if newState then
+        -- First check SuperWoW support
+        if self:CheckSuperWoWSupport() then
+            self:StartAutoNavigateScan()
+            self:Debug("nav", "AutoNavigate scanning activated with frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
+        else
+            self:Debug("nav", "AutoNavigate enabled but SuperWoW not available, scanning disabled")
+            -- If SuperWoW is not available, reset the enabled state
+            self.AUTONAVIGATE.enabled = false
+            TWRA_SavedVariables.options.autoNavigate = false
+        end
     else
         self:StopAutoNavigateScan()
         self:Debug("nav", "AutoNavigate scanning deactivated")
@@ -103,34 +195,64 @@ function TWRA:ToggleAutoNavigate(state)
     return self.AUTONAVIGATE.enabled
 end
 
--- Start the AutoNavigate scanning - make sure this function exists
+-- Start the AutoNavigate scanning - make sure this function works independently
 function TWRA:StartAutoNavigateScan()
     -- Debug output to verify this function is being called
     self:Debug("nav", "StartAutoNavigateScan called")
 
-    -- Clear any existing timer
+    -- Clear any existing timer to avoid duplicates
     if self.AUTONAVIGATE.timer then
         self:CancelTimer(self.AUTONAVIGATE.timer)
         self.AUTONAVIGATE.timer = nil
         self:Debug("nav", "Cleared existing AutoNavigate timer")
     end
     
-    -- Create a new timer
-    self.AUTONAVIGATE.timer = self:ScheduleTimer(function()
-        -- Debug that scanning is happening
-        self:Debug("nav", "Running AutoNavigate scan...")
-        
-        -- Call the actual scan function
-        self:ScanMarkedTargets()
-        
-        -- Only reschedule if still enabled
-        if self.AUTONAVIGATE.enabled then
-            self:StartAutoNavigateScan()
-        end
-    end, self.AUTONAVIGATE.scanFreq or 1)
+    -- Get scan frequency from settings or use default
+    local scanFreq = self.AUTONAVIGATE.scanFreq or 1
     
-    self:Debug("nav", "AutoNavigate scan timer created with frequency: " .. 
-               (self.AUTONAVIGATE.scanFreq or 1) .. "s")
+    -- Create and configure the scan frame if it doesn't exist
+    if not self.AUTONAVIGATE.scanFrame then
+        self.AUTONAVIGATE.scanFrame = CreateFrame("Frame", "TWRAAutoNavigateFrame", UIParent)
+        self.AUTONAVIGATE.lastUpdate = GetTime()
+        
+        -- Use SetScript to handle frame updates
+        self.AUTONAVIGATE.scanFrame:SetScript("OnUpdate", function()
+            -- Only proceed if auto navigate is actually enabled
+            if not TWRA.AUTONAVIGATE or not TWRA.AUTONAVIGATE.enabled then
+                return
+            end
+            
+            -- Check if enough time has passed since last scan
+            local currentTime = GetTime()
+            local elapsed = currentTime - (TWRA.AUTONAVIGATE.lastUpdate or 0)
+            
+            -- Only scan when we've waited long enough
+            if elapsed >= TWRA.AUTONAVIGATE.scanFreq then
+                -- Reset the timer
+                TWRA.AUTONAVIGATE.lastUpdate = currentTime
+                
+                -- Debug output if in debug mode
+                if TWRA.AUTONAVIGATE.debug then
+                    TWRA:Debug("nav", "Auto scan triggering after " .. string.format("%.1f", elapsed) .. "s")
+                end
+                
+                -- Perform the actual scan
+                TWRA:ScanMarkedTargets()
+            end
+        end)
+    end
+    
+    -- Reset last update time to ensure first scan happens quickly
+    self.AUTONAVIGATE.lastUpdate = GetTime()
+    
+    -- Perform an initial scan immediately
+    self:ScanMarkedTargets()
+    
+    -- Ensure the scan frame is shown and working
+    self.AUTONAVIGATE.scanFrame:Show()
+    
+    self:Debug("nav", "AutoNavigate continuous scanning active with " .. scanFreq .. "s interval")
+    return true
 end
 
 -- Stop scanning for marked targets
@@ -138,12 +260,22 @@ function TWRA:StopAutoNavigateScan()
     -- Debug output to verify this function is being called
     self:Debug("nav", "StopAutoNavigateScan called")
     
-    -- Clear the timer if it exists
+    -- Hide the scan frame to stop OnUpdate processing
+    if self.AUTONAVIGATE.scanFrame then
+        self.AUTONAVIGATE.scanFrame:Hide()
+        self:Debug("nav", "AutoNavigate scan frame hidden")
+    end
+    
+    -- Clear any existing timer
     if self.AUTONAVIGATE.timer then
         self:CancelTimer(self.AUTONAVIGATE.timer)
         self.AUTONAVIGATE.timer = nil
-        self:Debug("nav", "AutoNavigate scan stopped")
     end
+    
+    -- Reset tracking variables
+    self.AUTONAVIGATE.lastMarkedGuid = nil
+    
+    self:Debug("nav", "AutoNavigate scan stopped")
 end
 
 -- Core function to scan for target and navigate to the appropriate section
@@ -187,7 +319,7 @@ function TWRA:ScanForTargetAndNavigate()
     end
 end
 
--- New function to navigate without showing the main frame
+-- Modified to work with NavigateToSection while keeping UI state
 function TWRA:NavigateToSectionQuietly(targetSection)
     -- Basic error checking
     if not self.navigation then return false end
@@ -216,6 +348,8 @@ function TWRA:NavigateToSectionQuietly(targetSection)
         sectionName = handlers[sectionIndex]
     end
     
+    if not sectionName then return false end
+    
     -- Update current index
     self.navigation.currentIndex = sectionIndex
     
@@ -226,6 +360,11 @@ function TWRA:NavigateToSectionQuietly(targetSection)
     
     -- Save as current section
     self:SaveCurrentSection()
+    
+    -- Track if we need to update UI later
+    if not self.mainFrame or not self.mainFrame:IsShown() then
+        self.pendingNavigation = sectionIndex
+    end
     
     -- Always show OSD
     self:ShowSectionNameOverlay(sectionName, sectionIndex, numSections)
@@ -240,6 +379,7 @@ function TWRA:NavigateToSectionQuietly(targetSection)
         self:UpdateTanks()
     end
     
+    self:Debug("nav", "Quietly navigated to section " .. sectionIndex .. " (" .. sectionName .. ")")
     return true
 end
 
@@ -340,16 +480,15 @@ function TWRA:ProcessMarkedMob(mobName, mobId)
                 self:Debug("nav", "Navigating to section index: " .. sectionIndex)
             end
             
-            -- Use the defined NavigateToSection function from TWRA.lua
-            if self.mainFrame and not self.mainFrame:IsShown() then
-                -- Show the main frame if it's hidden
-                self.mainFrame:Show()
-                self:Debug("nav", "Showing main frame for auto-navigation")
+            -- Use NavigateToSectionQuietly for headless operation
+            if self.NavigateToSectionQuietly then
+                self:NavigateToSectionQuietly(sectionIndex)
+                self:Debug("nav", "Auto-navigated to " .. targetSection)
+            else
+                -- Fallback to standard navigation
+                self:NavigateToSection(sectionIndex)
+                self:Debug("nav", "Auto-navigated to " .. targetSection .. " (standard method)")
             end
-            
-            -- Navigate to the section
-            self:NavigateToSection(sectionIndex)
-            self:Debug("nav", "Auto-navigated to " .. targetSection)
         else
             if self.AUTONAVIGATE.debug then
                 self:Debug("nav", "Section name found but no matching index in navigation: " .. targetSection)
@@ -671,3 +810,6 @@ function TWRA:ListAllGuids()
     
     self:Debug("nav", "End of GUID listing")
 end
+
+-- Execute registration immediately
+TWRA:RegisterAutoNavigateEvents()

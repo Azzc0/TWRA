@@ -1,42 +1,43 @@
--- -- ...existing code...
+-- Add initialization function for tank sync
+function TWRA:InitializeTankSync()
+    -- Check if sync is enabled in options
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and 
+       TWRA_SavedVariables.options.liveSync and TWRA_SavedVariables.options.tankSync then
+        
+        -- Ensure SYNC module exists
+        self.SYNC = self.SYNC or {}
+        self.SYNC.tankSync = true
+        self.SYNC.liveSync = true
+        
+        -- Apply current tanks if oRA2 is available
+        if self:IsORA2Available() and self.navigation and self.navigation.currentIndex then
+            self:Debug("tank", "Initializing Tank Sync with current section")
+            self:UpdateTanks()
+        else
+            self:Debug("tank", "Tank sync enabled but waiting for oRA2/navigation")
+        end
+    end
+end
 
--- -- Update tank assignments in ORA2
--- function TWRA:UpdateTanks()
---     -- Verify we have ORA2 and tank sync is enabled
---     if not self:IsORA2Available() then
---         self:Debug("tank", "ORA2 not available for tank sync")
---         return false
---     end
-    
---     if not self.SYNC or self.SYNC.tankSync ~= true then  -- Access through stored boolean
---         self:Debug("tank", "Tank sync is disabled")
---         return false
---     end
-    
---     -- ...existing code...
--- end
-
--- -- ...existing code...
 -- Check if oRA2 is available
-
 function TWRA:IsORA2Available()
     return oRA and oRA.maintanktable ~= nil  -- Changed to lowercase
 end
 
 function TWRA:UpdateTanks()
     -- Debug output our sync state
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Updating tanks for section " .. 
+    self:Debug("tank", "Updating tanks for section " .. 
         self.navigation.handlers[self.navigation.currentIndex])
     
     -- Check if oRA2 is available
     if not self:IsORA2Available() then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: oRA2 is required for tank management")
+        self:Debug("tank", "oRA2 is required for tank management")
         return
     end
     
     -- Check if we have data
     if not self.fullData or table.getn(self.fullData) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No data to update tanks from")
+        self:Debug("tank", "No data to update tanks from")
         return
     end
     
@@ -47,11 +48,11 @@ function TWRA:UpdateTanks()
     end
     
     if not currentSection then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No section selected")
+        self:Debug("tank", "No section selected")
         return
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Processing tanks for section " .. currentSection)
+    self:Debug("tank", "Processing tanks for section " .. currentSection)
     
     -- Find header row for column names
     local headerRow = nil
@@ -63,7 +64,7 @@ function TWRA:UpdateTanks()
     end
     
     if not headerRow then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Invalid data format - header row not found")
+        self:Debug("tank", "Invalid data format - header row not found")
         return
     end
     
@@ -73,12 +74,12 @@ function TWRA:UpdateTanks()
     for k = 4, table.getn(headerRow) do
         if headerRow[k] == "Tank" then
             table.insert(tankColumns, k)
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug: Found tank column at index " .. k)
+            self:Debug("tank", "Found tank column at index " .. k)
         end
     end
     
     if table.getn(tankColumns) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: No tank columns found in section " .. currentSection)
+        self:Debug("tank", "No tank columns found in section " .. currentSection)
         return
     end
     
@@ -122,15 +123,15 @@ function TWRA:UpdateTanks()
     end
     
     -- Second pass: assign tanks in order
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Setting " .. table.getn(uniqueTanks) .. " tanks")
+    self:Debug("tank", "Setting " .. table.getn(uniqueTanks) .. " tanks")
     for i = 1, table.getn(uniqueTanks) do
         local tankName = uniqueTanks[i]
         oRA.maintanktable[i] = tankName
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Set MT" .. i .. " to " .. tankName)
+        self:Debug("tank", "Set MT" .. i .. " to " .. tankName)
         if GetNumRaidMembers() > 0 then
             SendAddonMessage("CTRA", "SET " .. i .. " " .. tankName, "RAID")
         end
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Tank updates completed")
+    self:Debug("tank", "Tank updates completed")
 end
