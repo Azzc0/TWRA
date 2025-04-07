@@ -1,70 +1,199 @@
 -- TWRA On-Screen Display (OSD) module
+-- Handles frame creation, layout and visibility
 TWRA = TWRA or {}
 
 -- Initialize OSD settings
-TWRA.OSD = {
-    enabled = true,           -- OSD enabled by default
-    showOnNavigation = true,  -- Show OSD on section changes
-    locked = false,           -- OSD position unlocked by default
-    frame = nil,              -- Will hold the OSD frame
-    point = "CENTER",         -- Default anchor point
-    xOffset = 0,              -- X offset from anchor
-    yOffset = 100,            -- Y offset from anchor (higher up on screen)
-    scale = 1.0,              -- Default OSD scale
-    duration = 2,             -- How long to show the OSD (seconds)
-    hideTimer = nil,          -- Timer for auto-hiding
-    lastSection = nil,        -- Last section displayed
-    isVisible = false         -- Tracking visibility state
+TWRA.OSD = TWRA.OSD or {
+    isVisible = false,
+    autoHideTimer = nil,
+    duration = 2,
+    scale = 1.0,
+    locked = false,
+    enabled = true,
+    showOnNavigation = true,
+    point = "CENTER",
+    xOffset = 0,
+    yOffset = 100
 }
 
 -- Initialize the OSD system
 function TWRA:InitOSD()
     self:Debug("osd", "Initializing OSD system")
     
-    -- Load saved settings
+    -- Apply saved settings if they exist
     if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.osd then
-        local saved = TWRA_SavedVariables.options.osd
+        local savedSettings = TWRA_SavedVariables.options.osd
         
-        -- Apply saved settings with default fallbacks
-        self.OSD.enabled = saved.enabled ~= nil and saved.enabled or true
-        self.OSD.showOnNavigation = saved.showOnNavigation ~= nil and saved.showOnNavigation or true
-        self.OSD.locked = saved.locked ~= nil and saved.locked or false
-        self.OSD.point = saved.point or "CENTER"
-        self.OSD.xOffset = saved.xOffset or 0
-        self.OSD.yOffset = saved.yOffset or 100
-        self.OSD.scale = saved.scale or 1.0
-        self.OSD.duration = saved.duration or 2
+        -- Apply each saved setting to the runtime settings
+        for key, value in pairs(savedSettings) do
+            -- Convert any 0/1 values to proper booleans
+            if key == "enabled" or key == "showOnNavigation" or key == "locked" then
+                self.OSD[key] = (value == true or value == 1)
+            else
+                self.OSD[key] = value
+            end
+        end
+        self:Debug("osd", "Loaded saved OSD settings")
     end
     
-    -- Register for section change messages
-    self:RegisterMessageHandler("SECTION_CHANGED", function(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
-        self:OnSectionChanged(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+    -- Register for section change message to show OSD
+    self:RegisterMessageHandler("SECTION_CHANGED", function(sectionName, sectionIndex, totalSections, context)
+        -- Only show OSD if enabled and we should show on navigation
+        if not self.OSD.enabled or not self.OSD.showOnNavigation then
+            self:Debug("osd", "OSD skipped - not enabled or not set to show on navigation")
+            return
+        end
+        
+        -- Handle the section change
+        self:ShowOSD(self.OSD.duration)
+        self:UpdateOSDContent(sectionName, sectionIndex, totalSections)
+        self:Debug("osd", "OSD shown for section: " .. (sectionName or "unknown"))
     end)
     
-    self:Debug("osd", "OSD initialized with settings: Enabled=" .. tostring(self.OSD.enabled) .. 
-               ", ShowOnNav=" .. tostring(self.OSD.showOnNavigation))
+    self.OSD.initialized = true
+    self:Debug("osd", "OSD system initialized")
+    return true
+end
+
+-- Function to update OSD display with the formatted data
+function TWRA:UpdateOSDWithFormattedData()
+    -- Create or get OSD frame
+    local frame = self:GetOSDFrame()
+    
+    -- Get current section name
+    local sectionName = nil
+    if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
+        sectionName = self.navigation.handlers[self.navigation.currentIndex]
+    end
+    
+    if not sectionName then
+        self:Debug("osd", "No section name available")
+        return false
+    end
+    
+    -- Make sure we are using the original background style
+    if not frame.bg then
+        -- Add background with transparency
+        local bg = frame:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture(0, 0, 0, 0.5) -- Main background
+        frame.bg = bg
+        
+        -- Add border
+        local border = CreateFrame("Frame", nil, frame)
+        border:SetPoint("TOPLEFT", -2, 2)
+        border:SetPoint("BOTTOMRIGHT", 2, -2)
+        border:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        frame.border = border
+        
+        -- Remove any previous backdrop
+        frame:SetBackdrop(nil)
+    end
+    
+    -- COMPLETELY REMOVE the footerContainer and create a fresh one
+    if frame.footerContainer then
+        -- First, delete all child frames
+        local children = {frame.footerContainer:GetChildren()}
+        for _, child in pairs(children) do
+            child:SetParent(nil)
+            child:Hide()
+        end
+        
+        -- Delete all textures and regions
+        local regions = {frame.footerContainer:GetRegions()}
+        for _, region in pairs(regions) do
+            region:SetParent(nil)
+            region:Hide()
+        end
+        
+        -- Delete the container itself
+        frame.footerContainer:SetParent(nil)
+        frame.footerContainer:Hide()
+        frame.footerContainer = nil
+        
+        self:Debug("osd", "Completely removed old footer container")
+    end
+    
+    -- Call DatarowsOSD to create/update the data rows directly in contentContainer
+    local dataRowsHeight = 0
+    if self.DatarowsOSD then
+        dataRowsHeight = self:DatarowsOSD(frame.contentContainer, sectionName) or 0
+        self:Debug("osd", "DatarowsOSD returned height: " .. dataRowsHeight)
+    else
+        self:Debug("osd", "DatarowsOSD function not found")
+    end
+    
+    -- Create a brand new footerContainer
+    local footerContainer = CreateFrame("Frame", nil, frame)
+    footerContainer:SetPoint("TOPLEFT", frame.contentContainer, "BOTTOMLEFT", 0, -5)
+    footerContainer:SetPoint("TOPRIGHT", frame.contentContainer, "BOTTOMRIGHT", 0, -5)
+    footerContainer:SetHeight(1) -- Default minimal height
+    frame.footerContainer = footerContainer
+    
+    -- Call UpdateOSDFooters to add content to the new footer container
+    local footerHeight = 0
+    if self.UpdateOSDFooters then
+        footerHeight = self:UpdateOSDFooters(frame.footerContainer, sectionName) or 0
+        self:Debug("osd", "UpdateOSDFooters returned height: " .. footerHeight)
+    else
+        self:Debug("osd", "UpdateOSDFooters function not found")
+    end
+    
+    -- Update content container height
+    frame.contentContainer:SetHeight(dataRowsHeight)
+    
+    -- Calculate total frame height including padding
+    local totalFrameHeight = frame.infoContainer:GetHeight() + dataRowsHeight + footerHeight + 5 + 18 -- Verified to look good in-game do not adjust the +23 here
+    -- Height calculation includes:
+    -- - infoContainer height
+    -- - contentContainer height (dataRowsHeight)
+    -- - footerContainer height (footerHeight)
+    -- - 5px padding between contentContainer and footerContainer 
+    -- - 6px extra padding at the bottom of the frame
+    
+    -- Set minimum height
+    if totalFrameHeight < 60 then 
+        totalFrameHeight = 60
+    end
+    
+    -- Debug the height calculation
+    self:Debug("osd", "Frame height calculation: infoHeight(" .. frame.infoContainer:GetHeight() .. 
+                      ") + contentHeight(" .. dataRowsHeight .. 
+                      ") + padding(5) + footers(" .. footerHeight .. 
+                      ") + extraPadding(6) = " .. totalFrameHeight)
+    
+    -- Update frame height
+    frame:SetHeight(totalFrameHeight)
+    
+    -- Make sure the frame is shown
+    frame:Show()
+    self.OSD.isVisible = true
     
     return true
 end
 
 -- Create or get the OSD frame
 function TWRA:GetOSDFrame()
-    -- Return existing frame if it's already created
-    if self.OSD.frame then 
-        return self.OSD.frame 
+    if self.OSDFrame then
+        return self.OSDFrame
     end
     
-    self:Debug("osd", "Creating OSD frame")
-    
-    -- Create the main frame
+    -- Create the main OSD frame
     local frame = CreateFrame("Frame", "TWRAOSDFrame", UIParent)
-    frame:SetWidth(500)
-    frame:SetHeight(100) -- Initial height, will be adjusted dynamically
+    frame:SetFrameStrata("DIALOG")
+    frame:SetWidth(400)
+    frame:SetHeight(200) -- Initial height, will be adjusted
+    
+    -- Position the frame
+    frame:ClearAllPoints()
     frame:SetPoint(self.OSD.point, UIParent, self.OSD.point, self.OSD.xOffset, self.OSD.yOffset)
     frame:SetScale(self.OSD.scale or 1.0)
-    frame:SetFrameStrata("HIGH")
     
-    -- Add background with transparency
+    -- Add background with transparency (original style)
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(0, 0, 0, 0.5) -- Main background
@@ -81,200 +210,78 @@ function TWRA:GetOSDFrame()
     })
     frame.border = border
     
-    -- Create layout containers for better organization
-    -- Header container (for title)
-    local headerContainer = CreateFrame("Frame", nil, frame)
-    headerContainer:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    headerContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    headerContainer:SetHeight(30)
-    frame.headerContainer = headerContainer
-    
-    -- Content container (for assignments, notes, warnings)
-    local contentContainer = CreateFrame("Frame", nil, frame)
-    contentContainer:SetPoint("TOPLEFT", headerContainer, "BOTTOMLEFT", 0, 0)
-    contentContainer:SetPoint("TOPRIGHT", headerContainer, "BOTTOMRIGHT", 0, 0)
-    contentContainer:SetHeight(0) -- Initial height, will grow as needed
-    frame.contentContainer = contentContainer
-    
-    -- Debug: Add bright purple background
-    local debugBg = contentContainer:CreateTexture(nil, "BACKGROUND")
-    debugBg:SetAllPoints()
-    debugBg:SetTexture(0.8, 0, 0.8, 0.5) -- Bright purple with 50% opacity
-    frame.contentContainerDebugBg = debugBg
-    
-    -- Footer container (for section count and nav indicators)
-    local footerContainer = CreateFrame("Frame", nil, frame)
-    footerContainer:SetHeight(20) -- Reduced from 30 to 20 (less padding)
-    footerContainer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    footerContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    frame.footerContainer = footerContainer
-    
-    -- Remove the footer background - deleted this code:
-    -- local footerBg = footerContainer:CreateTexture(nil, "BACKGROUND")
-    -- footerBg:SetAllPoints()
-    -- footerBg:SetTexture(0.15, 0.15, 0.15, 0.7) -- Slightly darker than main background
-    -- frame.footerBg = footerBg
-    
-    -- Create title text (section name)
-    local title = headerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", headerContainer, "TOP", 0, -10)
-    title:SetTextColor(1, 0.82, 0)
-    title:SetText("Current Section")
-    frame.title = title
-    
-    -- Assignment info container
-    local infoContainer = CreateFrame("Frame", nil, contentContainer)
-    infoContainer:SetPoint("TOP", contentContainer, "TOP", 0, -5)
-    infoContainer:SetWidth(460)
-    infoContainer:SetHeight(40)
-    frame.infoContainer = infoContainer
-    
-    -- Create section text (larger font)
-    -- local text = infoContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    -- text:SetPoint("TOPLEFT", infoContainer, "TOPLEFT", 15, -5)
-    -- text:SetWidth(430)
-    -- text:SetJustifyH("LEFT")
-    -- text:SetText("No section selected")
-    -- frame.text = text
-    
-    -- Add warning container and icon with colored background
-    local warningContainer = CreateFrame("Frame", nil, contentContainer)
-    warningContainer:SetHeight(25)
-    -- Make warning container use full width of content container
-    warningContainer:SetPoint("LEFT", contentContainer, "LEFT", 0, 0)
-    warningContainer:SetPoint("RIGHT", contentContainer, "RIGHT", 0, 0)
-    warningContainer:SetPoint("TOP", infoContainer, "BOTTOM", 0, -5)
-    frame.warningContainer = warningContainer
-    
-    -- Add semi-transparent red background for warning section
-    local warningBg = warningContainer:CreateTexture(nil, "BACKGROUND")
-    warningBg:SetAllPoints()
-    warningBg:SetTexture(0.8, 0.1, 0.1, 0.15) -- Light red with transparency
-    frame.warningBg = warningBg
-    
-    -- Warning icon, position relative to container's left edge
-    local warningIcon = warningContainer:CreateTexture(nil, "OVERLAY")
-    warningIcon:SetTexture("Interface\\DialogFrame\\DialogAlertIcon")
-    warningIcon:SetWidth(16)
-    warningIcon:SetHeight(16)
-    warningIcon:SetPoint("LEFT", warningContainer, "LEFT", 15, 0)
-    warningIcon:Hide() -- Hide by default
-    frame.warningIcon = warningIcon
-    
-    -- Warning text
-    local warningText = warningContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    warningText:SetPoint("LEFT", warningIcon, "RIGHT", 5, 0)
-    warningText:SetWidth(440)
-    warningText:SetJustifyH("LEFT")
-    warningText:SetTextColor(1, 0.6, 0.6) -- Light red color
-    frame.warningText = warningText
-    
-    -- Add note container and icon with colored background
-    local noteContainer = CreateFrame("Frame", nil, contentContainer)
-    noteContainer:SetHeight(25)
-    -- Make note container use full width of content container
-    noteContainer:SetPoint("LEFT", contentContainer, "LEFT", 0, 0)
-    noteContainer:SetPoint("RIGHT", contentContainer, "RIGHT", 0, 0)
-    noteContainer:SetPoint("TOP", warningContainer, "BOTTOM", 0, 0)
-    frame.noteContainer = noteContainer
-    
-    -- Add semi-transparent blue background for note section
-    local noteBg = noteContainer:CreateTexture(nil, "BACKGROUND")
-    noteBg:SetAllPoints()
-    noteBg:SetTexture(0.2, 0.4, 0.8, 0.15) -- Light blue with transparency
-    frame.noteBg = noteBg
-    
-    -- Note icon
-    local noteIcon = noteContainer:CreateTexture(nil, "OVERLAY")
-    noteIcon:SetTexture("Interface\\TutorialFrame\\TutorialFrame-QuestionMark")
-    noteIcon:SetWidth(16)
-    noteIcon:SetHeight(16)
-    noteIcon:SetPoint("LEFT", noteContainer, "LEFT", 15, 0)
-    noteIcon:Hide() -- Hide by default
-    frame.noteIcon = noteIcon
-    
-    -- Note text
-    local noteText = noteContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    noteText:SetPoint("LEFT", noteIcon, "RIGHT", 5, 0)
-    noteText:SetWidth(440)
-    noteText:SetJustifyH("LEFT")
-    noteText:SetTextColor(0.8, 0.8, 1) -- Light blue color
-    frame.noteText = noteText
-    
-    -- Section count text (footer)
-    local countText = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    countText:SetPoint("CENTER", footerContainer, "CENTER", 0, 0)
-    countText:SetTextColor(1, 1, 1)
-    countText:SetText("Section 0/0")
-    frame.countText = countText
-    
-    -- Make the frame movable but respect locked status
-    frame:SetMovable(true)
+    -- Make the frame movable if not locked
+    frame:SetMovable(not self.OSD.locked)
     frame:EnableMouse(not self.OSD.locked)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function()
-        if not self.OSD.locked then
-            this:StartMoving()
-        end
-    end)
+    frame:SetScript("OnDragStart", function() this:StartMoving() end)
     frame:SetScript("OnDragStop", function()
         this:StopMovingOrSizing()
-        -- Save new position
-        local point, _, relPoint, xOffset, yOffset = this:GetPoint()
-        self.OSD.point = point
-        self.OSD.relPoint = relPoint
-        self.OSD.xOffset = xOffset
-        self.OSD.yOffset = yOffset
+        -- Save position
+        local point, _, _, xOffset, yOffset = this:GetPoint()
+        TWRA.OSD.point = point
+        TWRA.OSD.xOffset = xOffset
+        TWRA.OSD.yOffset = yOffset
         
-        -- Save to settings
+        -- Update saved variables
         if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.osd then
             TWRA_SavedVariables.options.osd.point = point
-            TWRA_SavedVariables.options.osd.relPoint = relPoint
             TWRA_SavedVariables.options.osd.xOffset = xOffset
             TWRA_SavedVariables.options.osd.yOffset = yOffset
         end
     end)
     
-    -- Initialize icons array for possible future use
-    frame.assignmentIcons = {}
+    -- Create header container (for title) - with minimal top padding
+    local headerContainer = CreateFrame("Frame", nil, frame)
+    headerContainer:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -5) -- Reduced top padding to 5px
+    headerContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, -5)
+    headerContainer:SetHeight(25)
+    frame.infoContainer = headerContainer  -- Using infoContainer as the name for consistency
     
-    -- Initial state is hidden
+    -- Create title text
+    local titleText = headerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    titleText:SetPoint("TOP", headerContainer, "TOP", 0, 0)
+    titleText:SetPoint("LEFT", headerContainer, "LEFT", 10, 0) -- Added left padding to text instead
+    titleText:SetPoint("RIGHT", headerContainer, "RIGHT", -10, 0) -- Added right padding to text instead
+    titleText:SetHeight(25)
+    titleText:SetJustifyH("CENTER")
+    titleText:SetText("Current Section")
+    frame.titleText = titleText
+    
+    -- Create content container (for data rows) - with padding only at the top
+    local contentContainer = CreateFrame("Frame", nil, frame)
+    contentContainer:SetPoint("TOPLEFT", headerContainer, "BOTTOMLEFT", 0, -5) -- 5px space after title
+    contentContainer:SetPoint("TOPRIGHT", headerContainer, "BOTTOMRIGHT", 0, -5)
+    contentContainer:SetHeight(50) -- Initial height, will be adjusted
+    frame.contentContainer = contentContainer
+    
+    -- Create footer container (for warnings/notes) - NO padding, directly below content
+    local footerContainer = CreateFrame("Frame", nil, frame)
+    footerContainer:SetPoint("TOPLEFT", contentContainer, "BOTTOMLEFT", 0, -10) -- Add 10px padding above footer
+    footerContainer:SetPoint("TOPRIGHT", contentContainer, "BOTTOMRIGHT", 0, 0) -- Full width
+    footerContainer:SetHeight(1) -- Initial height (will be adjusted)
+    frame.footerContainer = footerContainer
+    
+    -- Set initial visibility
     frame:Hide()
+    self.OSDFrame = frame
     
-    -- Store reference
-    self.OSD.frame = frame
-    
-    self:Debug("osd", "OSD frame created")
+    self:Debug("osd", "OSD frame created with original background style")
     return frame
 end
 
 -- Function to toggle OSD visibility
 function TWRA:ToggleOSD()
-    -- Get or create OSD frame
-    local frame = self:GetOSDFrame()
-    
-    -- Add debug to see if we're reaching this
-    self:Debug("osd", "ToggleOSD called, current visibility: " .. tostring(self.OSD.isVisible))
-    
-    -- Fix reset logic - always reset visibility state based on actual frame visibility
-    self.OSD.isVisible = frame:IsShown()
-    
-    -- Add debug about frame state directly
-    self:Debug("osd", "Frame is currently " .. (frame:IsShown() and "shown" or "hidden") .. 
-               ", isVisible flag is " .. tostring(self.OSD.isVisible))
-    
-    -- Toggle visibility
-    if self.OSD.isVisible then
-        self:Debug("osd", "ToggleOSD: Hiding OSD")
-        self:HideOSD()
-    else
-        self:Debug("osd", "ToggleOSD: Showing OSD permanently")
-        -- When called from ToggleOSD, display without auto-hide (no duration parameter)
-        self:ShowOSDPermanent()
+    -- Make sure OSD is initialized
+    if not self.OSD then
+        self:InitOSD()
     end
     
-    -- Debug the final state
-    self:Debug("osd", "ToggleOSD: After toggle, visibility is: " .. tostring(self.OSD.isVisible))
+    if self.OSD.isVisible then
+        self:HideOSD()
+    else
+        self:ShowOSDPermanent()
+    end
     
     return self.OSD.isVisible
 end
@@ -282,794 +289,367 @@ end
 -- Show the OSD permanently (no auto-hide)
 function TWRA:ShowOSDPermanent()
     -- Skip if OSD is disabled
-    if not self.OSD.enabled then
-        self:Debug("osd", "OSD is disabled, not showing")
+    if not self.OSD or not self.OSD.enabled then
+        self:Debug("osd", "OSD is disabled, cannot show permanently")
         return false
     end
     
-    -- Get or create OSD frame
+    -- Create or ensure the frame exists
     local frame = self:GetOSDFrame()
+    if not frame then
+        self:Debug("osd", "Failed to get or create OSD frame")
+        return false
+    end
     
-    -- Update content if we have navigation data
-    if self.navigation and self.navigation.currentIndex then
-        local currentSection = self.navigation.currentIndex
-        local totalSections = table.getn(self.navigation.handlers)
-        local sectionName = self.navigation.handlers[currentSection]
+    -- Make sure the frame exists and is valid before trying to show it
+    if frame.Show then
+        -- Update the OSD content
+        self:RefreshOSDContent()
         
-        self:UpdateOSDContent(sectionName, currentSection, totalSections)
+        -- Show the frame
+        frame:Show()
+        
+        -- Clear any existing hide timer
+        if self.OSD.hideTimer then
+            self:CancelTimer(self.OSD.hideTimer)
+            self.OSD.hideTimer = nil
+        end
+        
+        -- Mark as visible
+        self.OSD.isVisible = true
+        
+        self:Debug("osd", "OSD shown permanently")
+        return true
+    else
+        self:Debug("osd", "Invalid OSD frame, cannot show")
+        return false
     end
-    
-    -- Ensure the frame is shown regardless of content updates
-    -- This was the key issue - frame wasn't being shown explicitly after content updates
-    frame:Show()
-    
-    -- Debug the visibility state to confirm it's shown
-    self:Debug("osd", "OSD frame visibility enforced: " .. (frame:IsShown() and "visible" or "still hidden"))
-    
-    self.OSD.isVisible = true
-    
-    -- Cancel any pending hide timer
-    if self.OSD.hideTimer then
-        self:CancelTimer(self.OSD.hideTimer)
-        self.OSD.hideTimer = nil
-    end
-    
-    self:Debug("osd", "OSD shown permanently")
-    return true
 end
 
 -- Show the OSD with optional auto-hide
 function TWRA:ShowOSD(duration)
     -- Skip if OSD is disabled
-    if not self.OSD.enabled then
-        self:Debug("osd", "OSD is disabled, not showing")
+    if not self.OSD or not self.OSD.enabled then
+        self:Debug("osd", "OSD is disabled, cannot show")
         return false
     end
     
-    -- Get or create OSD frame
+    -- Get or create the OSD frame
     local frame = self:GetOSDFrame()
+    if not frame then
+        self:Debug("osd", "Failed to get or create OSD frame")
+        return false
+    end
     
-    -- Update content if we have navigation data
-    if self.navigation and self.navigation.currentIndex then
-        local currentSection = self.navigation.currentIndex
-        local totalSections = table.getn(self.navigation.handlers)
-        local sectionName = self.navigation.handlers[currentSection]
+    -- Make sure the frame exists and is valid before trying to show it
+    if frame.Show then
+        -- Update the OSD content
+        self:RefreshOSDContent()
         
-        self:UpdateOSDContent(sectionName, currentSection, totalSections)
-    end
-    
-    -- Show the frame
-    frame:Show()
-    self.OSD.isVisible = true
-    
-    -- Cancel any pending hide timer
-    if self.OSD.hideTimer then
-        self:CancelTimer(self.OSD.hideTimer)
-        self.OSD.hideTimer = nil
-    end
-    
-    -- Set up auto-hide timer if duration specified
-    local autohideDuration = duration or self.OSD.duration
-    if autohideDuration and autohideDuration > 0 then
-        self.OSD.hideTimer = self:ScheduleTimer(function()
-            self:HideOSD()
-        end, autohideDuration)
-        self:Debug("osd", "OSD shown with " .. autohideDuration .. "s duration")
+        -- Show the frame
+        frame:Show()
+        
+        -- Clear any existing hide timer
+        if self.OSD.hideTimer then
+            self:CancelTimer(self.OSD.hideTimer)
+            self.OSD.hideTimer = nil
+        end
+        
+        -- Set up auto-hide if duration is provided
+        local hideDuration = duration or self.OSD.duration or 2
+        if hideDuration > 0 then
+            self.OSD.hideTimer = self:ScheduleTimer(function()
+                self:HideOSD()
+            end, hideDuration)
+            
+            self:Debug("osd", "OSD shown with auto-hide in " .. hideDuration .. " seconds")
+        else
+            self:Debug("osd", "OSD shown")
+        end
+        
+        -- Mark as visible
+        self.OSD.isVisible = true
+        
+        return true
     else
-        self:Debug("osd", "OSD shown permanently")
+        self:Debug("osd", "Invalid OSD frame, cannot show")
+        return false
     end
-    
-    return true
 end
 
 -- Hide the OSD
 function TWRA:HideOSD()
-    -- Skip if no frame or already hidden
-    if not self.OSD.frame then return false end
+    -- Skip if there's no OSD or it's already hidden
+    if not self.OSD then return false end
     
-    -- Cancel any pending hide timer
+    -- Clear any existing hide timer
     if self.OSD.hideTimer then
         self:CancelTimer(self.OSD.hideTimer)
         self.OSD.hideTimer = nil
     end
     
-    -- Hide the frame
-    self.OSD.frame:Hide()
+    -- Mark as hidden first (even if we can't find the frame)
     self.OSD.isVisible = false
     
-    self:Debug("osd", "OSD hidden")
+    -- Check if the frame exists and hide it safely
+    if self.OSDFrame then
+        -- Safety check before hiding
+        if self.OSDFrame.Hide then
+            self.OSDFrame:Hide()
+            self:Debug("osd", "OSD hidden")
+        else
+            self:Debug("osd", "Invalid OSD frame, cannot hide")
+        end
+    end
+    
     return true
 end
 
 -- Update OSD content with section information
-function TWRA:UpdateOSDContent(sectionName, sectionIndex, totalSections)
-    self:Debug("osd", "Updating OSD content for section: " .. (sectionName or "unknown"))
-    
-    -- Create frame if it doesn't exist
+function TWRA:UpdateOSDContent(sectionName, sectionIndex)
+    -- Get or create the OSD frame
     local frame = self:GetOSDFrame()
-    
-    -- Update section name in title
-    frame.title:SetText(sectionName or "No section selected")
-    
-    -- Extract section data for processing in OSDContent.lua
-    local sectionData = self:FilterAndExtractSectionData(sectionName)
-    self:Debug("osd", "Extracted " .. table.getn(sectionData) .. " rows for section data")
-    
-    -- Initialize assignments namespace if needed
-    self.assignments = self.assignments or {}
-    
-    -- Call the PrepOSD function in OSDContent.lua if available
-    if self.PrepOSD then
-        self:Debug("osd", "Calling PrepOSD to format assignment information")
-        self:PrepOSD(sectionData)
-        
-        -- Debug the formatted data if it exists
-        if self.assignments.osdtable then
-            self:DebugFormattedData(self.assignments.osdtable)
-            
-            -- Update OSD with the formatted data
-            self:UpdateOSDWithFormattedData(self.assignments.osdtable)
-        else
-            self:Debug("osd", "No OSD table found in TWRA.assignments after PrepOSD call")
-            
-            -- Even if no assignments are found, ensure we create the assignment text field
-            -- This is important so it exists for future updates
-            if self.UpdateOSDAssignmentLines then
-                self:UpdateOSDAssignmentLines({"No specific assignments for you in this section"})
-            end
-        end
-    else
-        self:Debug("osd", "PrepOSD function not found in OSDContent.lua - falling back to basic display")
+    if not frame then
+        self:Debug("osd", "Failed to get or create OSD frame")
+        return false
     end
     
-    -- Track visible elements and their heights for dynamic sizing
-    local contentHeight = 0
-    local infoHeight = 0
-    local hasWarning = false
-    local hasNote = false
+    -- Update section title
+    if frame.titleText then
+        frame.titleText:SetText(sectionName or "Unknown Section")
+    end
     
+    -- Call the function to update the OSD with formatted data
+    return self:UpdateOSDWithFormattedData()
+end
+
+-- Helper function to adjust frame height based on content
+function TWRA:AdjustOSDFrameHeight()
+    local frame = self.OSDFrame
+    if not frame then return false end
     
-    -- Update warning text and icon if available
-    local warningText = nil
-    if self.fullData and sectionName then
-        for i = 1, table.getn(self.fullData) do
-            local row = self.fullData[i]
-            if row[1] == sectionName and row[2] == "Warning" then
-                -- Found warning row
-                warningText = row[3] or ""
-                break
-            end
+    -- Calculate total height based on container heights
+    local totalHeight = 0
+    
+    -- Add header height
+    if frame.headerContainer then
+        totalHeight = totalHeight + frame.headerContainer:GetHeight()
+    end
+    
+    -- Add content height
+    if frame.contentContainer then
+        totalHeight = totalHeight + frame.contentContainer:GetHeight()
+    end
+    
+    -- Add footer height if it has content
+    if frame.footerContainer then
+        if frame.footerContainer:GetHeight() > 0 then
+            totalHeight = totalHeight + frame.footerContainer:GetHeight()
         end
     end
     
-    if warningText and warningText ~= "" then
-        frame.warningText:SetText(warningText)
-        frame.warningIcon:Show()
-        frame.warningContainer:Show()
-        frame.warningBg:Show() -- Show the colored background
-        hasWarning = true
-        contentHeight = contentHeight + 25  -- Add height for warning
-    else
-        frame.warningText:SetText("")
-        frame.warningIcon:Hide()
-        frame.warningContainer:Hide()
-        frame.warningBg:Hide() -- Hide the background too
-    end
     
-    -- Update note text and icon if available
-    local noteText = nil
-    if self.fullData and sectionName then
-        for i = 1, table.getn(self.fullData) do
-            local row = self.fullData[i]
-            if row[1] == sectionName and row[2] == "Note" then
-                -- Found note row
-                noteText = row[3] or ""
-                break
-            end
-        end
-    end
+    -- Add padding
+    totalHeight = totalHeight + 36 -- Add some padding
     
-    if noteText and noteText ~= "" then
-        frame.noteText:SetText(noteText)
-        frame.noteIcon:Show()
-        frame.noteContainer:Show()
-        frame.noteBg:Show() -- Show the colored background
-        hasNote = true
-        contentHeight = contentHeight + 25  -- Add height for note
-    else
-        frame.noteText:SetText("")
-        frame.noteIcon:Hide()
-        frame.noteContainer:Hide() 
-        frame.noteBg:Hide() -- Hide the background too
-    end
-    
-    -- Position the containers correctly based on what's visible
-    if hasWarning and hasNote then
-        -- Both warning and note are visible
-        frame.warningContainer:SetPoint("TOP", frame.infoContainer, "BOTTOM", 0, -5)
-        frame.noteContainer:SetPoint("TOP", frame.warningContainer, "BOTTOM", 0, 0)
-    elseif hasWarning then
-        -- Only warning is visible
-        frame.warningContainer:SetPoint("TOP", frame.infoContainer, "BOTTOM", 0, -5)
-    elseif hasNote then
-        -- Only note is visible
-        frame.noteContainer:SetPoint("TOP", frame.infoContainer, "BOTTOM", 0, -5)
-    end
-    
-    -- Update section counter in footer
-    if sectionIndex and totalSections then
-        frame.countText:SetText("Section " .. sectionIndex .. " / " .. totalSections)
-    else
-        frame.countText:SetText("")
-    end
-    
-    -- Update content container height
-    frame.contentContainer:SetHeight(contentHeight)
-    
-    -- Calculate additional content height needed for assignment text
-    local assignmentHeight = 0
-    if frame.assignmentText then
-        self:Debug("osd", "Calculating assignment text height")
-        local text = frame.assignmentText:GetText() or ""
-        local lineCount = 0
-        -- Count newlines and add height per line
-        for _ in string.gmatch(text, "\n") do
-            assignmentHeight = assignmentHeight + 15
-            lineCount = lineCount + 1
-        end
-        
-        -- Add base height for first line
-        if text ~= "" then
-            assignmentHeight = assignmentHeight + 20
-        end
-        
-        -- Add this to the content height
-        contentHeight = contentHeight + assignmentHeight
-        self:Debug("osd", "Assignment text height: " .. assignmentHeight .. " from " .. lineCount .. " lines")
-    else
-        self:Debug("osd", "No assignment text field found")
-    end
-    
-    -- Calculate total frame height based on components
-    -- Header (40) + Content + Footer (20) + Padding (10) - Reduced footer height and padding
-    local totalHeight = 40 + contentHeight + 20 + 10
-    
-    -- Set minimum height if content is very small
-    if totalHeight < 100 then 
+    -- Set minimum height
+    if totalHeight < 100 then
         totalHeight = 100
     end
     
     -- Update frame height
     frame:SetHeight(totalHeight)
-    
-    -- Store last section
-    self.OSD.lastSection = sectionName
-    
-    -- Update footer position to always be at the bottom
-    frame.footerContainer:ClearAllPoints()
-    frame.footerContainer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    frame.footerContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    self:Debug("osd", "Adjusted OSD frame height to " .. totalHeight)
     
     return true
 end
 
--- Helper function to debug the formatted data from PrepOSD
-function TWRA:DebugFormattedData(formattedData)
-    if not formattedData or type(formattedData) ~= "table" or table.getn(formattedData) == 0 then
-        self:Debug("osd", "No formatted data available to debug")
-        return
+-- Function to refresh the OSD content with current section information
+function TWRA:RefreshOSDContent()
+    -- Skip if OSD isn't initialized or not enabled
+    if not self.OSD or not self.OSD.enabled then
+        self:Debug("osd", "OSD not enabled, cannot refresh")
+        return false
     end
     
-    self:Debug("osd", "Formatted assignment data (" .. table.getn(formattedData) .. " rows):")
-    
-    -- Debug each row in the formatted data
-    for i, row in ipairs(formattedData) do
-        local tanks = (row.Tank1 or "none") .. "/" .. (row.Tank2 or "none") .. "/" .. (row.Tank3 or "none")
-        local target = row.Target or "unknown"
-        local icon = row.RaidIcon or "none"
-        local role = row.RoleCleartext or "unknown"
-        local position = row.position or "unknown"
-        
-        self:Debug("osd", string.format("Row %d: Position=%s, Target=%s, Icon=%s, Role=%s, Tanks=%s", 
-            i, position, target, icon, role, tanks))
-    end
-end
-
--- Function to update OSD display with the formatted data from PrepOSD
-function TWRA:UpdateOSDWithFormattedData(formattedData)
-    -- Create or get OSD frame
-    local frame = self:GetOSDFrame()
-    
-    -- Clear any existing assignment content
-    if frame.assignmentRows then
-        for _, row in ipairs(frame.assignmentRows) do
-            row:Hide()
-        end
+    -- Ensure we have navigation data
+    if not self.navigation or not self.navigation.handlers or not self.navigation.currentIndex then
+        self:Debug("osd", "Navigation not initialized, cannot refresh OSD")
+        return false
     end
     
-    -- Initialize rows array if it doesn't exist
-    frame.assignmentRows = frame.assignmentRows or {}
+    -- Get current section information
+    local currentIndex = self.navigation.currentIndex
+    local sectionName = self.navigation.handlers[currentIndex]
     
-    -- Container for assignment rows - attach directly to frame instead of contentContainer
-    if not frame.assignmentContainer then
-        frame.assignmentContainer = CreateFrame("Frame", nil, frame)
-        -- Position directly below the section title (infoContainer)
-        frame.assignmentContainer:SetPoint("TOPLEFT", frame.infoContainer, "BOTTOMLEFT", 0, 0)
-        frame.assignmentContainer:SetPoint("TOPRIGHT", frame.infoContainer, "BOTTOMRIGHT", 0, 0)
-        frame.assignmentContainer:SetHeight(10) -- Initial height, will be adjusted
+    if not sectionName then
+        self:Debug("osd", "No section name available for index: " .. currentIndex)
+        return false
     end
     
-    -- Track the total height we'll need
-    local totalHeight = 0
-    local rowHeight = 16 -- Height for each assignment row
-    local rowPadding = 1 -- Minimal padding between rows
+    -- Update the OSD with section information
+    self:UpdateOSDContent(sectionName, currentIndex)
     
-    -- Variable to track if we have content from PrepOSD
-    local hasContent = formattedData and type(formattedData) == "table" and table.getn(formattedData) > 0
-    
-    -- Create and update each assignment row if we have data
-    if hasContent then
-        for i, entry in ipairs(formattedData) do
-            -- Create row if it doesn't exist
-            if not frame.assignmentRows[i] then
-                frame.assignmentRows[i] = frame.assignmentContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                frame.assignmentRows[i]:SetWidth(frame.assignmentContainer:GetWidth())
-                frame.assignmentRows[i]:SetJustifyH("LEFT")
-            end
-            
-            -- Position row
-            frame.assignmentRows[i]:SetPoint("TOPLEFT", frame.assignmentContainer, "TOPLEFT", 0, -totalHeight)
-            
-            -- Format display string
-            local displayString = entry.displayString or ""
-            
-            -- Replace icon identifiers with actual textures
-            if self.ICON_INDICES then
-                for iconName, iconIndex in pairs(self.ICON_INDICES) do
-                    local iconTag = "[" .. iconName .. "]"
-                    if string.find(displayString, iconTag) then
-                        local iconTexture = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_" .. 
-                                          iconIndex .. ":14:14:0:0|t"
-                        displayString = string.gsub(displayString, iconTag, iconTexture)
-                    end
-                end
-            end
-            
-            -- Set the row text and show it
-            frame.assignmentRows[i]:SetText(displayString)
-            frame.assignmentRows[i]:Show()
-            
-            -- Update total height
-            totalHeight = totalHeight + rowHeight + rowPadding
-        end
-    else
-        -- No data case - show a single "no assignments" row
-        if not frame.noAssignmentRow then
-            frame.noAssignmentRow = frame.assignmentContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            frame.noAssignmentRow:SetPoint("TOPLEFT", frame.assignmentContainer, "TOPLEFT", 0, 0)
-            frame.noAssignmentRow:SetWidth(frame.assignmentContainer:GetWidth())
-            frame.noAssignmentRow:SetJustifyH("LEFT")
-        end
-        
-        frame.noAssignmentRow:SetText("No specific assignments for you in this section")
-        frame.noAssignmentRow:Show()
-        totalHeight = rowHeight + rowPadding
-    end
-    
-    -- Hide any unused rows
-    for i = (hasContent and table.getn(formattedData) or 0) + 1, table.getn(frame.assignmentRows) do
-        frame.assignmentRows[i]:Hide()
-    end
-    
-    -- Make sure the "no assignments" row is properly shown/hidden
-    if frame.noAssignmentRow then
-        if hasContent then
-            frame.noAssignmentRow:Hide()
-        else
-            frame.noAssignmentRow:Show()
-        end
-    end
-    
-    -- Update container height
-    frame.assignmentContainer:SetHeight(totalHeight)
-    
-    -- Calculate content height so far
-    local contentHeight = frame.infoContainer:GetHeight() + totalHeight
-    
-    -- Position warning container if we have warnings - attach directly to frame
-    if self.assignments and self.assignments.warnings and table.getn(self.assignments.warnings) > 0 then
-        if not frame.warningContainer then
-            -- Create warning container directly on frame
-            frame.warningContainer = CreateFrame("Frame", nil, frame)
-            frame.warningContainer:SetHeight(20)
-            
-            -- Add background for warning
-            frame.warningBg = frame.warningContainer:CreateTexture(nil, "BACKGROUND")
-            frame.warningBg:SetAllPoints()
-            frame.warningBg:SetTexture(0.3, 0.1, 0.1, 0.15)  -- Red background
-            
-            -- Add icon for warning
-            frame.warningIcon = frame.warningContainer:CreateTexture(nil, "OVERLAY")
-            frame.warningIcon:SetTexture("Interface\\DialogFrame\\UI-Dialog-Icon-AlertNew")
-            frame.warningIcon:SetWidth(16)
-            frame.warningIcon:SetHeight(16)
-            frame.warningIcon:SetPoint("LEFT", frame.warningContainer, "LEFT", 5, 0)
-            
-            -- Create text for warning
-            frame.warningText = frame.warningContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            frame.warningText:SetPoint("LEFT", frame.warningIcon, "RIGHT", 5, 0)
-            frame.warningText:SetPoint("RIGHT", frame.warningContainer, "RIGHT", -5, 0)
-            frame.warningText:SetJustifyH("LEFT")
-            frame.warningText:SetTextColor(1, 0.7, 0.7) -- Light red
-        end
-        
-        -- Show warning elements
-        frame.warningContainer:Show()
-        frame.warningBg:Show()
-        frame.warningIcon:Show()
-        
-        -- Set warning text to the first warning
-        frame.warningText:SetText(self.assignments.warnings[1])
-        
-        -- Position warning container directly after assignments
-        frame.warningContainer:ClearAllPoints()
-        frame.warningContainer:SetPoint("TOPLEFT", frame.assignmentContainer, "BOTTOMLEFT", 0, 0)
-        frame.warningContainer:SetPoint("TOPRIGHT", frame.assignmentContainer, "BOTTOMRIGHT", 0, 0)
-        
-        -- Update total content height
-        contentHeight = contentHeight + frame.warningContainer:GetHeight()
-    else
-        -- Hide warning container if no warnings
-        if frame.warningContainer then
-            frame.warningContainer:Hide()
-            frame.warningBg:Hide()
-            frame.warningIcon:Hide()
-        end
-    end
-    
-    -- Position note container if we have notes - attach directly to frame
-    if self.assignments and self.assignments.notes and table.getn(self.assignments.notes) > 0 then
-        if not frame.noteContainer then
-            -- Create note container directly on frame
-            frame.noteContainer = CreateFrame("Frame", nil, frame)
-            frame.noteContainer:SetHeight(20)
-            
-            -- Add background for note
-            frame.noteBg = frame.noteContainer:CreateTexture(nil, "BACKGROUND")
-            frame.noteBg:SetAllPoints()
-            frame.noteBg:SetTexture(0.1, 0.1, 0.3, 0.15)  -- Blue background
-            
-            -- Add icon for note
-            frame.noteIcon = frame.noteContainer:CreateTexture(nil, "OVERLAY")
-            frame.noteIcon:SetTexture("Interface\\GossipFrame\\AvailableQuestIcon")
-            frame.noteIcon:SetWidth(16)
-            frame.noteIcon:SetHeight(16)
-            frame.noteIcon:SetPoint("LEFT", frame.noteContainer, "LEFT", 5, 0)
-            
-            -- Create text for note
-            frame.noteText = frame.noteContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            frame.noteText:SetPoint("LEFT", frame.noteIcon, "RIGHT", 5, 0)
-            frame.noteText:SetPoint("RIGHT", frame.noteContainer, "RIGHT", -5, 0)
-            frame.noteText:SetJustifyH("LEFT")
-            frame.noteText:SetTextColor(0.8, 0.8, 1) -- Light blue
-        end
-        
-        -- Show note elements
-        frame.noteContainer:Show()
-        frame.noteBg:Show()
-        frame.noteIcon:Show()
-        
-        -- Set note text to the first note
-        frame.noteText:SetText(self.assignments.notes[1])
-        
-        -- Position the note container after warnings if present, otherwise after assignments
-        frame.noteContainer:ClearAllPoints()
-        if frame.warningContainer and frame.warningContainer:IsShown() then
-            frame.noteContainer:SetPoint("TOPLEFT", frame.warningContainer, "BOTTOMLEFT", 0, 0)
-            frame.noteContainer:SetPoint("TOPRIGHT", frame.warningContainer, "BOTTOMRIGHT", 0, 0)
-        else
-            frame.noteContainer:SetPoint("TOPLEFT", frame.assignmentContainer, "BOTTOMLEFT", 0, 0)
-            frame.noteContainer:SetPoint("TOPRIGHT", frame.assignmentContainer, "BOTTOMRIGHT", 0, 0)
-        end
-        
-        -- Update total content height
-        contentHeight = contentHeight + frame.noteContainer:GetHeight()
-    else
-        -- Hide note container if no notes
-        if frame.noteContainer then
-            frame.noteContainer:Hide()
-            frame.noteBg:Hide()
-            frame.noteIcon:Hide()
-        end
-    end
-    
-    -- Create or update section index text directly on frame
-    if not frame.sectionIndexText then
-        frame.sectionIndexText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        frame.sectionIndexText:SetJustifyH("CENTER")
-        frame.sectionIndexText:SetTextColor(0.7, 0.7, 0.7) -- Light gray
-    end
-    
-    -- Position section index at the bottom
-    local bottomElement
-    if frame.noteContainer and frame.noteContainer:IsShown() then
-        bottomElement = frame.noteContainer
-    elseif frame.warningContainer and frame.warningContainer:IsShown() then
-        bottomElement = frame.warningContainer
-    else
-        bottomElement = frame.assignmentContainer
-    end
-    
-    frame.sectionIndexText:ClearAllPoints()
-    frame.sectionIndexText:SetPoint("TOP", bottomElement, "BOTTOM", 0, 0)
-    frame.sectionIndexText:SetPoint("LEFT", frame, "LEFT", 0, 0)
-    frame.sectionIndexText:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
-    
-    -- Set the section index text
-    local sectionIndex = self.navigation and self.navigation.currentIndex or 0
-    local totalSections = self.navigation and table.getn(self.navigation.handlers) or 0
-    frame.sectionIndexText:SetText(sectionIndex .. "/" .. totalSections)
-    frame.sectionIndexText:Show()
-    
-    -- Add section index height to content height
-    contentHeight = contentHeight + frame.sectionIndexText:GetHeight()
-    
-    -- Calculate total frame height (less padding needed now)
-    local totalFrameHeight = contentHeight + 10
-    
-    -- Set minimum height if content is very small
-    if totalFrameHeight < 60 then 
-        totalFrameHeight = 60
-    end
-    
-    -- Update frame height
-    frame:SetHeight(totalFrameHeight)
-    
-    -- Make sure the frame is actually shown
-    frame:Show()
-    self.OSD.isVisible = true
-    
-    self:Debug("osd", "Updated OSD with " .. (hasContent and table.getn(formattedData) or 0) .. " assignment rows")
+    self:Debug("osd", "OSD refreshed with section: " .. sectionName)
     return true
 end
 
--- Handler for section change events
-function TWRA:OnSectionChanged(sectionName, sectionIndex, totalSections, context)
-    -- Always update content whether the OSD is visible or not
-    self:UpdateOSDContent(sectionName, sectionIndex, totalSections)
+-- Test function to show example OSD content
+function TWRA:TestOSD()
+    self:Debug("osd", "Testing OSD display")
     
-    -- Skip showing the OSD if it's disabled or showOnNavigation is disabled
-    if not self.OSD.enabled or not self.OSD.showOnNavigation then 
-        self:Debug("osd", "OSD not shown (enabled=" .. tostring(self.OSD.enabled) .. 
-                   ", showOnNav=" .. tostring(self.OSD.showOnNavigation) .. ")")
-        return
-    end
+    -- Create some fake data for testing
+    local testSectionName = "Test Section"
+    local testSectionIndex = 1
+    local testTotalSections = 3
     
-    -- Context contains additional information about the change
-    local isMainFrameVisible = false
-    local inOptionsView = false
+    -- Show the OSD with test data
+    self:ShowOSD(5) -- Auto-hide after 5 seconds
+    self:UpdateOSDContent(testSectionName, testSectionIndex, testTotalSections)
     
-    -- Extract context information if available
-    if context then
-        isMainFrameVisible = context.isMainFrameVisible or false
-        inOptionsView = context.inOptionsView or false
-    else
-        -- If no context provided, determine it from current state
-        isMainFrameVisible = (self.mainFrame and self.mainFrame:IsShown()) or false
-        inOptionsView = (self.currentView == "options") or false
-    end
-    
-    -- Show OSD with timer when in options view or main frame is hidden
-    if not isMainFrameVisible or inOptionsView then
-        -- When showing automatically on navigation, use the configured auto-hide duration
-        self:ShowOSD(self.OSD.duration)
-        self:Debug("osd", "OSD shown on section change (" .. 
-                   (not isMainFrameVisible and "main frame hidden" or "in options view") .. ")")
-    end
-end
-
--- Function to update OSD settings
-function TWRA:UpdateOSDSettings()
-    -- Skip if no frame
-    if not self.OSD.frame then return false end
-    
-    -- Update position
-    self.OSD.frame:ClearAllPoints()
-    self.OSD.frame:SetPoint(self.OSD.point, UIParent, self.OSD.point, self.OSD.xOffset, self.OSD.yOffset)
-    
-    -- Update scale
-    self.OSD.frame:SetScale(self.OSD.scale or 1.0)
-    
-    -- Update movability based on locked state
-    self.OSD.frame:EnableMouse(not self.OSD.locked)
-    
-    -- Apply current content
-    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-        local currentSection = self.navigation.currentIndex
-        local sectionName = self.navigation.handlers[currentSection]
-        local totalSections = table.getn(self.navigation.handlers)
-        self:UpdateOSDContent(sectionName, currentSection, totalSections)
-    end
-    
-    self:Debug("osd", "OSD settings updated")
     return true
 end
 
 -- Toggle OSD enabled state
-function TWRA:ToggleOSDEnabled(state)
-    if state ~= nil then
-        self.OSD.enabled = state
+function TWRA:ToggleOSDEnabled(enabled)
+    -- Set the state
+    if enabled ~= nil then
+        self.OSD.enabled = enabled
     else
         self.OSD.enabled = not self.OSD.enabled
     end
     
-    -- Save to settings
-    if not TWRA_SavedVariables then TWRA_SavedVariables = {} end
-    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
-    if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
-    TWRA_SavedVariables.options.osd.enabled = self.OSD.enabled
-    
-    -- Hide OSD if disabling
-    if not self.OSD.enabled and self.OSD.isVisible then
-        self:HideOSD()
+    -- Update saved settings
+    if TWRA_SavedVariables and TWRA_SavedVariables.options then
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
+        TWRA_SavedVariables.options.osd.enabled = self.OSD.enabled
     end
     
     self:Debug("osd", "OSD " .. (self.OSD.enabled and "enabled" or "disabled"))
     return self.OSD.enabled
 end
 
--- Toggle OSD on navigation setting
-function TWRA:ToggleOSDOnNavigation(state)
-    if state ~= nil then
-        self.OSD.showOnNavigation = state
+-- Toggle OSD on navigation
+function TWRA:ToggleOSDOnNavigation(enabled)
+    -- Set the state
+    if enabled ~= nil then
+        self.OSD.showOnNavigation = enabled
     else
         self.OSD.showOnNavigation = not self.OSD.showOnNavigation
     end
     
-    -- Save to settings
-    if not TWRA_SavedVariables then TWRA_SavedVariables = {} end
-    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
-    if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
-    TWRA_SavedVariables.options.osd.showOnNavigation = self.OSD.showOnNavigation
+    -- Update saved settings
+    if TWRA_SavedVariables and TWRA_SavedVariables.options then
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
+        TWRA_SavedVariables.options.osd.showOnNavigation = self.OSD.showOnNavigation
+    end
     
     self:Debug("osd", "OSD on navigation " .. (self.OSD.showOnNavigation and "enabled" or "disabled"))
     return self.OSD.showOnNavigation
 end
 
--- Reset OSD position to default
+-- Update OSD settings (scale, position, lock state)
+function TWRA:UpdateOSDSettings()
+    local frame = self.OSDFrame
+    if not frame then return false end
+    
+    -- Update scale
+    frame:SetScale(self.OSD.scale or 1.0)
+    
+    -- Update position
+    frame:ClearAllPoints()
+    frame:SetPoint(self.OSD.point, UIParent, self.OSD.point, self.OSD.xOffset, self.OSD.yOffset)
+    
+    -- Update movable state
+    frame:SetMovable(not self.OSD.locked)
+    frame:EnableMouse(not self.OSD.locked)
+    
+    self:Debug("osd", "OSD settings updated")
+    return true
+end
+
+-- Reset OSD position to center
 function TWRA:ResetOSDPosition()
-    -- Default position values
+    -- Reset position values
     self.OSD.point = "CENTER"
-    self.OSD.relPoint = "CENTER"
     self.OSD.xOffset = 0
     self.OSD.yOffset = 100
     
-    -- Save to settings
-    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.osd then
+    -- Update saved settings
+    if TWRA_SavedVariables and TWRA_SavedVariables.options then
+        TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
         TWRA_SavedVariables.options.osd.point = self.OSD.point
-        TWRA_SavedVariables.options.osd.relPoint = self.OSD.relPoint
         TWRA_SavedVariables.options.osd.xOffset = self.OSD.xOffset
         TWRA_SavedVariables.options.osd.yOffset = self.OSD.yOffset
     end
     
-    -- Update frame if it exists
-    if self.OSD.frame then
-        self.OSD.frame:ClearAllPoints()
-        self.OSD.frame:SetPoint(self.OSD.point, UIParent, self.OSD.point, self.OSD.xOffset, self.OSD.yOffset)
+    -- Apply the position reset
+    if self.OSDFrame then
+        self.OSDFrame:ClearAllPoints()
+        self.OSDFrame:SetPoint(self.OSD.point, UIParent, self.OSD.point, self.OSD.xOffset, self.OSD.yOffset)
     end
     
-    self:Debug("osd", "OSD position reset to default")
+    self:Debug("osd", "OSD position reset to center")
     return true
 end
 
--- Test OSD by showing current section
-function TWRA:TestOSD()
-    -- Create frame if it doesn't exist
-    local frame = self:GetOSDFrame()
-    
-    -- Get current section if available
-    local sectionName = "Test Section"
-    local sectionIndex = nil
-    local totalSections = nil
-    
-    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-        sectionIndex = self.navigation.currentIndex
-        totalSections = table.getn(self.navigation.handlers)
-        sectionName = self.navigation.handlers[sectionIndex]
-    end
-    
-    -- Update OSD content
-    self:UpdateOSDContent(sectionName, sectionIndex, totalSections)
-    
-    -- Show OSD with double the normal duration
-    local testDuration = self.OSD.duration * 2
-    self:ShowOSD(testDuration)
-    
-    self:Debug("osd", "Testing OSD with section: " .. sectionName .. " for " .. testDuration .. "s")
-    return true
-end
-
--- Function to display section name in overlay
+-- Show section name in an overlay temporarily
 function TWRA:ShowSectionNameOverlay(sectionName, sectionIndex, totalSections)
-    -- Always update content regardless of visibility state
+    if not sectionName then return false end
+    
+    -- Use the standard OSD to show section info
+    self:ShowOSD(self.OSD.duration)
     self:UpdateOSDContent(sectionName, sectionIndex, totalSections)
     
-    -- Skip showing if OSD is disabled or showOnNavigation is disabled
-    if not self.OSD.enabled or not self.OSD.showOnNavigation then
-        return false
-    end
-    
-    -- Only show if the main frame isn't visible or we're in options view
-    local mainFrameVisible = self.mainFrame and self.mainFrame:IsShown()
-    local inOptionsView = self.currentView == "options"
-    
-    if not mainFrameVisible or inOptionsView then
-        -- When showing automatically on navigation, use the configured auto-hide duration
-        self:ShowOSD(self.OSD.duration)
-    end
-    
     return true
 end
 
--- Filter and extract section data for OSD display
-function TWRA:FilterAndExtractSectionData(sectionName)
-    self:Debug("osd", "FilterAndExtractSectionData called for section: " .. (sectionName or "unknown"))
-    
-    -- Safety checks
-    if not self.fullData then
-        self:Debug("osd", "ERROR: No data available to extract")
-        return {}
+-- Helper function to debug OSD elements
+function TWRA:DebugOSDElements()
+    -- Get frame
+    local frame = self:GetOSDFrame()
+    if not frame then
+        self:Debug("osd", "No OSD frame available")
+        return
     end
-    
-    if not sectionName or sectionName == "" then
-        self:Debug("osd", "ERROR: Invalid section name")
-        return {}
-    end
-    
-    -- Find and extract all rows for this section
-    local sectionData = {}
-    
-    -- Add all rows for this section
-    for i = 1, table.getn(self.fullData) do
-        local row = self.fullData[i]
-        if row[1] == sectionName then
-            -- Add this row to our section data
-            table.insert(sectionData, row)
+
+    -- Debug assignment data
+    if self.assignments then
+        if self.assignments.warnings then
+            self:Debug("osd", "Warnings count: " .. table.getn(self.assignments.warnings))
+            for i, warning in ipairs(self.assignments.warnings) do
+                self:Debug("osd", "  Warning " .. i .. ": " .. warning)
+            end
+        else
+            self:Debug("osd", "No warnings data")
         end
-    end
-    
-    self:Debug("osd", "Extracted " .. table.getn(sectionData) .. " rows for section: " .. sectionName)
-    return sectionData
-end
 
--- Refresh OSD content regardless of visibility
-function TWRA:RefreshOSDContent()
-    -- Skip if OSD is disabled completely
-    if not self.OSD.enabled then
-        self:Debug("osd", "OSD is disabled, not refreshing content")
-        return false
+        if self.assignments.notes then
+            self:Debug("osd", "Notes count: " .. table.getn(self.assignments.notes))
+            for i, note in ipairs(self.assignments.notes) do
+                self:Debug("osd", "  Note " .. i .. ": " .. note)
+            end
+        else
+            self:Debug("osd", "No notes data")
+        end
+    else
+        self:Debug("osd", "No assignments data available")
+    end
+
+    -- Check if containers exist
+    self:Debug("osd", "Warning container exists: " .. tostring(frame.warningContainer ~= nil))
+    self:Debug("osd", "Note container exists: " .. tostring(frame.noteContainer ~= nil))
+
+    -- Check visibility
+    if frame.warningContainer then
+        self:Debug("osd", "Warning container is shown: " .. tostring(frame.warningContainer:IsShown()))
     end
     
-    -- Make sure we have navigation data
-    if not self.navigation or not self.navigation.currentIndex or not self.navigation.handlers then
-        self:Debug("osd", "Cannot refresh OSD content - navigation data unavailable")
-        return false
+    if frame.noteContainer then
+        self:Debug("osd", "Note container is shown: " .. tostring(frame.noteContainer:IsShown()))
     end
-    
-    -- Get current section info
-    local currentSection = self.navigation.currentIndex
-    local totalSections = table.getn(self.navigation.handlers)
-    local sectionName = self.navigation.handlers[currentSection]
-    
-    self:Debug("osd", "RefreshOSDContent for: " .. (sectionName or "unknown"))
-    
-    -- ALWAYS update OSD content even if not visible
-    self:UpdateOSDContent(sectionName, currentSection, totalSections)
-    
-    -- Also update visibility state to match frame's actual state
-    if self.OSD.frame then
-        self.OSD.isVisible = self.OSD.frame:IsShown()
-    end
-    
-    return true
+
+    -- Check content container
+    self:Debug("osd", "Content container height: " .. frame.contentContainer:GetHeight())
+    self:Debug("osd", "Frame total height: " .. frame:GetHeight())
 end
