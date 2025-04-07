@@ -508,7 +508,13 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
         fromSync = fromSync
     }
     
+    -- ALWAYS update the OSD regardless of visibility - moved outside conditional
     self:SendMessage("SECTION_CHANGED", sectionName, sectionIndex, numSections, context)
+    
+    -- ALWAYS refresh OSD content, even if it isn't shown (it will be available to show on demand)
+    if self.RefreshOSDContent then
+        self:RefreshOSDContent()
+    end
     
     -- Broadcast to group if sync enabled and not suppressed
     if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then

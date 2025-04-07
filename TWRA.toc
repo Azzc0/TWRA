@@ -19,6 +19,7 @@ core\DataProcessing.lua
 ui\UIUtils.lua
 ui\Frame.lua
 ui\OSD.lua
+ui\OSDContent.lua
 ui\Options.lua
 
 # Feature modules

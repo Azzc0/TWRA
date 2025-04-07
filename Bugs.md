@@ -15,4 +15,9 @@
 Import should bring us back to MainView
 Example button does not load example data
 
-Le
+Data columns
+Check if tanks needs updating
+
+
+We should go over relevant rows.
+Check our own assignment(s) and create a OSD row based on that.
