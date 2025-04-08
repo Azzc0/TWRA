@@ -163,74 +163,6 @@ function TWRA:OnEvent()
             self:Debug("general", "Creating minimap button after addon loaded")
             self:CreateMinimapButton()
         end
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Initialize on entering world
-        self:Debug("general", "Player entered world")
-        
-        -- IMMEDIATELY create the main frame to ensure all components have access to it
-        -- Don't wait for a timer - create it right away
-        if not self.mainFrame and self.CreateMainFrame then
-            self:Debug("ui", "Creating main frame IMMEDIATELY during PLAYER_ENTERING_WORLD")
-            self:CreateMainFrame()
-            -- Hide it initially
-            self.mainFrame:Hide()
-            self:Debug("ui", "Main frame created and hidden immediately")
-        end
-        
-        -- Ensure OSD is initialized when player enters world
-        if self.InitOSD then
-            self:Debug("ui", "Initializing OSD system")
-            self:InitOSD()
-        end
-        
-        -- Schedule additional initialization after a short delay
-        self:ScheduleTimer(function()
-            self:Debug("ui", "Running post-creation initialization")
-            
-            -- Initialize frame-dependent features
-            if self.mainFrame then
-                -- Navigate to saved section (if any) to properly initialize UI
-                if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-                   TWRA_SavedVariables.assignments.currentSection and self.navigation then
-                    local currentSection = TWRA_SavedVariables.assignments.currentSection
-                    self:Debug("nav", "Restoring section: " .. currentSection)
-                    if self.NavigateToSection then
-                        self:NavigateToSection(currentSection, true)
-                    end
-                end
-                
-                -- Refresh OSD with current section data
-                if self.RefreshOSDContent then
-                    self:RefreshOSDContent()
-                end
-                
-                -- Explicitly update tanks if enabled
-                if self.SYNC and self.SYNC.tankSync and self.navigation and 
-                   self.navigation.currentIndex and self.navigation.handlers and
-                   self:IsORA2Available and self:IsORA2Available() then
-                    
-                    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                    self:Debug("tank", "Explicitly updating tanks for " .. (sectionName or "unknown section"))
-                    self:UpdateTanks()
-                end
-                
-                -- Explicitly send a section change message to update UI components
-                if self.navigation and self.navigation.currentIndex and 
-                   self.navigation.handlers and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
-                    
-                    local sectionIndex = self.navigation.currentIndex
-                    local sectionName = self.navigation.handlers[sectionIndex]
-                    local numSections = table.getn(self.navigation.handlers)
-                    
-                    self:Debug("ui", "Explicitly sending SECTION_CHANGED message for: " .. sectionName)
-                    self:SendMessage("SECTION_CHANGED", sectionName, sectionIndex, numSections, {
-                        isMainFrameVisible = false,
-                        inOptionsView = false,
-                        fromSync = false
-                    })
-                end
-            end
-        end, 0.5) -- Reduced delay to 0.5 seconds for faster initialization
     elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
         -- Handle group composition changes
         if self.OnGroupChanged then
@@ -241,7 +173,29 @@ end
 
 -- Create frame for events
 local frame = CreateFrame("Frame", "TWRAEventFrame")
-frame:SetScript("OnEvent", function() TWRA:OnEvent(event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) end)
+frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- Explicitly register the event here too
+frame:SetScript("OnEvent", function() 
+    -- Add direct debug output before passing to OnEvent to ensure the event is triggering
+    if event == "PLAYER_ENTERING_WORLD" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [event]:|r PLAYER_ENTERING_WORLD triggered")
+        
+        -- Create the main frame directly here
+        if not TWRA.mainFrame and TWRA.CreateMainFrame then
+            TWRA:CreateMainFrame()
+            TWRA.mainFrame:Hide()
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [ui]:|r Main frame created and hidden directly from event handler")
+        end
+        
+        -- Initialize OSD system (moved from OnEvent)
+        if TWRA.InitOSD then
+            TWRA:Debug("ui", "Initializing OSD system")
+            TWRA:InitOSD()
+        end
+    else
+        -- Call the regular event handler for other events
+        TWRA:OnEvent(event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+    end
+end)
 frame:SetScript("OnLoad", function() TWRA:OnLoad() end)
 
 -- Modify the slash command handler to support show/hide commands
@@ -564,10 +518,11 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     local context = {
         isMainFrameVisible = isMainFrameVisible,
         inOptionsView = inOptionsView,
-        fromSync = fromSync
+        fromSync = fromSync,
+        forceUpdate = true  -- ALWAYS force OSD content update regardless of UI state
     }
     
-    -- ALWAYS update the OSD regardless of visibility - moved outside conditional
+    -- ALWAYS update the OSD with a message - moved outside conditional
     self:SendMessage("SECTION_CHANGED", sectionName, sectionIndex, numSections, context)
     
     -- ALWAYS refresh OSD content, even if it isn't shown (it will be available to show on demand)

@@ -38,34 +38,35 @@ TWRA (Turtle WoW Raid Assignments) has basic functionality in place, but needs c
 
 ### 1. Code Cleanup
 - [x] Remove unused files and code
-- [ ] Replace all `DEFAULT_CHAT_FRAME:AddMessage` with `TWRA:Debug` calls
+- [x] Replace all `DEFAULT_CHAT_FRAME:AddMessage` with `TWRA:Debug` calls
 - [x] Fix syntax errors in existing files
 - [ ] Standardize function naming and parameter patterns
 
 ### 2. UI Improvements
 - [x] Fix the options button functionality
 - [x] Make the main frame properly movable
-- [ ] Improve the section navigation dropdown
-- [ ] Enhance the visual appeal of assignments display
+- [x] Improve the section navigation dropdown
+- [x] Enhance the visual appeal of assignments display
+- [ ] Make the footer backgrounds a bit brigther both in main frame and OSD
 
 ### 3. Module Refactoring
 - [x] Move constants to `core/Constants.lua`
 - [x] Implement proper debug system in `core/Debug.lua` 
 - [x] Extract base64 logic to `core/Base64.lua`
 - [x] Handle minimap functionality in Core.lua instead of a separate file
-- [ ] Organize tank handling in `features/AutoTanks.lua`
-- [ ] Refactor auto-navigation into `features/AutoNavigate.lua`
+- [x] Organize tank handling in `features/AutoTanks.lua`
+- [x] Refactor auto-navigation into `features/AutoNavigate.lua`
 
 ### 4. Debug System Enhancements
 - [x] Create debug framework with categories and levels
-- [ ] Fix early message handling to use proper categories
-- [ ] Ensure we only capture our addon's errors, not other addons
-- [ ] Update all code to use the Debug system instead of direct chat messages
+- [x] Fix early message handling to use proper categories
+- [x] Ensure we only capture our addon's errors, not other addons
+- [x] Update all code to use the Debug system instead of direct chat messages
 
 ### 5. Item Linking System
-- [ ] Create item database with names and IDs
-- [ ] Implement color coding system for different item rarities
-- [ ] Add support for item linking in Notes/Warnings
+- [x] Create item database with names and IDs
+- [x] Implement color coding system for different item rarities
+- [x] Add support for item linking in Notes/Warnings
 - [ ] Enhance display of items with appropriate icons
 - [ ] Implement tooltip support for linked items
 
@@ -81,9 +82,23 @@ TWRA (Turtle WoW Raid Assignments) has basic functionality in place, but needs c
 - [ ] Create user documentation for key features
 - [ ] Update TOC file with proper metadata
 
+## Immediate Tasks (Tomorrow)
+- [x] Fix OSD Warning padding
+- [ ] Implement the datarows in OSD
+  - [ ] Healer format:  
+  - [ ] Add a fallback to heal Target if no non-healer is in the row
+- [ ] Move the buttons in the main frame a few pixels up
+- [ ] Fix OSD behavior (show when appropriate)
+- [ ] Change OSD Test button to behave properly with some dummy data
+- [ ] Verify oRA2 check
+- [ ] Properly test out AutoNavigate
+  - [ ] Allow both just the GUID and the full UNITEXISTS return in the appropriate cells
+- [ ] Fix column update to show appropriate amount of columns in the main frame
+- [ ] Force Warnings to be above Notes in main frame to make OSD and main frame more uniform
+
 ## Future Features
 - Integration with raid markers
-- Auto-targeting based on assignments
+- ~~Auto-targeting based on assignments~~
 - Whisper commands for assignment lookup
 - Statistical tracking of performance
 - Support for alternate tank management addons

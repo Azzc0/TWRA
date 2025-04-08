@@ -322,6 +322,9 @@ function TWRA:DatarowsOSD(contentContainer, sectionName)
     
     -- Initialize dataRows array if it doesn't exist
     contentContainer.dataRows = contentContainer.dataRows or {}
+    contentContainer.rowFrames = contentContainer.rowFrames or {}
+    contentContainer.roleIcons = contentContainer.roleIcons or {}
+    contentContainer.targetIcons = contentContainer.targetIcons or {}
     
     -- Find the section data in the assignments
     local sectionData = {}
@@ -357,53 +360,187 @@ function TWRA:DatarowsOSD(contentContainer, sectionName)
     self:Debug("osd", "DatarowsOSD collected " .. table.getn(warnings) .. 
                       " warnings and " .. table.getn(notes) .. " notes")
     
-    -- Format the data for this player's role(s)
-    local formattedData = self:FormatDataForPlayer(sectionData)
+    -- Process section data to get player assignments with role-based formatting
+    local playerAssignments = self:GetRoleBasedAssignments(sectionData)
     
     -- Y-offset for rows
     local yOffset = 5
     
     -- Create and update each data row
-    local hasContent = formattedData and table.getn(formattedData) > 0
+    local hasContent = playerAssignments and table.getn(playerAssignments) > 0
     
     if hasContent then
-        self:Debug("osd", "Creating " .. table.getn(formattedData) .. " data rows")
-        for i, entry in ipairs(formattedData) do
-            -- Create row if it doesn't exist
+        self:Debug("osd", "Creating " .. table.getn(playerAssignments) .. " data rows")
+        
+        -- Sort assignments to show tanks first, then healers, then DPS
+        table.sort(playerAssignments, function(a, b)
+            local priority = {tank = 1, healer = 2, other = 3}
+            return (priority[a.roleType] or 3) < (priority[b.roleType] or 3)
+        end)
+        
+        -- Row spacing
+        local rowHeight = 18
+        local rowSpacing = 2
+        
+        for i, assignment in ipairs(playerAssignments) do
+            -- Create or get row frame (container for icon + text)
+            if not contentContainer.rowFrames[i] then
+                contentContainer.rowFrames[i] = CreateFrame("Frame", nil, contentContainer)
+            end
+            local rowFrame = contentContainer.rowFrames[i]
+            
+            -- Position and size the row frame
+            rowFrame:ClearAllPoints()
+            rowFrame:SetPoint("TOPLEFT", contentContainer, "TOPLEFT", 5, -yOffset)
+            rowFrame:SetPoint("TOPRIGHT", contentContainer, "TOPRIGHT", -5, -yOffset)
+            rowFrame:SetHeight(rowHeight)
+            rowFrame:Show()
+            
+            -- Create or get role icon texture
+            if not contentContainer.roleIcons[i] then
+                contentContainer.roleIcons[i] = rowFrame:CreateTexture(nil, "ARTWORK")
+            end
+            local roleIcon = contentContainer.roleIcons[i]
+            
+            -- Determine icon path based on role
+            local iconPath = "Interface\\Icons\\INV_Misc_QuestionMark" -- Default icon
+            if assignment.roleType == "tank" then
+                iconPath = self.ROLE_ICONS["Tank"] or "Interface\\Icons\\Ability_Warrior_DefensiveStance"
+            elseif assignment.roleType == "healer" then
+                iconPath = self.ROLE_ICONS["Heal"] or "Interface\\Icons\\Spell_Holy_HolyBolt"
+            else
+                -- Try to find a specific matching role icon based on exact role name
+                local roleName = assignment.role
+                if self.ROLE_ICONS[roleName] then
+                    iconPath = self.ROLE_ICONS[roleName]
+                else
+                    -- Default icon for generic DPS/other
+                    iconPath = self.ROLE_ICONS["DPS"] or "Interface\\Icons\\INV_Sword_04"
+                end
+            end
+            
+            -- Set up role icon
+            roleIcon:SetTexture(iconPath)
+            roleIcon:SetWidth(16)
+            roleIcon:SetHeight(16)
+            roleIcon:SetPoint("LEFT", rowFrame, "LEFT", 5, 0)
+            roleIcon:Show()
+            
+            -- Create row text if it doesn't exist
             if not contentContainer.dataRows[i] then
-                contentContainer.dataRows[i] = contentContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                contentContainer.dataRows[i] = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
                 contentContainer.dataRows[i]:SetJustifyH("LEFT")
             end
             
-            -- Set position
+            -- Set position for text (to the right of the icon)
             contentContainer.dataRows[i]:ClearAllPoints()
-            contentContainer.dataRows[i]:SetPoint("TOPLEFT", contentContainer, "TOPLEFT", 15, -yOffset)
-            contentContainer.dataRows[i]:SetPoint("TOPRIGHT", contentContainer, "TOPRIGHT", -15, -yOffset)
+            contentContainer.dataRows[i]:SetPoint("LEFT", roleIcon, "RIGHT", 3, 0)
+            contentContainer.dataRows[i]:SetPoint("RIGHT", rowFrame, "RIGHT", -5, 0)
             
-            -- Format display string
-            local displayString = entry.displayString or ""
+            -- Format display string based on role type
+            local displayString = self:FormatRoleBasedDisplayString(assignment)
             
-            -- Replace icon identifiers with actual textures
-            if self.ICON_INDICES then
-                for iconName, iconIndex in pairs(self.ICON_INDICES) do
-                    local iconTag = "[" .. iconName .. "]"
-                    if string.find(displayString, iconTag) then
-                        local iconTexture = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_" .. 
-                                          iconIndex .. ":14:14:0:0|t"
-                        displayString = string.gsub(displayString, iconTag, iconTexture)
+            -- Create or get target icon if needed
+            if not contentContainer.targetIcons[i] then
+                contentContainer.targetIcons[i] = rowFrame:CreateTexture(nil, "ARTWORK")
+            end
+            local targetIcon = contentContainer.targetIcons[i]
+            
+            -- Process raid target icon
+            if assignment.icon and assignment.icon ~= "" and self.ICONS then
+                local iconInfo = self.ICONS[assignment.icon]
+                
+                if iconInfo then
+                    -- Calculate where the icon tag is in the text
+                    local rolePrefix = assignment.role .. " - "
+                    local iconTag = "%[" .. assignment.icon .. "%]"
+                    
+                    -- Remove the icon tag from display string
+                    displayString = string.gsub(displayString, iconTag, "")
+                    
+                    -- Update texture
+                    targetIcon:SetTexture(iconInfo[1])
+                    targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+                    targetIcon:SetWidth(16)
+                    targetIcon:SetHeight(16)
+                    
+                    -- Set the text first to be able to measure it
+                    contentContainer.dataRows[i]:SetText(rolePrefix)
+                    
+                    -- Position icon immediately after role prefix
+                    local roleTextWidth = contentContainer.dataRows[i]:GetStringWidth()
+                    targetIcon:ClearAllPoints()
+                    targetIcon:SetPoint("LEFT", contentContainer.dataRows[i], "LEFT", roleTextWidth, 0)
+                    targetIcon:Show()
+                    
+                    -- Now reconstruct the display string with proper spacing for icon
+                    if assignment.roleType == "tank" then
+                        -- For tank format: Tank - [Icon]Target with Tank2 and Tank3
+                        local targetAndRest = string.gsub(displayString, "^" .. rolePrefix, "")
+                        displayString = rolePrefix .. "     " .. targetAndRest -- Add space for icon
+                    elseif assignment.roleType == "healer" then
+                        -- For healer format: Heal - Tank1 and Tank2 tanking [Icon]Target
+                        -- Find where the icon would be after "tanking "
+                        if assignment.tanks and table.getn(assignment.tanks) > 0 then
+                            local beforeIconText = rolePrefix
+                            
+                            -- Format the tanks list with "and"
+                            local function formatList(list)
+                                if not list or table.getn(list) == 0 then
+                                    return ""
+                                elseif table.getn(list) == 1 then
+                                    return list[1]
+                                elseif table.getn(list) == 2 then
+                                    return list[1] .. " and " .. list[2]
+                                else
+                                    local result = ""
+                                    for i = 1, table.getn(list) - 1 do
+                                        if i > 1 then
+                                            result = result .. ", "
+                                        end
+                                        result = result .. list[i]
+                                    end
+                                    return result .. " and " .. list[table.getn(list)]
+                                end
+                            end
+                            
+                            beforeIconText = beforeIconText .. formatList(assignment.tanks) .. " tanking "
+                            contentContainer.dataRows[i]:SetText(beforeIconText)
+                            
+                            -- Reposition icon after the "tanking " text
+                            local textWidth = contentContainer.dataRows[i]:GetStringWidth()
+                            targetIcon:ClearAllPoints()
+                            targetIcon:SetPoint("LEFT", contentContainer.dataRows[i], "LEFT", textWidth, 0)
+                            
+                            -- Add space for the icon in display string
+                            local parts = {beforeIconText, "     ", assignment.target or ""}
+                            displayString = table.concat(parts)
+                        else
+                            -- No tanks, icon comes right after role prefix
+                            displayString = rolePrefix .. "     " .. (assignment.target or "")
+                        end
+                    else
+                        -- For other roles: Role - [Icon]Target tanked by Tank1 and Tank2
+                        local targetAndRest = string.gsub(displayString, "^" .. rolePrefix, "")
+                        displayString = rolePrefix .. "     " .. targetAndRest -- Add space for icon
                     end
+                    
+                    self:Debug("osd", "Added target icon for " .. assignment.icon)
+                else
+                    targetIcon:Hide()
+                    self:Debug("osd", "No icon information found for " .. assignment.icon)
                 end
+            else
+                targetIcon:Hide()
             end
             
             -- Set text and show
             contentContainer.dataRows[i]:SetText(displayString)
+            contentContainer.dataRows[i]:SetTextColor(1.0, 1.0, 1.0) -- White text
             contentContainer.dataRows[i]:Show()
             
             -- Update y-offset for next row
-            yOffset = yOffset + 16  -- Typical text height
-            
-            -- Add a little extra space between rows
-            yOffset = yOffset + 1
+            yOffset = yOffset + rowHeight + rowSpacing
         end
     else
         self:Debug("osd", "No formatted data, showing 'no assignments' message")
@@ -417,9 +554,16 @@ function TWRA:DatarowsOSD(contentContainer, sectionName)
         contentContainer.noAssignments:SetPoint("TOPLEFT", contentContainer, "TOPLEFT", 15, -yOffset)
         contentContainer.noAssignments:SetPoint("TOPRIGHT", contentContainer, "TOPRIGHT", -15, -yOffset)
         contentContainer.noAssignments:SetText("No specific assignments for you in this section")
+        contentContainer.noAssignments:SetTextColor(0.7, 0.7, 0.7) -- Gray text
         contentContainer.noAssignments:Show()
         
         yOffset = yOffset + 16 -- Account for the no assignments text
+        
+        -- Hide any row frames and icons
+        for i = 1, table.getn(contentContainer.rowFrames) do
+            if contentContainer.rowFrames[i] then contentContainer.rowFrames[i]:Hide() end
+            if contentContainer.roleIcons[i] then contentContainer.roleIcons[i]:Hide() end
+        end
     end
     
     -- Make sure the "no assignments" message is properly shown/hidden
@@ -433,13 +577,465 @@ function TWRA:DatarowsOSD(contentContainer, sectionName)
     
     -- Hide any unused rows
     if contentContainer.dataRows then
-        for i = (hasContent and table.getn(formattedData) or 0) + 1, table.getn(contentContainer.dataRows) do
-            contentContainer.dataRows[i]:Hide()
+        for i = (hasContent and table.getn(playerAssignments) or 0) + 1, table.getn(contentContainer.dataRows) do
+            if contentContainer.dataRows[i] then contentContainer.dataRows[i]:Hide() end
+            if contentContainer.roleIcons[i] then contentContainer.roleIcons[i]:Hide() end
+            if contentContainer.rowFrames[i] then contentContainer.rowFrames[i]:Hide() end
         end
     end
     
     self:Debug("osd", "DatarowsOSD returning height: " .. yOffset)
     return yOffset
+end
+
+-- Helper function to process section data and extract player-specific assignments with role information
+function TWRA:GetRoleBasedAssignments(sectionData)
+    local assignments = {}
+    
+    -- Check if we have data to format
+    if not sectionData or table.getn(sectionData) == 0 then
+        self:Debug("osd", "No section data to process for role-based assignments")
+        return assignments
+    end
+    
+    -- Get player information
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    local playerGroup = 0
+    
+    -- Find player's raid group
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name, _, subgroup = GetRaidRosterInfo(i)
+            if name == playerName then
+                playerGroup = subgroup
+                break
+            end
+        end
+    end
+    
+    -- Find proper header row with role names
+    local headerRow = nil
+    local headerRowIndex = 0
+    
+    -- First, look specifically for a row with "Icon" in column 2
+    for i, row in ipairs(sectionData) do
+        if row[2] == "Icon" then
+            headerRow = row
+            headerRowIndex = i
+            self:Debug("osd", "Found header row with 'Icon' marker at index " .. i)
+            break
+        end
+    end
+    
+    -- If no Icon row found, search for a row that looks like a header
+    if not headerRow then
+        for i, row in ipairs(sectionData) do
+            -- Check if this row has typical header content
+            local isHeader = false
+            
+            -- Check for typical header names in columns 4+ (Tank, Healer, DPS, etc.)
+            for j = 4, table.getn(row) do
+                if row[j] and type(row[j]) == "string" then
+                    local colText = string.lower(row[j])
+                    if string.find(colText, "tank") or string.find(colText, "heal") or 
+                       string.find(colText, "dps") or string.find(colText, "util") or
+                       string.find(colText, "mc") then  -- Added MC as a header indicator
+                        isHeader = true
+                        break
+                    end
+                end
+            end
+            
+            -- Check if column 3 is "Target" or similar
+            if row[3] and type(row[3]) == "string" and 
+               (string.lower(row[3]) == "target" or string.lower(row[3]) == "name") then
+                isHeader = true
+            end
+            
+            if isHeader then
+                headerRow = row
+                headerRowIndex = i
+                self:Debug("osd", "Found probable header row at index " .. i)
+                break
+            end
+        end
+    end
+    
+    -- If still no header, try to create one from the structure of the data
+    if not headerRow then
+        -- Look for a row with a raid icon in column 2 and a target name in column 3
+        for i, row in ipairs(sectionData) do
+            if row[2] and row[2] ~= "" and row[3] and row[3] ~= "" then
+                -- Use the first row with content as a guide to create a header
+                headerRow = {"Section", "Icon", "Target"}
+                
+                -- Create generic headers for remaining columns based on typical layout
+                for j = 4, table.getn(row) do
+                    if j == 4 or j == 5 then
+                        -- Columns 4-5 are typically tanks
+                        headerRow[j] = "Tank"
+                    elseif j == 6 then
+                        -- Column 6 is often utility
+                        headerRow[j] = "Utility"
+                    elseif j == 7 or j == 8 then
+                        -- Columns 7-8 are often healers
+                        headerRow[j] = "Healer"
+                    else
+                        -- Other columns are typically DPS
+                        headerRow[j] = "DPS"
+                    end
+                end
+                
+                self:Debug("osd", "Created synthetic header row based on data structure")
+                break
+            end
+        end
+    end
+    
+    -- If all else fails, create a default header row
+    if not headerRow then
+        headerRow = {"Section", "Icon", "Target", "Tank", "Tank", "Utility", "Healer", "Healer", "DPS"}
+        self:Debug("osd", "Using default header row as last resort")
+    end
+    
+    -- Debug the header row we're using
+    local headerDebug = "Using header row: "
+    for i, col in ipairs(headerRow) do
+        headerDebug = headerDebug .. "[" .. i .. "]=" .. (col or "nil") .. " "
+    end
+    self:Debug("osd", headerDebug)
+    
+    -- First pass: Find tanks for each target
+    local targetTanks = {}
+    for i, row in ipairs(sectionData) do
+        -- Skip the header row and rows for notes, warnings, and GUID
+        if i ~= headerRowIndex and row[2] ~= "Note" and row[2] ~= "Warning" and row[2] ~= "GUID" then
+            local target = row[3]
+            local icon = row[2]
+            -- Allow processing even if target is empty, as long as we have an icon
+            if (target and target ~= "") or (icon and icon ~= "") then
+                -- Use target as key if available, otherwise use icon
+                local key = target and target ~= "" and target or icon
+                targetTanks[key] = targetTanks[key] or {} -- Initialize if not exists
+                
+                -- Find tank columns by looking at headers - ONLY use columns explicitly marked as tanks
+                for colIndex = 4, table.getn(headerRow) do
+                    local colHeader = headerRow[colIndex] or ""
+                    -- If column header contains "tank" (case insensitive)
+                    if type(colHeader) == "string" and string.find(string.lower(colHeader), "tank") then
+                        local tankName = row[colIndex]
+                        if tankName and tankName ~= "" then
+                            -- Check if tank is already in the list
+                            local tankExists = false
+                            for _, existingTank in ipairs(targetTanks[key]) do
+                                if existingTank == tankName then
+                                    tankExists = true
+                                    break
+                                end
+                            end
+                            
+                            -- Add tank only if not already in the list
+                            if not tankExists then
+                                table.insert(targetTanks[key], tankName)
+                                self:Debug("osd", "Added tank '" .. tankName .. "' for '" .. key .. "' from column '" .. colHeader .. "'")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Debug tanks found
+    for target, tanks in pairs(targetTanks) do
+        local tanksStr = table.concat(tanks, ", ")
+        self:Debug("osd", "Tanks for " .. target .. ": " .. tanksStr)
+    end
+    
+    -- Direct player assignment check - we'll check every cell for the player name
+    for i, row in ipairs(sectionData) do
+        -- Skip the header row and rows for notes, warnings, and GUID
+        if i ~= headerRowIndex and row[2] ~= "Note" and row[2] ~= "Warning" and row[2] ~= "GUID" then
+            local raidIcon = row[2]  -- Can be empty but that's ok
+            local target = row[3]    -- Can be empty but that's ok
+            
+            -- Skip only if both target AND icon are empty
+            if (target and target ~= "") or (raidIcon and raidIcon ~= "") then
+                for colIndex = 4, math.min(table.getn(row), table.getn(headerRow)) do
+                    local cellValue = row[colIndex]
+                    -- Direct name match check
+                    if cellValue and cellValue ~= "" and 
+                       (cellValue == playerName or 
+                        (type(cellValue) == "string" and string.find(string.lower(cellValue), string.lower(playerName)))) then
+                        
+                        -- Get header for this column, defaulting to its position if not available
+                        local colHeader = headerRow[colIndex] or ("Column" .. colIndex)
+                        local roleType = "other"
+                        
+                        -- Determine role type from header name
+                        if string.find(string.lower(colHeader), "tank") then
+                            roleType = "tank"
+                        elseif string.find(string.lower(colHeader), "heal") then
+                            roleType = "healer"
+                        end
+                        
+                        -- Get lookup key for tanks
+                        local tankLookupKey = target and target ~= "" and target or raidIcon
+                        
+                        -- Create assignment entry
+                        table.insert(assignments, {
+                            role = colHeader,
+                            roleType = roleType,
+                            icon = raidIcon,
+                            target = target,
+                            tanks = targetTanks[tankLookupKey] or {}
+                        })
+                        
+                        self:Debug("osd", "Found direct player assignment in " .. colHeader .. " column for " .. 
+                                (target or raidIcon or "unknown target"))
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Class group assignments check
+    if self.CLASS_GROUP_NAMES and table.getn(assignments) == 0 then
+        for _, row in ipairs(sectionData) do
+            if row[2] ~= "Icon" and row[2] ~= "Note" and row[2] ~= "Warning" and row[2] ~= "GUID" then
+                local raidIcon = row[2]
+                local target = row[3]
+                
+                if (target and target ~= "") or (raidIcon and raidIcon ~= "") then
+                    for colIndex = 4, table.getn(row) do
+                        local cellValue = row[colIndex]
+                        if cellValue and cellValue ~= "" and self.CLASS_GROUP_NAMES[cellValue] == playerClass then
+                            -- Found class group assignment
+                            local colHeader = headerRow[colIndex] or "Role"
+                            local roleType = "other"
+                            if string.find(string.lower(colHeader or ""), "tank") then
+                                roleType = "tank"
+                            elseif string.find(string.lower(colHeader or ""), "heal") then
+                                roleType = "healer"
+                            end
+                            
+                            table.insert(assignments, {
+                                role = colHeader,
+                                roleType = roleType,
+                                icon = raidIcon,
+                                target = target,
+                                tanks = targetTanks[target and target ~= "" and target or raidIcon] or {}
+                            })
+                            
+                            self:Debug("osd", "Found class group assignment (" .. cellValue .. ") in " .. 
+                                    colHeader .. " column for " .. (target or raidIcon or "unknown target"))
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Raid group assignments check
+    if table.getn(assignments) == 0 and playerGroup > 0 then
+        for _, row in ipairs(sectionData) do
+            if row[2] ~= "Icon" and row[2] ~= "Note" and row[2] ~= "Warning" and row[2] ~= "GUID" then
+                local raidIcon = row[2]
+                local target = row[3]
+                
+                if (target and target ~= "") or (raidIcon and raidIcon ~= "") then
+                    for colIndex = 4, table.getn(row) do
+                        local cellValue = row[colIndex]
+                        if cellValue and type(cellValue) == "string" and string.find(cellValue, "Group") then
+                            -- Check if player's group is included
+                            if string.find(cellValue, tostring(playerGroup)) then
+                                -- Found group assignment
+                                local colHeader = headerRow[colIndex] or "Role"
+                                local roleType = "other"
+                                if string.find(string.lower(colHeader or ""), "tank") then
+                                    roleType = "tank"
+                                elseif string.find(string.lower(colHeader or ""), "heal") then
+                                    roleType = "healer"
+                                end
+                                
+                                table.insert(assignments, {
+                                    role = colHeader,
+                                    roleType = roleType,
+                                    icon = raidIcon,
+                                    target = target,
+                                    tanks = targetTanks[target and target ~= "" and target or raidIcon] or {}
+                                })
+                                
+                                self:Debug("osd", "Found group assignment (" .. cellValue .. ") in " .. 
+                                        colHeader .. " column for " .. (target or raidIcon or "unknown target"))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- For healers: If no assignments and player is a healer, add auto-assignments to tank targets
+    if table.getn(assignments) == 0 then
+        local isHealer = (playerClass == "PRIEST" or playerClass == "DRUID" or 
+                         playerClass == "SHAMAN" or playerClass == "PALADIN")
+                         
+        if isHealer then
+            -- Look for targets that have tanks
+            for targetName, tanks in pairs(targetTanks) do
+                if table.getn(tanks) > 0 then
+                    -- Add an auto-healing assignment
+                    table.insert(assignments, {
+                        role = "Heal",
+                        roleType = "healer",
+                        icon = nil, -- Will be set if targetName is actually an icon
+                        target = targetName,
+                        tanks = tanks
+                    })
+                    
+                    -- If this is an icon rather than a target name, adjust
+                    if not string.find(targetName, " ") and self.ICON_INDICES and self.ICON_INDICES[targetName] then
+                        assignments[table.getn(assignments)].icon = targetName
+                        assignments[table.getn(assignments)].target = nil
+                    end
+                end
+            end
+            
+            if table.getn(assignments) > 0 then
+                self:Debug("osd", "Added auto-heal assignments for healer class")
+            end
+        end
+    end
+    
+    -- Fall back to checking if player is directly mentioned in target names
+    if table.getn(assignments) == 0 then
+        for _, row in ipairs(sectionData) do
+            if row[2] ~= "Icon" and row[2] ~= "Note" and row[2] ~= "Warning" and row[2] ~= "GUID" then
+                local raidIcon = row[2]
+                local target = row[3]
+                
+                if target and target ~= "" and string.find(string.lower(target), string.lower(playerName)) then
+                    -- Player's name is in the target - they are likely the target
+                    local tanks = targetTanks[target] or {}
+                    
+                    table.insert(assignments, {
+                        role = "Target",
+                        roleType = "other",
+                        icon = raidIcon,
+                        target = target,
+                        tanks = tanks
+                    })
+                    
+                    self:Debug("osd", "Player found as target: " .. target)
+                end
+            end
+        end
+    end
+    
+    -- If we have icon assignments but no player assignments, show them anyway
+    if table.getn(assignments) == 0 then
+        -- Look for any icon assignments that might be relevant
+        for icon, tanks in pairs(targetTanks) do
+            if self.ICON_INDICES and self.ICON_INDICES[icon] then
+                -- This is a valid raid icon assignment
+                table.insert(assignments, {
+                    role = "Mark",
+                    roleType = "other",
+                    icon = icon,
+                    target = nil,
+                    tanks = tanks
+                })
+                
+                self:Debug("osd", "Added fallback icon assignment for: " .. icon)
+            end
+        end
+    end
+    
+    self:Debug("osd", "Found " .. table.getn(assignments) .. " role-based assignments")
+    return assignments
+end
+
+-- Helper function to format the display string based on role type
+function TWRA:FormatRoleBasedDisplayString(assignment)
+    if not assignment then return "Invalid assignment" end
+    
+    -- Format icon for display
+    local iconDisplay = ""
+    if assignment.icon and assignment.icon ~= "" then
+        iconDisplay = "[" .. assignment.icon .. "] "
+    end
+    
+    -- Format target name
+    local targetDisplay = ""
+    if assignment.target and assignment.target ~= "" then
+        targetDisplay = assignment.target
+    elseif assignment.icon and assignment.icon ~= "" then
+        targetDisplay = assignment.icon
+    else
+        targetDisplay = "Unknown"
+    end
+    
+    -- Helper function to format a list with "and" between the last two items
+    local function formatList(list)
+        if not list or table.getn(list) == 0 then
+            return ""
+        elseif table.getn(list) == 1 then
+            return list[1]
+        elseif table.getn(list) == 2 then
+            return list[1] .. " and " .. list[2]
+        else
+            local result = ""
+            for i = 1, table.getn(list) - 1 do
+                if i > 1 then
+                    result = result .. ", "
+                end
+                result = result .. list[i]
+            end
+            return result .. " and " .. list[table.getn(list)]
+        end
+    end
+    
+    -- Role-specific formatting - Keep role name in the display string
+    if assignment.roleType == "tank" then
+        -- Tank - [Icon] Target with Tank2 and Tank3
+        local withTanksText = ""
+        if assignment.tanks and table.getn(assignment.tanks) > 1 then
+            -- Filter out the player from the tanks list
+            local otherTanks = {}
+            local playerName = UnitName("player")
+            for _, tank in ipairs(assignment.tanks) do
+                if tank ~= playerName then
+                    table.insert(otherTanks, tank)
+                end
+            end
+            
+            if table.getn(otherTanks) > 0 then
+                withTanksText = " with " .. formatList(otherTanks)
+            end
+        end
+        
+        return assignment.role .. " - " .. iconDisplay .. targetDisplay .. withTanksText
+    
+    elseif assignment.roleType == "healer" then
+        -- Heal - Tank1 and Tank2 tanking [Icon] Target
+        local tanksText = ""
+        if assignment.tanks and table.getn(assignment.tanks) > 0 then
+            tanksText = formatList(assignment.tanks) .. " tanking "
+        end
+        
+        return assignment.role .. " - " .. tanksText .. iconDisplay .. targetDisplay
+    
+    else
+        -- Other roles: Role - [Icon] Target tanked by Tank1 and Tank2
+        local tankedByText = ""
+        if assignment.tanks and table.getn(assignment.tanks) > 0 then
+            tankedByText = " tanked by " .. formatList(assignment.tanks)
+        end
+        
+        return assignment.role .. " - " .. iconDisplay .. targetDisplay .. tankedByText
+    end
 end
 
 -- Function to update footer content (warnings and notes)
@@ -480,24 +1076,36 @@ function TWRA:UpdateOSDFooters(footerContainer, sectionName)
         return 0
     end
 
+    -- Clear existing elements first to prevent stacking issues
+    local elements = {footerContainer:GetRegions()}
+    for _, element in pairs(elements) do
+        element:Hide()
+        element:SetParent(nil)
+    end
+    
+    local contentElements = {footerContainer:GetChildren()}
+    for _, element in pairs(contentElements) do
+        element:Hide()
+        element:SetParent(nil)
+    end
+
     -- Create warning section if needed - now handling multiple warnings
     if hasWarnings then
         for i, warningText in ipairs(self.assignments.warnings) do
             -- Create background for this warning
             local warningBg = footerContainer:CreateTexture(nil, "BACKGROUND")
-            warningBg:SetTexture(0.3, 0.1, 0.1, 0.15) -- Red background
+            warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Slightly brighter red background
             
             -- Position this warning (first warning at top, others with 1px space)
             if i == 1 then
                 warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, 0)
                 warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, 0)
             else
-                warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -totalHeight - 1)
-                warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -totalHeight - 1)
-                totalHeight = totalHeight + 1 -- Add 1px space between warnings
+                warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -totalHeight)
+                warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -totalHeight)
             end
             
-            warningBg:SetHeight(18) -- Using 18px height
+            warningBg:SetHeight(18) -- Fixed height for consistency
             
             -- Use icon from Constants.lua
             local warningIcon = footerContainer:CreateTexture(nil, "OVERLAY")
@@ -507,7 +1115,7 @@ function TWRA:UpdateOSDFooters(footerContainer, sectionName)
             warningIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
             warningIcon:SetWidth(16)
             warningIcon:SetHeight(16)
-            warningIcon:SetPoint("LEFT", warningBg, "LEFT", 5, -1) -- Center vertically
+            warningIcon:SetPoint("LEFT", warningBg, "LEFT", 5, 0) -- Centered vertically
             
             -- Create warning text
             local warningTextObj = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -520,39 +1128,34 @@ function TWRA:UpdateOSDFooters(footerContainer, sectionName)
             -- Update total height
             totalHeight = totalHeight + 18 -- Use fixed height
             
-            -- Debug
-            warningTextObj:SetPoint("RIGHT", warningBg, "RIGHT", -5, 0)
-            warningTextObj:SetTextColor(1, 0.7, 0.7) -- Light red
-            warningTextObj:SetText(warningText)
-            
-            -- Update total height
-            totalHeight = totalHeight + 18 -- Use the new height (18px)
-            
-            -- Debug
             self:Debug("osd", "Added warning " .. i .. " with height: 18")
         end
     end
     
-    -- Create note elements next - now with 1px space between each note
+    -- Create note elements with proper spacing from warnings
     if hasNotes then
+        -- Add small spacing between warnings and notes sections only if both exist
+        if hasWarnings then
+            totalHeight = totalHeight + 1 -- Just 1px spacing between sections
+        end
+        
         for i, noteText in ipairs(self.assignments.notes) do
             -- Create note background
             local noteBg = footerContainer:CreateTexture(nil, "BACKGROUND")
-            noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Blue background
+            noteBg:SetTexture(0.1, 0.1, 0.3, 0.3) -- Slightly brighter blue background
             
-            -- Position with spacing
+            -- Position with proper spacing
             if i == 1 and totalHeight == 0 then
                 -- First note and no warnings - position at top
                 noteBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, 0)
                 noteBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, 0)
             else
-                -- Add 1px spacing between elements
-                noteBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -totalHeight - 1)
-                noteBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -totalHeight - 1)
-                totalHeight = totalHeight + 1 -- Account for spacing
+                -- Position directly below previous element
+                noteBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -totalHeight)
+                noteBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -totalHeight)
             end
             
-            noteBg:SetHeight(18) -- Reduced from 24px to 18px
+            noteBg:SetHeight(18) -- Fixed height for consistency
             
             -- Use icon from Constants.lua
             local noteIcon = footerContainer:CreateTexture(nil, "OVERLAY")
@@ -562,7 +1165,7 @@ function TWRA:UpdateOSDFooters(footerContainer, sectionName)
             noteIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
             noteIcon:SetWidth(16)
             noteIcon:SetHeight(16)
-            noteIcon:SetPoint("LEFT", noteBg, "LEFT", 5, -1) -- Slightly adjusted vertical position
+            noteIcon:SetPoint("LEFT", noteBg, "LEFT", 5, 0) -- Centered vertically
             
             -- Create note text
             local noteTextObj = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -572,10 +1175,9 @@ function TWRA:UpdateOSDFooters(footerContainer, sectionName)
             noteTextObj:SetTextColor(0.8, 0.8, 1) -- Light blue
             noteTextObj:SetText(noteText)
             
-            -- Update total height - use the new height
+            -- Update total height
             totalHeight = totalHeight + 18
             
-            -- Debug
             self:Debug("osd", "Added note " .. i .. " with height: 18")
         end
     end
