@@ -74,14 +74,24 @@ function TWRA:InitDebug()
         TWRA_SavedVariables = {}
     end
     
+    -- Initialize debug namespace early
+    self.DEBUG = self.DEBUG or {}
+    
+    -- Always default to debug disabled unless explicitly enabled in SavedVariables
+    self.DEBUG.enabled = false
+    self.DEBUG.logLevel = self.DEBUG_LEVELS.INFO
+    self.DEBUG.showDetails = false
+    self.DEBUG.showTimestamps = true
+    
+    -- Create debug settings if they don't exist in saved variables
     if not TWRA_SavedVariables.debug then
         TWRA_SavedVariables.debug = {
-            level = self.DEBUG_LEVELS.INFO,  -- Default to INFO level
+            enabled = false,                 -- Debug disabled by default
+            logLevel = self.DEBUG_LEVELS.INFO, -- Default to INFO level
             categories = {},                 -- Will be filled with default values
             timestamp = true,                -- Show timestamps by default
             frameNum = false,                -- Don't show frame numbers by default
             suppressCount = 0,               -- Count of suppressed messages
-            enabled = false,                 -- Debug disabled by default
             showDetails = false              -- Don't show detailed logs by default
         }
         
@@ -90,9 +100,6 @@ function TWRA:InitDebug()
             TWRA_SavedVariables.debug.categories[category] = info.default
         end
     end
-    
-    -- Initialize Debug namespace
-    self.DEBUG = self.DEBUG or {}
     
     -- Create debug frame if needed (for performance monitoring)
     if not self.debugFrame then
@@ -118,7 +125,7 @@ function TWRA:InitDebug()
         self.DEBUG.CATEGORIES[category] = {
             name = details.name,
             description = details.description,
-            enabled = details.default
+            enabled = false -- Default everything to false initially
         }
     end
     
@@ -138,67 +145,45 @@ function TWRA:InitDebug()
     -- Create simplified category tracking
     self.DEBUG.categories = {}
     for category, _ in pairs(self.DEBUG.CATEGORIES) do
-        self.DEBUG.categories[category] = false
+        self.DEBUG.categories[category] = false -- Default all categories to false
     end
     
-    -- Load saved debug settings - explicitly check each value
+    -- ONLY AFTER initializing defaults, load saved debug settings
     local savedDebug = TWRA_SavedVariables.debug
     
     -- Explicitly convert to proper boolean value, not just nil check
     if savedDebug.enabled ~= nil then
-        self.DEBUG.enabled = (savedDebug.enabled == 1 or savedDebug.enabled == true)
-    else
-        self.DEBUG.enabled = false
+        self.DEBUG.enabled = (savedDebug.enabled == true or savedDebug.enabled == 1)
     end
     
     -- Use the saved log level
-    if savedDebug.logLevel ~= nil then
+    if savedDebug.logLevel ~= nil and type(savedDebug.logLevel) == "number" then
         self.DEBUG.logLevel = savedDebug.logLevel
-    else
-        self.DEBUG.logLevel = 3 -- Default to standard
     end
     
     -- Use the saved showDetails setting
     if savedDebug.showDetails ~= nil then
-        self.DEBUG.showDetails = (savedDebug.showDetails == 1 or savedDebug.showDetails == true)
-    else
-        self.DEBUG.showDetails = false
+        self.DEBUG.showDetails = (savedDebug.showDetails == true or savedDebug.showDetails == 1)
     end
     
     -- Load timestamp setting
     if savedDebug.timestamp ~= nil then
-        self.DEBUG.showTimestamps = (savedDebug.timestamp == 1 or savedDebug.timestamp == true)
-    else
-        self.DEBUG.showTimestamps = false
+        self.DEBUG.showTimestamps = (savedDebug.timestamp == true or savedDebug.timestamp == 1)
     end
     
     -- Apply saved category settings to each category
-    for category, _ in pairs(self.DEBUG.categories) do
-        -- Only apply if the category exists in saved vars, handle boolean conversion
-        if savedDebug.categories and savedDebug.categories[category] ~= nil then
-            self.DEBUG.categories[category] = (savedDebug.categories[category] == 1 or savedDebug.categories[category] == true)
-            
-            -- Also update the CATEGORIES table for UI display
-            if self.DEBUG.CATEGORIES[category] then
-                self.DEBUG.CATEGORIES[category].enabled = self.DEBUG.categories[category]
-            end
-        end
-        
-        -- Ensure the category exists in saved vars for next time
-        if not savedDebug.categories then savedDebug.categories = {} end
-        savedDebug.categories[category] = self.DEBUG.categories[category]
-    end
-    
-    -- When full debug was enabled, make sure ALL categories get enabled
-    if self.DEBUG.enabled and self.DEBUG.logLevel == 4 and self.DEBUG.showDetails then
+    if savedDebug.categories then
         for category, _ in pairs(self.DEBUG.categories) do
-            self.DEBUG.categories[category] = true
-            -- Also update the CATEGORIES table for UI display
-            if self.DEBUG.CATEGORIES[category] then
-                self.DEBUG.CATEGORIES[category].enabled = true
+            -- Only apply if the category exists in saved vars, handle boolean conversion
+            if savedDebug.categories[category] ~= nil then
+                self.DEBUG.categories[category] = (savedDebug.categories[category] == true or
+                                                  savedDebug.categories[category] == 1)
+                
+                -- Also update the CATEGORIES table for UI display
+                if self.DEBUG.CATEGORIES[category] then
+                    self.DEBUG.CATEGORIES[category].enabled = self.DEBUG.categories[category]
+                end
             end
-            -- Ensure saved in savedvars too
-            savedDebug.categories[category] = true
         end
     end
     
@@ -410,11 +395,7 @@ function TWRA:ToggleDebug(enable)
     end
     
     -- Ensure the value is an actual boolean, not just truthy
-    if enable == 1 or enable == true then
-        self.DEBUG.enabled = true
-    else
-        self.DEBUG.enabled = false
-    end
+    self.DEBUG.enabled = (enable == true or enable == 1)
     
     -- Ensure proper data structure exists
     TWRA_SavedVariables = TWRA_SavedVariables or {}
@@ -425,7 +406,7 @@ function TWRA:ToggleDebug(enable)
     }
     
     -- Save to the saved variables with proper boolean value
-    TWRA_SavedVariables.debug.enabled = (self.DEBUG.enabled == true)
+    TWRA_SavedVariables.debug.enabled = self.DEBUG.enabled
     
     -- Update all categories to match master setting
     for cat in pairs(self.DEBUG.categories) do
@@ -445,33 +426,66 @@ function TWRA:ToggleDebug(enable)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33AAFF[TWRA: Debug]|r Mode " .. (self.DEBUG.enabled and "enabled" or "disabled"))
 end
 
--- Toggle a specific debug category
-function TWRA:ToggleDebugCategory(category, enable)
-    if not self.DEBUG or not self.DEBUG.categories or not self.DEBUG.categories[category] then
+-- New function to toggle a specific debug category
+function TWRA:ToggleDebugCategory(category, forceState)
+    if not self.DEBUG then
+        self:InitDebug()
+    end
+    
+    -- Ensure the category exists
+    if not self.DEBUG_CATEGORIES[category] then
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Invalid debug category: " .. tostring(category))
         return
     end
     
-    if enable == nil then
-        enable = not self.DEBUG.categories[category]
+    -- Toggle or set the category based on forceState
+    if forceState ~= nil then
+        self.DEBUG.categories[category] = (forceState == true or forceState == 1)
+    else
+        self.DEBUG.categories[category] = not self.DEBUG.categories[category]
     end
     
-    self.DEBUG.categories[category] = enable
-    
-    -- Save to the saved variables
-    if TWRA_SavedVariables then
-        TWRA_SavedVariables.debug = TWRA_SavedVariables.debug or {}
-        TWRA_SavedVariables.debug.categories = TWRA_SavedVariables.debug.categories or {}
-        TWRA_SavedVariables.debug.categories[category] = enable
-    end
+    -- Update saved settings - ENSURE this happens properly
+    TWRA_SavedVariables.debug = TWRA_SavedVariables.debug or {}
+    TWRA_SavedVariables.debug.categories = TWRA_SavedVariables.debug.categories or {}
+    TWRA_SavedVariables.debug.categories[category] = self.DEBUG.categories[category]
     
     -- Also update the CATEGORIES table for UI display
     if self.DEBUG.CATEGORIES[category] then
-        self.DEBUG.CATEGORIES[category].enabled = enable
+        self.DEBUG.CATEGORIES[category].enabled = self.DEBUG.categories[category]
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug category '" .. 
-                                 (self.DEBUG.CATEGORIES[category] and self.DEBUG.CATEGORIES[category].name or category) .. 
-                                 "' " .. (enable and "enabled" or "disabled"))
+    -- If we're enabling a category, make sure debug is enabled overall
+    if self.DEBUG.categories[category] and not self.DEBUG.enabled then
+        self.DEBUG.enabled = true
+        TWRA_SavedVariables.debug.enabled = true
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug mode automatically enabled")
+    end
+    
+    -- Display toggle status
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug category '" .. category .. "' " .. 
+                                (self.DEBUG.categories[category] and "enabled" or "disabled"))
+end
+
+-- Print all debug categories and their status
+function TWRA:ListDebugCategories()
+    if not self.DEBUG then
+        self:InitDebug()
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA Debug Categories:")
+    DEFAULT_CHAT_FRAME:AddMessage("Master switch: " .. (self.DEBUG.enabled and "ON" or "OFF"))
+    
+    for category, info in pairs(self.DEBUG_CATEGORIES) do
+        local status = self.DEBUG.categories[category]
+        local color = status and "00FF00" or "FF0000"
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF" .. color .. "- " .. category .. ": " .. 
+                                     (status and "ON" or "OFF") .. "|r - " .. info.description)
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("Usage: /twra debug [category] - Toggle specific category")
+    DEFAULT_CHAT_FRAME:AddMessage("       /twra debug all - Toggle all debug messages")
+    DEFAULT_CHAT_FRAME:AddMessage("       /twra debug list - Show this list")
 end
 
 -- Enable full debugging quickly for emergency troubleshooting
@@ -522,24 +536,22 @@ function TWRA:ToggleDetailedLogging(state)
     
     if state == nil then
         state = not self.DEBUG.showDetails
+    else
+        state = (state == true or state == 1)
     end
     
     self.DEBUG.showDetails = state
     
-    -- Save to saved variables
-    if TWRA_SavedVariables then
-        TWRA_SavedVariables.debug = TWRA_SavedVariables.debug or {}
-        TWRA_SavedVariables.debug.showDetails = state
-    end
+    -- Save to saved variables - ENSURE this happens properly
+    TWRA_SavedVariables.debug = TWRA_SavedVariables.debug or {}
+    TWRA_SavedVariables.debug.showDetails = state
     
     DEFAULT_CHAT_FRAME:AddMessage("TWRA: Detailed logging " .. (state and "enabled" or "disabled"))
     
     -- If enabling details, make sure level is appropriate
     if state and self.DEBUG.logLevel < 4 then
         self.DEBUG.logLevel = 4
-        if TWRA_SavedVariables and TWRA_SavedVariables.debug then
-            TWRA_SavedVariables.debug.logLevel = 4
-        end
+        TWRA_SavedVariables.debug.logLevel = 4
     end
 end
 
@@ -551,15 +563,15 @@ function TWRA:ToggleTimestamps(state)
     
     if state == nil then
         state = not self.DEBUG.showTimestamps
+    else
+        state = (state == true or state == 1)
     end
     
     self.DEBUG.showTimestamps = state
     
-    -- Save to saved variables
-    if TWRA_SavedVariables then
-        TWRA_SavedVariables.debug = TWRA_SavedVariables.debug or {}
-        TWRA_SavedVariables.debug.timestamp = state
-    end
+    -- Save to saved variables - ENSURE this happens properly
+    TWRA_SavedVariables.debug = TWRA_SavedVariables.debug or {}
+    TWRA_SavedVariables.debug.timestamp = state
     
     DEFAULT_CHAT_FRAME:AddMessage("TWRA: Timestamps " .. (state and "enabled" or "disabled"))
 end
@@ -690,6 +702,22 @@ function TWRA:HandleDebugCommand(args)
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug full - Enable full debugging")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug status - Show debug status")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug categories - List all categories")
+        
+        -- Add the specific commands shown in Core.lua help
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug nav - Toggle AutoNavigate debugging")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug list - List all available debug commands")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug guids - List all stored GUIDs and their sections")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug target - Check current target for GUID mapping")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug test - Test AutoNavigate with current target")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug sync - Show sync status")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug ui - Show UI debug info")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug timestamp - Show timestamp information")
+        
+        -- Add direct category toggles
+        DEFAULT_CHAT_FRAME:AddMessage("  Category toggles (directly toggle specific categories):")
+        for category, _ in pairs(self.DEBUG_CATEGORIES or {}) do
+            DEFAULT_CHAT_FRAME:AddMessage("    /twra debug " .. category .. " - Toggle " .. category .. " category")
+        end
         return
     end
 
@@ -734,29 +762,109 @@ function TWRA:HandleDebugCommand(args)
         elseif args[2] == "off" then
             self:ToggleTimestamps(false)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Timestamps are " .. 
-                (self.DEBUG.showTimestamps and "enabled" or "disabled"))
+            -- If "timestamp" with no on/off parameter, show timestamp information
+            if args[1] == "timestamp" then
+                -- Show timestamp information
+                local currentTime = time()
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Timestamp Information|r:")
+                DEFAULT_CHAT_FRAME:AddMessage("  Current timestamp: " .. currentTime)
+                
+                -- Show saved assignment timestamp if available
+                if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp then
+                    local savedTime = TWRA_SavedVariables.assignments.timestamp
+                    DEFAULT_CHAT_FRAME:AddMessage("  Saved assignments timestamp: " .. savedTime)
+                    DEFAULT_CHAT_FRAME:AddMessage("  Age: " .. (currentTime - savedTime) .. " seconds")
+                    
+                    -- Show date in readable format
+                    local dateStr = date("%Y-%m-%d %H:%M:%S", savedTime)
+                    DEFAULT_CHAT_FRAME:AddMessage("  Date/time: " .. dateStr)
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage("  No saved assignments timestamp found")
+                end
+                
+                -- Show current date/time in readable format
+                local currentDateStr = date("%Y-%m-%d %H:%M:%S", currentTime)
+                DEFAULT_CHAT_FRAME:AddMessage("  Current date/time: " .. currentDateStr)
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Timestamps are " .. 
+                    (self.DEBUG.showTimestamps and "enabled" or "disabled"))
+            end
         end
         
     -- Category listing
     elseif args[1] == "categories" then
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Available debug categories:")
-        for cat, info in pairs(self.DEBUG.CATEGORIES) do
-            local enabled = self.DEBUG.categories and self.DEBUG.categories[cat]
-            DEFAULT_CHAT_FRAME:AddMessage("  - " .. cat .. ": " .. (enabled and "enabled" or "disabled") .. 
-                                      " (" .. info.description .. ")")
+        self:ListDebugCategories()
+
+    -- Handle specific commands from Core.lua help
+    elseif args[1] == "nav" then
+        -- Toggle AutoNavigate debugging
+        if self.ToggleAutoNavigateDebug then
+            self:ToggleAutoNavigateDebug()
+        else
+            self:Debug("error", "AutoNavigate debug toggle not available")
+        end
+    elseif args[1] == "list" then
+        -- List all debug commands
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug Commands|r:")
+        DEFAULT_CHAT_FRAME:AddMessage("  nav - Toggle AutoNavigate debugging")
+        DEFAULT_CHAT_FRAME:AddMessage("  list - List all available debug commands")
+        DEFAULT_CHAT_FRAME:AddMessage("  guids - List all stored GUIDs and their sections")
+        DEFAULT_CHAT_FRAME:AddMessage("  target - Check current target for GUID mapping")
+        DEFAULT_CHAT_FRAME:AddMessage("  test - Test AutoNavigate with current target")
+        DEFAULT_CHAT_FRAME:AddMessage("  sync - Show sync status")
+        DEFAULT_CHAT_FRAME:AddMessage("  ui - Show UI debug info")
+        DEFAULT_CHAT_FRAME:AddMessage("  time on/off - Toggle timestamps in debug messages")
+        DEFAULT_CHAT_FRAME:AddMessage("  timestamp - Show timestamp information")
+    elseif args[1] == "guids" then
+        -- List all stored GUIDs and their sections
+        if self.ListStoredGUIDs then
+            self:ListStoredGUIDs()
+        else
+            self:Debug("error", "GUID listing function not available")
+        end
+    elseif args[1] == "target" then
+        -- Check current target for GUID mapping
+        if self.CheckTargetGUID then
+            self:CheckTargetGUID()
+        else
+            self:Debug("error", "Target GUID check function not available")
+        end
+    elseif args[1] == "test" then
+        -- Test AutoNavigate with current target
+        if self.TestAutoNavigateWithTarget then
+            self:TestAutoNavigateWithTarget()
+        else
+            self:Debug("error", "AutoNavigate test function not available")
+        end
+    elseif args[1] == "sync" then
+        -- Show sync status
+        if self.ShowSyncStatus then
+            self:ShowSyncStatus()
+        else
+            self:Debug("error", "Sync status function not available")
+        end
+    elseif args[1] == "ui" then
+        -- Show UI debug info
+        if self.DebugOptions then
+            self:DebugOptions()
+        else
+            self:Debug("error", "UI debug function not available")
         end
         
-    -- Category toggle - check if arg1 is a valid category
-    elseif self.DEBUG.categories and self.DEBUG.categories[args[1]] ~= nil then
+    -- Category toggle - check if arg1 is a valid category name in DEBUG_CATEGORIES
+    -- THIS IS THE KEY ADDITION: Check DEBUG_CATEGORIES directly first
+    elseif self.DEBUG_CATEGORIES and self.DEBUG_CATEGORIES[args[1]] then
+        -- Direct category toggle using ToggleDebugCategory
+        self:ToggleDebugCategory(args[1])
+        
+    -- For backward compatibility, also check in DEBUG.categories
+    elseif self.DEBUG and self.DEBUG.categories and self.DEBUG.categories[args[1]] ~= nil then
         if args[2] == "on" then
             self:ToggleDebugCategory(args[1], true)
         elseif args[2] == "off" then
             self:ToggleDebugCategory(args[1], false)
         else
-            local enabled = self.DEBUG.categories[args[1]]
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug category '" .. args[1] .. "' is " .. 
-                (enabled and "enabled" or "disabled"))
+            self:ToggleDebugCategory(args[1])
         end
     else
         DEFAULT_CHAT_FRAME:AddMessage("TWRA: Unknown debug command. Type '/twra debug' for help.")

@@ -157,7 +157,8 @@ TWRA.ICONS = {
     ["Star"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0, 0.25, 0, 0.25},
     ["Warning"] = {"Interface\\GossipFrame\\AvailableQuestIcon", 0, 1, 0, 1}, -- Updated to AvailableQuestIcon
     ["Note"] = {"Interface\\GossipFrame\\ActiveQuestIcon", 0, 1, 0, 1},       -- Updated to ActiveQuestIcon
-    ["GUID"] = {"Interface\\Icons\\INV_Misc_Note_01", 0, 1, 0, 1}
+    ["GUID"] = {"Interface\\Icons\\INV_Misc_Note_01", 0, 1, 0, 1},
+    ["Missing"] = {"Interface\\Buttons\\UI-CheckBox-Check", 0, 1, 0, 1},
 }
 
 -- Colored text for raid markers in announcements
@@ -170,6 +171,63 @@ TWRA.COLORED_ICONS = {
     ['Diamond'] = '|cffB035F2[Diamond]|r',
     ['Circle'] = '|cFFE76100[Circle]|r',
     ['Star'] = '|cFFF7EF52[Star]|r',
+}
+
+TWRA.ROLE_MAPPINGS = {
+    ["tank"] = "Tank",
+    ["offtank"] = "Tank", 
+    ["off-tank"] = "Tank",
+    ["ranged tank"] = "Tank",
+    ["r.tank"] = "Tank",
+    
+    ["heal"] = "Heal",
+    ["healer"] = "Heal",
+    ["tank heal"] = "Heal",
+    
+    ["mc"] = "MC",
+    ["mind control"] = "MC",
+    
+    ["kick"] = "Kick",
+    ["interrupt"] = "Kick",
+
+    ["decurse"] = "Decurse",
+    ["dec"] = "Decurse",
+    ["dispell"] = "Decurse",
+    
+    ["pull"] = "Pull",
+    ["puller"] = "Pull",
+    
+    ["assist"] = "Assist",
+    
+    ["bomb"] = "Bomb",
+    
+    ["dps"] = "DPS",
+    ["damage"] = "DPS",
+    
+    ["aoe"] = "AOE",
+
+    ["resurrect"] = "Ress",
+    ["ress"] = "Ress",
+    ["resurrect"] = "Ress",
+    
+    ["cc"] = "CC",
+    ["crowd control"] = "CC",
+    
+    
+    ["sap"] = "Sap",
+    
+    ["purge"] = "Purge",
+    
+    ["shackle"] = "Shackle",
+    
+    ["banish"] = "Banish",
+    
+    ["kite"] = "Kite",
+    ["kiting"] = "Kite",
+    ["kiter"] = "Kite",
+    
+    ["misc"] = "Misc"
+    
 }
 
 -- Role icons for assignments

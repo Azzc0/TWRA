@@ -127,6 +127,9 @@ function TWRA:UpdateOSDWithFormattedData()
         self:Debug("osd", "DatarowsOSD function not found")
     end
     
+    -- Need to set the contentContainer height explicitly based on returned height
+    frame.contentContainer:SetHeight(dataRowsHeight)
+    
     -- Create a brand new footerContainer
     local footerContainer = CreateFrame("Frame", nil, frame)
     footerContainer:SetPoint("TOPLEFT", frame.contentContainer, "BOTTOMLEFT", 0, -5)
@@ -172,6 +175,7 @@ function TWRA:UpdateOSDWithFormattedData()
     -- Make sure the frame is shown
     frame:Show()
     self.OSD.isVisible = true
+    self:Debug("osd", "OSD frame shown with height: " .. totalFrameHeight)
     
     return true
 end
@@ -248,11 +252,18 @@ function TWRA:GetOSDFrame()
     titleText:SetText("Current Section")
     frame.titleText = titleText
     
-    -- Create content container (for data rows) - with padding only at the top
+    -- Create content container (for data rows) with better positioning
     local contentContainer = CreateFrame("Frame", nil, frame)
     contentContainer:SetPoint("TOPLEFT", headerContainer, "BOTTOMLEFT", 0, -5) -- 5px space after title
     contentContainer:SetPoint("TOPRIGHT", headerContainer, "BOTTOMRIGHT", 0, -5)
-    contentContainer:SetHeight(50) -- Initial height, will be adjusted
+    contentContainer:SetHeight(50) -- Initial height, will be adjusted dynamically
+    
+    -- Add light background to content area for better visibility
+    local contentBg = contentContainer:CreateTexture(nil, "BACKGROUND")
+    contentBg:SetAllPoints()
+    contentBg:SetTexture(0.1, 0.1, 0.1, 0.2) -- Very subtle background
+    contentContainer.background = contentBg
+    
     frame.contentContainer = contentContainer
     
     -- Create footer container (for warnings/notes) - NO padding, directly below content

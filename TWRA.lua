@@ -747,7 +747,31 @@ end
 -- Add slash command
 SLASH_TWRA1 = "/twra"
 SlashCmdList["TWRA"] = function(msg)
-    TWRA:ToggleMainFrame()
+    -- Parse the command
+    local command, arg = string.match(msg, "^(%S+)%s*(.*)$")
+    command = command and string.lower(command) or ""
+    
+    if command == "debug" then
+        -- Handle debug commands
+        if arg == "list" then
+            -- List all debug categories
+            TWRA:ListDebugCategories()
+        elseif arg == "all" or arg == "" then
+            -- Toggle all debug categories
+            TWRA:ToggleDebug()
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug mode " .. 
+                (TWRA.DEBUG.enabled and "enabled" or "disabled"))
+        elseif TWRA.DEBUG_CATEGORIES[arg] then
+            -- Toggle specific category
+            TWRA:ToggleDebugCategory(arg)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Unknown debug category: " .. arg)
+            TWRA:ListDebugCategories()
+        end
+    else
+        -- Default behavior - toggle main frame
+        TWRA:ToggleMainFrame()
+    end
 end
 
 -- Initialize UI at end of loading - THIS IS THE ONLY INITIALIZE CALL

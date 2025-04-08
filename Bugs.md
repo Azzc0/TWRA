@@ -15,9 +15,9 @@
 Import should bring us back to MainView
 Example button does not load example data
 
-Data columns
+Data columns we need to update columns based on amount of headers.
+
 Check if tanks needs updating
 
 
-We should go over relevant rows.
-Check our own assignment(s) and create a OSD row based on that.
+Sections has to have unique names

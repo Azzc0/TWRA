@@ -116,7 +116,7 @@ function TWRA:UpdateTanks()
     
     -- Clear existing tanks first
     for i = 1, 10 do
-        oRA.maintanktable[i] = nil
+        oRALMainTank:Remove(i)
     end
     if GetNumRaidMembers() > 0 then
         SendAddonMessage("CTRA", "MT CLEAR", "RAID")

@@ -122,16 +122,26 @@ function TWRA:InitializeAutoNavigate()
             self.AUTONAVIGATE.scanFreq = TWRA_SavedVariables.options.scanFrequency
         end
         
-        -- Apply the enabled state using the toggle function which ensures proper activation
-        if autoNavigateEnabled ~= self.AUTONAVIGATE.enabled then
-            self:ToggleAutoNavigate(autoNavigateEnabled)
-            self:Debug("nav", "AutoNavigate " .. (autoNavigateEnabled and "enabled" or "disabled") .. " based on saved settings")
-        else
-            -- Even if the state matches, make sure scanning is active if it should be
-            if autoNavigateEnabled and not self.AUTONAVIGATE.timer and self:CheckSuperWoWSupport() then
+        -- Update the runtime state to match saved settings
+        self.AUTONAVIGATE.enabled = autoNavigateEnabled
+        
+        -- Output debug message about the loaded state
+        self:Debug("nav", "AutoNavigate " .. (autoNavigateEnabled and "enabled" or "disabled"))
+        
+        -- Start scanning if enabled
+        if autoNavigateEnabled then
+            if self:CheckSuperWoWSupport() then
                 self:StartAutoNavigateScan()
-                self:Debug("nav", "AutoNavigate scan started during initialization")
+                self:Debug("nav", "AutoNavigate scanning started during initialization")
+            else
+                -- SuperWoW not available, reset the state
+                self.AUTONAVIGATE.enabled = false
+                TWRA_SavedVariables.options.autoNavigate = false
+                self:Debug("nav", "AutoNavigate disabled: SuperWoW not available")
             end
+        else
+            -- Make sure scanning is stopped if disabled
+            self:StopAutoNavigateScan()
         end
     end
 
@@ -278,111 +288,6 @@ function TWRA:StopAutoNavigateScan()
     self:Debug("nav", "AutoNavigate scan stopped")
 end
 
--- Core function to scan for target and navigate to the appropriate section
-function TWRA:ScanForTargetAndNavigate()
-    -- Check if we have data to work with
-    if not self.fullData or table.getn(self.fullData) == 0 then
-        return
-    end
-    
-    -- Get current target information
-    local targetName = UnitName("target")
-    if not targetName or targetName == "" or targetName == UnitName("player") then
-        return -- No valid target selected
-    end
-    
-    -- Skip if this is the same target we already processed
-    if targetName == self.AUTONAVIGATE.lastTarget then
-        return
-    end
-    
-    -- Search for target in data
-    local targetSection = nil
-    local targetRow = nil
-    
-    for i = 1, table.getn(self.fullData) do
-        local row = self.fullData[i]
-        if row[3] == targetName then
-            targetSection = row[1]
-            targetRow = i
-            break
-        end
-    end
-    
-    -- If found, navigate to that section
-    if targetSection and targetSection ~= "" then
-        self.AUTONAVIGATE.lastTarget = targetName -- Update last target
-        
-        -- Navigate to section WITHOUT showing the main frame
-        self:NavigateToSectionQuietly(targetSection)
-        self:Debug("nav", "AutoNavigated to section: " .. targetSection .. " for target: " .. targetName)
-    end
-end
-
--- Modified to work with NavigateToSection while keeping UI state
-function TWRA:NavigateToSectionQuietly(targetSection)
-    -- Basic error checking
-    if not self.navigation then return false end
-    if not self.navigation.handlers then return false end
-    
-    local handlers = self.navigation.handlers
-    local numSections = table.getn(handlers)
-    
-    if numSections == 0 then return false end
-    
-    local sectionIndex = targetSection
-    local sectionName = nil
-    
-    -- If sectionIndex is a string, find its index
-    if type(targetSection) == "string" then
-        for i, name in ipairs(handlers) do
-            if name == targetSection then
-                sectionIndex = i
-                sectionName = name
-                break
-            end
-        end
-    else
-        -- Make sure targetSection is within bounds
-        sectionIndex = math.max(1, math.min(numSections, targetSection))
-        sectionName = handlers[sectionIndex]
-    end
-    
-    if not sectionName then return false end
-    
-    -- Update current index
-    self.navigation.currentIndex = sectionIndex
-    
-    -- Update UI text if frame is visible
-    if self.navigation.handlerText and sectionName then
-        self.navigation.handlerText:SetText(sectionName)
-    end
-    
-    -- Save as current section
-    self:SaveCurrentSection()
-    
-    -- Track if we need to update UI later
-    if not self.mainFrame or not self.mainFrame:IsShown() then
-        self.pendingNavigation = sectionIndex
-    end
-    
-    -- Always show OSD
-    self:ShowSectionNameOverlay(sectionName, sectionIndex, numSections)
-    
-    -- Broadcast to group if sync enabled
-    if self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
-        self:BroadcastSectionChange(sectionIndex)
-    end
-    
-    -- If enabled, update tanks
-    if self.SYNC and self.SYNC.tankSync and self:IsORA2Available() then
-        self:UpdateTanks()
-    end
-    
-    self:Debug("nav", "Quietly navigated to section " .. sectionIndex .. " (" .. sectionName .. ")")
-    return true
-end
-
 -- Simplified scan function that uses only the direct SuperWoW approach
 function TWRA:ScanMarkedTargets()
     -- Add debug message to confirm scan is running
@@ -399,12 +304,8 @@ function TWRA:ScanMarkedTargets()
     -- Use direct mark8 reference for skull-marked units (SuperWoW feature)
     local markUnitId = "mark8"  -- Skull is always mark8
     
-    -- According to SuperWoW wiki, we need to set the mouseover unit first
-    -- This is necessary to actually query information about the marked unit
-    -- SetMouseoverUnit(markUnitId)
-    
     -- Check if mark8 exists and get its guid
-    local exists = UnitExists("mark8")
+    local exists, guid = UnitExists("mark8")
     if not exists then
         if self.AUTONAVIGATE.debug and self.AUTONAVIGATE.lastMarkedGuid ~= "none" then
             self:Debug("nav", "No skull-marked units found")
@@ -413,15 +314,13 @@ function TWRA:ScanMarkedTargets()
         return
     end
     
-    local exists, guid = UnitExists("mouseover")
+    -- Make sure we got a valid GUID
     if not guid or guid == "" then
-        if self.AUTONAVIGATE.debug then
-            self:Debug("nav", "No GUID available for skull-marked unit")
-        end
+        self:Debug("nav", "Unit exists but no GUID available for skull-marked unit")
         return
     end
     
-    local name = UnitName("mouseover")
+    local name = UnitName("mark8")
     
     if self.AUTONAVIGATE.debug then
         self:Debug("nav", "Found skull-marked unit: " .. name .. " with GUID: " .. guid)
@@ -480,15 +379,9 @@ function TWRA:ProcessMarkedMob(mobName, mobId)
                 self:Debug("nav", "Navigating to section index: " .. sectionIndex)
             end
             
-            -- Use NavigateToSectionQuietly for headless operation
-            if self.NavigateToSectionQuietly then
-                self:NavigateToSectionQuietly(sectionIndex)
-                self:Debug("nav", "Auto-navigated to " .. targetSection)
-            else
-                -- Fallback to standard navigation
-                self:NavigateToSection(sectionIndex)
-                self:Debug("nav", "Auto-navigated to " .. targetSection .. " (standard method)")
-            end
+            self:NavigateToSection(sectionIndex)
+            self:Debug("nav", "Auto-navigated to " .. targetSection .. " (standard method)")
+
         else
             if self.AUTONAVIGATE.debug then
                 self:Debug("nav", "Section name found but no matching index in navigation: " .. targetSection)
