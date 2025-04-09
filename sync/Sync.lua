@@ -155,31 +155,21 @@ function TWRA:DeactivateLiveSync()
     return true
 end
 
--- Function to broadcast section changes to the group
-function TWRA:BroadcastSectionChange(sectionIndex)
-    if not self.SYNC or not self.SYNC.liveSync then
-        self:Debug("sync", "Cannot broadcast - sync not enabled")
-        return false
-    end
-    
-    -- Make sure we have a valid section
-    if not sectionIndex or type(sectionIndex) ~= "number" then
-        self:Debug("sync", "Invalid section index for broadcast: " .. tostring(sectionIndex))
-        return false
-    end
-    
-    -- Get channel to broadcast to
+-- Enhanced BroadcastSectionChange function with timestamp support
+function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
+    -- Default channel selection (RAID or PARTY)
     local channel = "RAID"
     if GetNumRaidMembers() == 0 then
-        if GetNumPartyMembers() > 0 then
-            channel = "PARTY"
-        else
-            self:Debug("sync", "Not in a group, skipping broadcast")
-            return false
-        end
+        channel = "PARTY"
     end
     
-    -- Ensure the section index is valid
+    -- Skip if not in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("sync", "Not broadcasting section change - not in a group")
+        return false
+    end
+    
+    -- Ensure we have navigation data
     if self.navigation and self.navigation.handlers then
         local numSections = table.getn(self.navigation.handlers)
         if sectionIndex > numSections then
@@ -190,13 +180,24 @@ function TWRA:BroadcastSectionChange(sectionIndex)
         -- Get section name for better debug information
         local sectionName = self.navigation.handlers[sectionIndex] or "unknown"
         
-        -- Create the message with a simple protocol
-        local message = "SECTION:" .. sectionIndex
+        -- Create the message with timestamp, section name, and index
+        -- Format: SECTION:timestamp:sectionName:sectionIndex
+        local message = string.format("%s:%d:%s:%d", 
+            self.SYNC.COMMANDS.SECTION,
+            timestamp or 0,
+            sectionName,
+            sectionIndex)
         
         -- Send the message
-        SendAddonMessage(self.SYNC.PREFIX, message, channel)
-        self:Debug("sync", "Broadcasted section change: " .. sectionIndex .. " (" .. sectionName .. ") via " .. channel)
-        return true
+        if self.SendAddonMessage then
+            self:SendAddonMessage(message)
+            self:Debug("sync", "Broadcasted section change: " .. sectionIndex .. 
+                      " (" .. sectionName .. ") with timestamp " .. (timestamp or 0))
+            return true
+        else
+            self:Debug("error", "SendAddonMessage function not available")
+            return false
+        end
     else
         self:Debug("sync", "Cannot broadcast - navigation not initialized")
         return false

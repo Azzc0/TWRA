@@ -459,6 +459,7 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     
     local handlers = self.navigation.handlers
     local numSections = table.getn(handlers)
+    
     if numSections == 0 then 
         self:Debug("nav", "No sections available")
         return false
@@ -494,37 +495,25 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     
     -- Explicitly update UI elements that show section information
     if self.mainFrame and self.mainFrame:IsShown() then
-        -- Update menuButton text if it exists
-        if self.navigation.menuButton then
-            self.navigation.menuButton:SetText(sectionName)
-            -- If there's a text element inside menuButton, update that too
-            if self.navigation.menuButton.text then
-                self.navigation.menuButton.text:SetText(sectionName)
-            end
-            self:Debug("nav", "Updated menuButton text to: " .. sectionName)
-        end
-        
-        -- Also update handlerText for backward compatibility
         if self.navigation.handlerText then
             self.navigation.handlerText:SetText(sectionName)
-            self:Debug("nav", "Updated handlerText to: " .. sectionName)
+        end
+        
+        -- Also update dropdown text if it exists
+        if self.navigation.menuButton and self.navigation.menuButton.text then
+            self.navigation.menuButton.text:SetText(sectionName)
+        end
+        
+        -- And refresh the assignment table to show the new section
+        if self.RefreshAssignmentTable then
+            self:RefreshAssignmentTable()
         end
     end
     
-    -- Update display based on current view
-    if self.currentView == "options" then
-        if self.ClearRows then
-            self:ClearRows()
-        end
-    else
-        if self.FilterAndDisplayHandler then
-            self:FilterAndDisplayHandler(sectionName)
-        end
-    end
-    
-    -- Determine if we should show OSD
+    -- Determine if we should show OSD based on several factors
     local shouldShowOSD = false
-    -- Case 1: Main frame doesn't exist or isn't shown
+    
+    -- Case 1: Main frame is not visible
     if not self.mainFrame or not self.mainFrame:IsShown() then
         shouldShowOSD = true
     -- Case 2: We're in options view
@@ -558,8 +547,24 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     end
     
     -- Broadcast to group if sync enabled and not suppressed
+    -- Enhanced sync handling with timestamp support
     if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
-        self:BroadcastSectionChange(sectionIndex)
+        -- Get our current timestamp to include in broadcast
+        local timestamp = 0
+        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp then
+            timestamp = TWRA_SavedVariables.assignments.timestamp
+        end
+        
+        -- Log the broadcast attempt with timestamp
+        self:Debug("sync", "Broadcasting section change to section " .. sectionIndex .. 
+                  " (timestamp: " .. timestamp .. ")")
+        
+        -- Pass timestamp to broadcast function
+        self:BroadcastSectionChange(sectionIndex, timestamp)
+    elseif suppressSync then
+        self:Debug("sync", "Section change broadcast suppressed for section " .. sectionIndex)
+    elseif not self.SYNC or not self.SYNC.liveSync then
+        self:Debug("sync", "Section change not broadcast - sync disabled")
     end
     
     -- If enabled, update tanks

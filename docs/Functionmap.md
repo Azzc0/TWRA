@@ -729,14 +729,21 @@ Sends an addon message.
 **Used in:**
 - Multiple sync functions
 
-### TWRA:BroadcastSectionChange(sectionIndex)
+### TWRA:BroadcastSectionChange(sectionIndex, timestamp)
 Broadcasts section change to group.
 
 **Arguments:**
 - sectionIndex: New section index
+- timestamp: Timestamp of the data for sync comparison
+
+**Notes:**
+- Formats message with section name, index and timestamp
+- Only broadcasts if in a group (raid or party)
+- Enhanced to include timestamp for sync comparison
+- Returns true/false indicating success
 
 **Used in:**
-- TWRA.lua (NavigateToSection)
+- core/Core.lua (NavigateToSection)
 
 ### TWRA:OnGroupChanged()
 Handles group composition changes.
