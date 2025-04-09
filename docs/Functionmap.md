@@ -133,12 +133,20 @@ Decodes Base64 data to its original format.
 
 **Arguments:**
 - base64Str: Base64 string to decode
-- syncTimestamp: Optional timestamp for sync operations
-- noAnnounce: Boolean to suppress announcements
+- syncTimestamp: Optional timestamp for sync operations (defaults to nil)
+- noAnnounce: Boolean to suppress announcements (defaults to nil)
+
+**Returns:**
+- Decoded data table or nil if decoding failed
+
+**Notes:**
+- When syncTimestamp is provided, automatically saves the data with that timestamp
+- Used for both manual imports and sync operations
 
 **Used in:**
 - TWRA.lua (LoadSavedAssignments)
 - ui/Options.lua (import function)
+- sync/SyncHandlers.lua (data synchronization)
 
 ## Example.lua
 ### TWRA:LoadExampleData()
@@ -193,13 +201,20 @@ Saves assignment data to SavedVariables with several options.
 
 **Arguments:**
 - data: Assignment data to save
-- sourceString: Source identifier
-- originalTimestamp: Optional timestamp
-- noAnnounce: Boolean to suppress announcement
+- sourceString: Source identifier (original Base64 string or special identifiers like "example_data")
+- originalTimestamp: Optional timestamp (defaults to current time, or 0 for example data)
+- noAnnounce: Boolean to suppress announcement (defaults to false)
+
+**Notes:**
+- Handles timestamp tracking for sync operations
+- Sets timestamp to 0 for example data if not specified
+- Rebuilds navigation after saving
+- Broadcasts to group if not suppressed and in a group
 
 **Used in:**
-- TWRA.lua
-- ui/Options.lua (import)
+- TWRA.lua (manual imports)
+- ui/Options.lua (import and example data)
+- sync/SyncHandlers.lua (sync operations)
 
 ### TWRA:LoadSavedAssignments()
 Loads saved assignments from SavedVariables.
@@ -576,6 +591,27 @@ Creates the export/import interface.
 
 **Used in:**
 - ui/Options.lua
+
+### TWRA:ImportString(importString, isSync, syncTimestamp)
+Imports a Base64 encoded string into the addon, supporting both manual and sync operations.
+
+**Arguments:**
+- importString: The Base64 encoded string to import
+- isSync: Boolean indicating if this is a sync operation (default: false)
+- syncTimestamp: Optional timestamp to use for sync operations
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Notes:**
+- Generates a timestamp for manual imports
+- Uses provided timestamp for sync operations
+- Cleans the import box and switches to main view after successful imports
+- Broadcasts data to group for manual imports if in a group
+
+**Used in:**
+- ui/Options.lua (import button handler)
+- sync/SyncHandlers.lua (sync operations)
 
 ## features/AutoTanks.lua
 ### TWRA:InitializeTankSync()

@@ -879,6 +879,8 @@ function TWRA:CreateOptionsInMainFrame()
             return
         end
         
+        self:Debug("data", "Importing data")
+        
         -- Save current section information before import
         local currentSectionName = nil
         local currentSectionIndex = 1
@@ -893,7 +895,7 @@ function TWRA:CreateOptionsInMainFrame()
         -- Try to decode the data
         local decodedData = self:DecodeBase64(importText)
         if not decodedData then
-            self:Debug("data", "Failed to decode data")
+            self:Debug("error", "Failed to decode data")
             return
         end
         
@@ -903,13 +905,22 @@ function TWRA:CreateOptionsInMainFrame()
         end
         
         if self.SaveAssignments then
-            self:SaveAssignments(decodedData, importText)
+            -- Generate timestamp for this manual import
+            local timestamp = time()
+            self:SaveAssignments(decodedData, importText, timestamp)
+            self:Debug("data", "Import saved with timestamp: " .. timestamp)
+            
+            -- Clear the import box
+            importBox:SetText("")
+            importBox:ClearFocus()
         end
         
-        -- Restore section preference if possible
+        -- Make sure navigation is rebuilt
+        self:RebuildNavigation()
+        
+        -- Try to restore previous section if possible
+        local sectionFound = false
         if self.navigation and self.navigation.handlers then
-            local sectionFound = false
-            
             -- Try to find by name first (more reliable)
             if currentSectionName then
                 for i, name in ipairs(self.navigation.handlers) do
@@ -939,19 +950,13 @@ function TWRA:CreateOptionsInMainFrame()
             end
         end
         
-        -- Success message and cleanup
+        -- Success message
         self:Debug("data", "Assignment data imported successfully")
-        importBox:SetText("")
         
         -- Switch to main view
         if self.ShowMainView then
             self:ShowMainView()
         end
-    end)
-    
-    -- Clear button behavior
-    clearBtn:SetScript("OnClick", function()
-        importBox:SetText("")
     end)
     
     -- Example button behavior
@@ -963,9 +968,10 @@ function TWRA:CreateOptionsInMainFrame()
         
         -- Load example data
         if self.LoadExampleData and self:LoadExampleData() then
-            -- Save the example assignments
+            -- Save the example assignments with timestamp 0
             if self.SaveAssignments then
-                self:SaveAssignments(self.EXAMPLE_DATA, "example_data", nil, true)
+                self:SaveAssignments(self.EXAMPLE_DATA, "example_data", 0, true)
+                self:Debug("data", "Example data loaded with timestamp 0")
             end
             
             self:Debug("ui", "Example data loaded successfully!")

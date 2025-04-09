@@ -102,7 +102,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     
     -- Safety check for minimum length
     if string.len(base64Str) < 4 then
-        self:Debug("error", "Decode failed - string too short", true)
+        self:Debug("error", "Decode failed - string too short: " .. string.len(base64Str), true)
         return nil
     end
     

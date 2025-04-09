@@ -785,6 +785,12 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     local isExampleData = (sourceString == "example_data" or self:IsExampleData(cleanedData))
     self.usingExampleData = isExampleData
     
+    -- Set timestamp to 0 for example data if not explicitly provided
+    if isExampleData and originalTimestamp == nil then
+        timestamp = 0
+        self:Debug("data", "Using timestamp 0 for example data")
+    end
+    
     -- Rebuild navigation with new section names
     self:RebuildNavigation()
     
@@ -802,6 +808,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     
     self:Debug("nav", "SaveAssignments - Saved with section: " .. 
                (currentSectionName or "None") .. " (index: " .. currentSectionIndex .. ")")
+    self:Debug("data", "Data saved with timestamp: " .. timestamp)
     
     -- Skip announcement if noAnnounce is true
     if noAnnounce then return end
