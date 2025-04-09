@@ -115,12 +115,27 @@ function TWRA:UpdateTanks()
     end
     
     -- Clear existing tanks first
-    for i = 1, 10 do
-        oRALMainTank:Remove(i)
-    end
-    if GetNumRaidMembers() > 0 then
-        SendAddonMessage("CTRA", "MT CLEAR", "RAID")
-    end
+    SendAddonMessage("CTRA", "MT CLEAR", "RAID")
+    -- This block does it but it's verbose
+    -- for i = 1, 10 do
+    --     oRALMainTank:Remove(i)
+    -- end
+
+    -- This block might work
+    -- if oRA2 and oRA2.mainTank and oRA2.mainTank.tanks then
+    --     -- Clear all tanks silently
+    --     wipe(oRA2.mainTank.tanks)
+        
+    --     -- If you need to update the GUI as well
+    --     if oRA2.mainTank.UpdateDisplay then
+    --         oRA2.mainTank:UpdateDisplay()
+    --     end
+    -- end
+
+
+    -- if GetNumRaidMembers() > 0 then
+    --     SendAddonMessage("CTRA", "MT CLEAR", "RAID")
+    -- end
     
     -- Second pass: assign tanks in order
     self:Debug("tank", "Setting " .. table.getn(uniqueTanks) .. " tanks")

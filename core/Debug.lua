@@ -30,7 +30,6 @@ TWRA.earlyErrors = TWRA.earlyErrors or {}
 TWRA.worldLoaded = false -- Track if player has entered world
 
 -- Global error handler to capture early errors 
--- (Will be replaced with our proper error handler once addon is fully loaded)
 function TWRA_CaptureEarlyError(message)
     -- Create our addon table if it doesn't exist
     TWRA = TWRA or {}

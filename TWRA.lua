@@ -48,7 +48,8 @@ function TWRA:RebuildNavigation()
     -- First pass: collect sections in the order they appear in the data
     for i = 1, table.getn(self.fullData) do
         local sectionName = self.fullData[i][1]
-        if sectionName and sectionName ~= "" and not seenSections[sectionName] then
+        -- Add explicit check for non-empty strings (trim whitespace too)
+        if sectionName and sectionName ~= "" and string.gsub(sectionName, "%s", "") ~= "" and not seenSections[sectionName] then
             seenSections[sectionName] = true
             table.insert(self.navigation.handlers, sectionName)
         end
@@ -136,6 +137,64 @@ function TWRA:Initialize()
     end
 end
 
+-- Add this utility function to clean data at all entry points
+function TWRA:CleanAssignmentData(data, isTableFormat)
+    self:Debug("data", "Cleaning assignment data")
+    
+    if isTableFormat then
+        -- Handle table format (section => rows)
+        local cleanedData = {}
+        for section, rows in pairs(data) do
+            -- Only include non-empty section names (after thorough whitespace trimming)
+            if section and section ~= "" and string.gsub(section, "%s", "") ~= "" then
+                -- Also filter out any empty rows for this section
+                local filteredRows = {}
+                for i = 1, table.getn(rows) do
+                    -- Filter out completely empty rows
+                    local isEmptyRow = true
+                    for j = 1, table.getn(rows[i]) do
+                        if rows[i][j] and rows[i][j] ~= "" then
+                            isEmptyRow = false
+                            break
+                        end
+                    end
+                    
+                    if not isEmptyRow then
+                        table.insert(filteredRows, rows[i])
+                    else
+                        self:Debug("data", "Skipping empty row in section: " .. section)
+                    end
+                end
+                
+                -- Only include sections that have at least one non-empty row
+                if table.getn(filteredRows) > 0 then
+                    cleanedData[section] = filteredRows
+                else
+                    self:Debug("data", "Skipping section with only empty rows: " .. section)
+                end
+            else
+                self:Debug("data", "Skipping empty section name")
+            end
+        end
+        return cleanedData
+    else
+        -- Handle flat format (array of rows)
+        local cleanedData = {}
+        if data then
+            for i = 1, table.getn(data) do
+                -- Only include rows that have a valid section name
+                if data[i] and data[i][1] and data[i][1] ~= "" and string.gsub(data[i][1], "%s", "") ~= "" then
+                    table.insert(cleanedData, data[i])
+                else
+                    -- Log that we're skipping an empty section
+                    self:Debug("data", "Skipping row with empty section name at index " .. i)
+                end
+            end
+        end
+        return cleanedData
+    end
+end
+
 -- Fix the SaveAssignments function to properly handle example data
 function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     if not data or not sourceString then return end
@@ -160,19 +219,22 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     -- Store original data for debugging
     local originalData = self.fullData
     
-    -- Update our full data in flat format for use in the current session
-    self.fullData = data
+    -- Clean the data using our centralized function
+    local cleanedData = self:CleanAssignmentData(data, false)
+    
+    -- Update our full data with the cleaned data
+    self.fullData = cleanedData
     
     -- Check if this is the example data and set the flag correctly
-    local isExampleData = (sourceString == "example_data" or self:IsExampleData(data))
+    local isExampleData = (sourceString == "example_data" or self:IsExampleData(cleanedData))
     self.usingExampleData = isExampleData
     
     -- Rebuild navigation before saving to get new section names
     self:RebuildNavigation()
     
-    -- Save the data, source string, and current section index and example flag
+    -- Save the cleaned data, source string, and current section index and example flag
     TWRA_SavedVariables.assignments = {
-        data = data,
+        data = cleanedData,
         source = sourceString,
         timestamp = timestamp,
         currentSection = currentSectionIndex,
@@ -209,8 +271,8 @@ function TWRA:LoadSavedAssignments()
         return self:LoadExampleData()
     end
     
-    -- Load the saved data
-    self.fullData = saved.data
+    -- Load and clean the saved data
+    self.fullData = self:CleanAssignmentData(saved.data, false)
     
     -- Rebuild navigation
     self:RebuildNavigation()
@@ -823,11 +885,14 @@ function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
         -- Use the pending section if available
         local sectionToUse = self.SYNC.pendingSection or 1
         
-        -- Convert to flat format for use in current session
+        -- Clean the table data using our centralized function
+        local cleanedTableData = self:CleanAssignmentData(tableData, true)
+        
+        -- Convert cleaned table data to flat format for use in current session
         local flatData = {}
         
-        -- For each section
-        for section, rows in pairs(tableData) do
+        -- For each section in the cleaned data
+        for section, rows in pairs(cleanedTableData) do
             -- For each row in this section
             for i = 1, table.getn(rows) do
                 local newRow = {}
@@ -844,10 +909,10 @@ function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
             end
         end
         
-        -- Set the full data
+        -- Set the full data to the cleaned flat data
         self.fullData = flatData
         
-        -- Rebuild navigation
+        -- Rebuild navigation using the cleaned data
         self:RebuildNavigation()
         
         -- Get the section name for the current index
@@ -857,12 +922,12 @@ function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
             sectionName = self.navigation.handlers[sectionToUse]
         end
         
-        -- Store the structured data with section information
+        -- Store the cleaned structured data with section information
         TWRA_SavedVariables.assignments = {
-            data = tableData,
+            data = cleanedTableData,
             timestamp = timestamp,
             currentSection = sectionToUse,
-            currentSectionName = sectionName, -- Add this line to store the section name
+            currentSectionName = sectionName, 
             version = 1
         }
         
