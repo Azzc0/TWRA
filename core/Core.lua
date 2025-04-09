@@ -442,35 +442,36 @@ function TWRA:SendMessage(message, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg
     end
 end
 
--- Navigate to a specific section by index or name
+-- Consolidated NavigateToSection function with messaging system integration
 function TWRA:NavigateToSection(targetSection, suppressSync)
+    -- Extended debug output
+    self:Debug("nav", string.format("NavigateToSection(%s, %s) - mainFrame:%s, isShown:%s, currentView:%s",
+        tostring(targetSection), 
+        tostring(suppressSync),
+        tostring(self.mainFrame),
+        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
+        tostring(self.currentView)))
+    
     -- Ensure navigation exists
     if not self.navigation then
         self.navigation = { handlers = {}, currentIndex = 1 }
     end
     
-    -- If there are no handlers but we have data, rebuild the navigation
-    if table.getn(self.navigation.handlers or {}) == 0 and self.fullData then
-        self:RebuildNavigation()
-    end
-    
     local handlers = self.navigation.handlers
     local numSections = table.getn(handlers)
-    
-    if numSections == 0 then
+    if numSections == 0 then 
         self:Debug("nav", "No sections available")
         return false
     end
     
     local sectionIndex = targetSection
     local sectionName = nil
-    
     -- If sectionIndex is a string, find its index
     if type(targetSection) == "string" then
-        for i = 1, table.getn(handlers) do
-            if handlers[i] == targetSection then
+        for i, name in ipairs(handlers) do
+            if name == targetSection then
                 sectionIndex = i
-                sectionName = targetSection
+                sectionName = name
                 break
             end
         end
@@ -488,41 +489,67 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     -- Update current index
     self.navigation.currentIndex = sectionIndex
     
-    -- Always update the dropdown text
-    if self.navigation.handlerText then
-        self.navigation.handlerText:SetText(sectionName)
-    end
-    
-    -- Save current section
+    -- Save current section immediately
     self:SaveCurrentSection()
-    self:Debug("nav", "Navigated to section " .. sectionIndex .. " (" .. sectionName .. ")")
+    
+    -- Explicitly update UI elements that show section information
+    if self.mainFrame and self.mainFrame:IsShown() then
+        -- Update menuButton text if it exists
+        if self.navigation.menuButton then
+            self.navigation.menuButton:SetText(sectionName)
+            -- If there's a text element inside menuButton, update that too
+            if self.navigation.menuButton.text then
+                self.navigation.menuButton.text:SetText(sectionName)
+            end
+            self:Debug("nav", "Updated menuButton text to: " .. sectionName)
+        end
+        
+        -- Also update handlerText for backward compatibility
+        if self.navigation.handlerText then
+            self.navigation.handlerText:SetText(sectionName)
+            self:Debug("nav", "Updated handlerText to: " .. sectionName)
+        end
+    end
     
     -- Update display based on current view
     if self.currentView == "options" then
         if self.ClearRows then
             self:ClearRows()
         end
-        self:Debug("nav", "Skipping display update while in options view")
     else
         if self.FilterAndDisplayHandler then
             self:FilterAndDisplayHandler(sectionName)
         end
     end
     
-    -- Send internal message for OSD handling
-    local isMainFrameVisible = self.mainFrame and self.mainFrame:IsShown() or false
-    local inOptionsView = self.currentView == "options" or false
-    local fromSync = suppressSync == "fromSync"
+    -- Determine if we should show OSD
+    local shouldShowOSD = false
+    -- Case 1: Main frame doesn't exist or isn't shown
+    if not self.mainFrame or not self.mainFrame:IsShown() then
+        shouldShowOSD = true
+    -- Case 2: We're in options view
+    elseif self.currentView == "options" then
+        shouldShowOSD = true
+    -- Case 3: This is a sync-triggered navigation
+    elseif suppressSync == "fromSync" then
+        shouldShowOSD = true
+    end
     
-    -- Create a context table to pass all related info as a single argument
+    self:Debug("nav", string.format("shouldShowOSD=%s (mainFrame:%s, isShown:%s, currentView:%s)",
+        tostring(shouldShowOSD),
+        tostring(self.mainFrame),
+        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
+        self.currentView or "nil"))
+    
+    -- Create context for section change message - with forceUpdate flag
     local context = {
-        isMainFrameVisible = isMainFrameVisible,
-        inOptionsView = inOptionsView,
-        fromSync = fromSync,
-        forceUpdate = true  -- ALWAYS force OSD content update regardless of UI state
+        isMainFrameVisible = self.mainFrame and self.mainFrame:IsShown() or false,
+        inOptionsView = self.currentView == "options" or false,
+        fromSync = suppressSync == "fromSync",
+        forceUpdate = true  -- Always force OSD content update
     }
     
-    -- ALWAYS update the OSD with a message - moved outside conditional
+    -- Send section changed message which triggers OSD if appropriate
     self:SendMessage("SECTION_CHANGED", sectionName, sectionIndex, numSections, context)
     
     -- ALWAYS refresh OSD content, even if it isn't shown (it will be available to show on demand)
@@ -617,8 +644,8 @@ end
 
 -- Add empty placeholder functions that will be overridden
 function TWRA:DisplayCurrentSection()
-    -- This will be overridden by UI modules 
-    self:Debug("ui", "DisplayCurrentSection placeholder called")
+    -- This is a placeholder that will be overridden by the implementation in ui/OSD.lua
+    self:Debug("ui", "DisplayCurrentSection placeholder called - implementation should be in ui/OSD.lua")
 end
 
 -- Debug function placeholder in case Debug.lua hasn't loaded yet
@@ -725,7 +752,7 @@ function TWRA:ResetUI()
     self:Debug("ui", "UI reset complete")
 end
 
--- Fix the SaveAssignments function to properly preserve current section
+-- Consolidated SaveAssignments function incorporating both implementations
 function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     if not data or not sourceString then return end
     
@@ -744,34 +771,37 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
                   currentSectionIndex .. " (" .. (currentSectionName or "unknown") .. ")")
     end
     
-    -- Store the section information as pending for post-import navigation
+    -- Remember the section name for post-import navigation
     self.pendingSectionName = currentSectionName
     self.pendingSectionIndex = currentSectionIndex
     
-    -- Update our full data in flat format for use in the current session
-    self.fullData = data
+    -- Clean the data using our centralized function
+    local cleanedData = self:CleanAssignmentData(data, false)
     
-    -- Check if this is the example data and set flag accordingly
-    local isExampleData = (sourceString == "example_data" or self:IsExampleData(data))
+    -- Update our full data with the cleaned data
+    self.fullData = cleanedData
+    
+    -- Check if this is the example data and set the flag correctly
+    local isExampleData = (sourceString == "example_data" or self:IsExampleData(cleanedData))
     self.usingExampleData = isExampleData
     
     -- Rebuild navigation with new section names
     self:RebuildNavigation()
     
-    -- Save the data, source string, and timestamps
+    -- Save the cleaned data, source string, and current section index and example flag
     TWRA_SavedVariables.assignments = {
-        data = data,
+        data = cleanedData,
         source = sourceString,
         timestamp = timestamp,
         currentSection = currentSectionIndex,
-        currentSectionName = currentSectionName, -- Store name for better restoration
+        currentSectionName = currentSectionName, -- Store section name for better restoration
         version = 1,
         isExample = isExampleData,
         usingExampleData = isExampleData
     }
     
     self:Debug("nav", "SaveAssignments - Saved with section: " .. 
-                (currentSectionName or "unknown") .. " (" .. currentSectionIndex .. ")")
+               (currentSectionName or "None") .. " (index: " .. currentSectionIndex .. ")")
     
     -- Skip announcement if noAnnounce is true
     if noAnnounce then return end

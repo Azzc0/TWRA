@@ -1080,31 +1080,6 @@ function TWRA:ClearFooters()
     self.mainFrame:SetHeight(300)
 end
 
--- Add after other UI functions
-function TWRA:DisplayCurrentSection()
-    -- If we're in options view, don't try to display sections
-    if self.currentView == "options" then
-        TWRA:Debug("ui", "Skipping display update while in options view")
-        return
-    end
-    
-    -- Make sure we have navigation
-    if not self.navigation or not self.navigation.currentIndex or not self.navigation.handlers then
-        TWRA:Debug("error", "Can't display section - navigation not initialized")
-        return
-    end
-    
-    -- Get current handler from navigation
-    local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
-    if not currentHandler then
-        TWRA:Debug("error", "Can't display section - invalid current index")
-        return
-    end
-    
-    -- Call the actual display function
-    self:FilterAndDisplayHandler(currentHandler)
-end
-
 -- Modify the GetPlayerRelevantRows function to work with example data
 function TWRA:GetPlayerRelevantRows(sectionData)
     if not sectionData then return {} end

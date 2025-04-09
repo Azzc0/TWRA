@@ -664,3 +664,77 @@ function TWRA:DebugOSDElements()
     self:Debug("osd", "Content container height: " .. frame.contentContainer:GetHeight())
     self:Debug("osd", "Frame total height: " .. frame:GetHeight())
 end
+
+-- Centralized DisplayCurrentSection function - handles all display cases
+function TWRA:DisplayCurrentSection()
+    self:Debug("ui", "DisplayCurrentSection called")
+    
+    -- Check if we have data to display
+    if not self.fullData or not self.navigation then
+        self:Debug("ui", "No data or navigation available")
+        return
+    end
+    
+    -- Get current section data
+    local currentIndex = self.navigation.currentIndex or 1
+    local numHandlers = self.navigation.handlers and table.getn(self.navigation.handlers) or 0
+    
+    if numHandlers == 0 then
+        self:Debug("ui", "No sections available")
+        return
+    end
+    
+    -- Get current section name
+    local sectionName = self.navigation.handlers[currentIndex]
+    if not sectionName then
+        self:Debug("ui", "Invalid section index: " .. currentIndex)
+        return
+    end
+    
+    self:Debug("ui", "Displaying section: " .. sectionName .. " (" .. currentIndex .. "/" .. numHandlers .. ")")
+    
+    -- Update UI components in main frame
+    if self.mainFrame and self.mainFrame:IsShown() then
+        -- Update section dropdown menu button text directly
+        if self.navigation.menuButton then
+            self.navigation.menuButton:SetText(sectionName)
+            -- Also update the text element inside menuButton if it exists
+            if self.navigation.menuButton.text then
+                self.navigation.menuButton.text:SetText(sectionName)
+            end
+            self:Debug("ui", "Updated menuButton text to: " .. sectionName)
+        end
+        
+        -- Update section navigation text if it exists (for backward compatibility)
+        if self.navigation.handlerText then
+            self.navigation.handlerText:SetText(sectionName)
+        end
+        
+        -- Update main frame data rows
+        if self.FilterAndDisplayHandler then
+            self:FilterAndDisplayHandler(sectionName)
+        end
+        
+        -- Update navigation buttons
+        if self.UpdateNavigationButtons then
+            self:UpdateNavigationButtons()
+        end
+    end
+    
+    -- Always update OSD content, even if main frame is not shown
+    -- This ensures OSD has current data when toggled
+    if self.UpdateOSDContent then
+        self:UpdateOSDContent(sectionName, currentIndex, numHandlers)
+    end
+    
+    -- Show OSD if we're supposed to
+    if self.ShouldShowOSD and self:ShouldShowOSD() then
+        -- Show the OSD directly
+        if self.ShowOSD then
+            self:ShowOSD(self.OSD and self.OSD.duration or 2)
+        end
+    end
+    
+    self:Debug("ui", "DisplayCurrentSection complete")
+    return true
+end

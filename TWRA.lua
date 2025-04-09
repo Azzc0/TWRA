@@ -195,73 +195,6 @@ function TWRA:CleanAssignmentData(data, isTableFormat)
     end
 end
 
--- Fix the SaveAssignments function to properly handle example data
-function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
-    if not data or not sourceString then return end
-    
-    -- Use provided timestamp or generate new one
-    local timestamp = originalTimestamp or time()
-    
-    -- Store current section before updating
-    local currentSectionIndex = 1
-    local currentSectionName = nil
-    if self.navigation and self.navigation.currentIndex then
-        currentSectionIndex = self.navigation.currentIndex
-        if self.navigation.handlers and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
-            currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
-        end
-    end
-    
-    -- Remember the section name for post-import navigation
-    self.pendingSectionName = currentSectionName
-    self.pendingSectionIndex = currentSectionIndex
-    
-    -- Store original data for debugging
-    local originalData = self.fullData
-    
-    -- Clean the data using our centralized function
-    local cleanedData = self:CleanAssignmentData(data, false)
-    
-    -- Update our full data with the cleaned data
-    self.fullData = cleanedData
-    
-    -- Check if this is the example data and set the flag correctly
-    local isExampleData = (sourceString == "example_data" or self:IsExampleData(cleanedData))
-    self.usingExampleData = isExampleData
-    
-    -- Rebuild navigation before saving to get new section names
-    self:RebuildNavigation()
-    
-    -- Save the cleaned data, source string, and current section index and example flag
-    TWRA_SavedVariables.assignments = {
-        data = cleanedData,
-        source = sourceString,
-        timestamp = timestamp,
-        currentSection = currentSectionIndex,
-        currentSectionName = currentSectionName, -- Store section name for better restoration
-        version = 1,
-        isExample = isExampleData,
-        usingExampleData = isExampleData
-    }
-    
-    -- Debug output for section navigation
-    self:Debug("nav", "SaveAssignments - Previous section: " .. (currentSectionName or "None") .. 
-                      " (index: " .. currentSectionIndex .. ")")
-    
-    -- Skip announcement if noAnnounce is true
-    if noAnnounce then return end
-    
-    -- Announce update to group if we're in one
-    if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-        local announceMsg = string.format("%s:%d:%s", 
-            self.SYNC.COMMANDS.ANNOUNCE,
-            timestamp,
-            UnitName("player"))
-        
-        self:SendAddonMessage(announceMsg)
-    end
-end
-
 -- Enhanced LoadSavedAssignments to update OSD after loading
 function TWRA:LoadSavedAssignments()
     local saved = TWRA_SavedVariables.assignments
@@ -370,117 +303,6 @@ function TWRA:GetPlayerStatus(name)
     end
     
     return false, nil
-end
-
--- Update to use Debug)
-function TWRA:UpdateTanks()
-    -- Debug output our sync state
-    self:Debug("tank", "Updating tanks for section " .. 
-        self.navigation.handlers[self.navigation.currentIndex])
-    
-    -- Check if oRA2 is available
-    if not self:IsORA2Available() then
-        self:Debug("error", "oRA2 is required for tank management")
-        return
-    end
-    
-    -- Check if we have data
-    if not self.fullData or table.getn(self.fullData) == 0 then
-        self:Debug("error", "No data to update tanks from")
-        return
-    end
-    
-    -- Get current section from navigation
-    local currentSection = nil
-    if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
-        currentSection = self.navigation.handlers[self.navigation.currentIndex]
-    end
-    
-    if not currentSection then
-        self:Debug("error", "No section selected")
-        return
-    end
-    
-    self:Debug("tank", "Processing tanks for section " .. currentSection)
-    
-    -- Find header row for column names
-    local headerRow = nil
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
-            headerRow = self.fullData[i]
-            break
-        end
-    end
-    
-    if not headerRow then
-        self:Debug("error", "Invalid data format - header row not found")
-        return
-    end
-    
-    -- Find tank columns for current section
-    local tankColumns = {}
-    for k = 4, table.getn(headerRow) do
-        if headerRow[k] == "Tank" then
-            self:Debug("tank", "Found tank column at index " .. k)
-            table.insert(tankColumns, k)
-        end
-    end
-    
-    if table.getn(tankColumns) == 0 then
-        self:Debug("error", "No tank columns found in section " .. currentSection)
-        return
-    end
-    
-    -- First pass: collect unique tanks in order
-    local uniqueTanks = {}
-    for _, columnIndex in ipairs(tankColumns) do  -- Fixed typo here (was ttankColumns)
-        for i = 1, table.getn(self.fullData) do
-            local row = self.fullData[i]
-            if row[1] == currentSection and 
-               row[2] ~= "Icon" and 
-               row[2] ~= "Note" and 
-               row[2] ~= "Warning" then
-                if row[columnIndex] and row[columnIndex] ~= "" then
-                    local tankName = row[columnIndex]
-                    local alreadyAdded = false
-                    
-                    -- Check if tank is already in our list
-                    for _, existingTank in ipairs(uniqueTanks) do
-                        if existingTank == tankName then
-                            alreadyAdded = true
-                            break
-                        end
-                    end
-                    
-                    -- Add tank if unique and we haven't hit the limit
-                    if not alreadyAdded and table.getn(uniqueTanks) < 10 then
-                        table.insert(uniqueTanks, tankName)
-                    end
-                end 
-            end
-        end
-    end
-    
-    -- Clear existing tanks first
-    for i = 1, 10 do
-        oRA.maintanktable[i] = nil
-    end
-    if GetNumRaidMembers() > 0 then
-        SendAddonMessage("CTRA", "MT CLEAR", "RAID")
-    end
-    
-    -- Second pass: assign tanks in order
-    self:Debug("tank", "Setting " .. table.getn(uniqueTanks) .. " tanks")
-    for i = 1, table.getn(uniqueTanks) do
-        local tankName = uniqueTanks[i]
-        oRA.maintanktable[i] = tankName
-        self:Debug("tank", "Set MT" .. i .. " to " .. tankName)
-        if GetNumRaidMembers() > 0 then
-            SendAddonMessage("CTRA", "SET " .. i .. " " .. tankName, "RAID")
-        end
-    end
-    
-    self:Debug("tank", "Tank updates completed")
 end
 
 -- Announcement functionality - completely rewritten
@@ -859,16 +681,9 @@ function TWRA:HandleSectionCommand(args, sender)
     elseif timestamp == ourTimestamp then
         -- Timestamps match - navigate to section
         if self.navigation and sectionIndex <= table.getn(self.navigation.handlers) then
-            -- Set the current section
-            self.navigation.currentIndex = sectionIndex
-            
-            -- Save it immediately
-            self:SaveCurrentSection()
-            
-            -- Update display
-            if self.DisplayCurrentSection then
-                self:DisplayCurrentSection()
-            end
+            -- Use NavigateToSection instead of manually setting values
+            -- This ensures all UI elements are updated properly
+            self:NavigateToSection(sectionIndex, "fromSync")
             
             DEFAULT_CHAT_FRAME:AddMessage("TWRA: Changed to section " .. sectionIndex ..
                 " (" .. self.navigation.handlers[sectionIndex] .. ") by " .. sender)
@@ -931,14 +746,9 @@ function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
             version = 1
         }
         
-        -- Set current section
+        -- Navigate to the section properly using NavigateToSection
         if self.navigation then
-            self.navigation.currentIndex = sectionToUse
-            
-            -- Update UI
-            if self.DisplayCurrentSection then
-                self:DisplayCurrentSection()
-            end
+            self:NavigateToSection(sectionToUse, "fromSync")
         end
         
         -- Clear pending section after use
@@ -951,110 +761,6 @@ end
 -- Add this to your dropdown menu selection handler if it exists
 function TWRA:SectionDropdownSelected(index)
     self:NavigateToSection(index)  -- This will now save the section
-end
-
--- Enhanced NavigateToSection function with better debugging
-function TWRA:NavigateToSection(targetSection, suppressSync)
-    -- Extended debug output
-    self:Debug("nav", string.format("NavigateToSection(%s, %s) - mainFrame:%s, isShown:%s, currentView:%s",
-        tostring(targetSection), 
-        tostring(suppressSync),
-        tostring(self.mainFrame),
-        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
-        tostring(self.currentView)))
-    
-    -- Ensure navigation exists
-    if not self.navigation then
-        self.navigation = { handlers = {}, currentIndex = 1 }
-    end
-    
-    local handlers = self.navigation.handlers
-    local numSections = table.getn(handlers)
-    if numSections == 0 then 
-        self:Debug("nav", "No sections available")
-        return false
-    end
-    
-    local sectionIndex = targetSection
-    local sectionName = nil
-    -- If sectionIndex is a string, find its index
-    if type(targetSection) == "string" then
-        for i, name in ipairs(handlers) do
-            if name == targetSection then
-                sectionIndex = i
-                sectionName = name
-                break
-            end
-        end
-    else
-        -- Make sure targetSection is within bounds
-        sectionIndex = math.max(1, math.min(numSections, targetSection))
-        sectionName = handlers[sectionIndex]
-    end
-    
-    if not sectionName then
-        self:Debug("nav", "Invalid section index: "..tostring(targetSection))
-        return false
-    end
-    
-    -- Update current index
-    self.navigation.currentIndex = sectionIndex
-    
-    -- Save current section immediately
-    self:SaveCurrentSection()
-    
-    -- Update display based on current view
-    if self.currentView == "options" then
-        if self.ClearRows then
-            self:ClearRows()
-        end
-    else
-        if self.FilterAndDisplayHandler then
-            self:FilterAndDisplayHandler(sectionName)
-        end
-    end
-    
-    -- Determine if we should show OSD
-    local shouldShowOSD = false
-    -- Case 1: Main frame doesn't exist or isn't shown
-    if not self.mainFrame or not self.mainFrame:IsShown() then
-        shouldShowOSD = true
-    -- Case 2: We're in options view
-    elseif self.currentView == "options" then
-        shouldShowOSD = true
-    -- Case 3: This is a sync-triggered navigation
-    elseif suppressSync == "fromSync" then
-        shouldShowOSD = true
-    end
-    
-    self:Debug("nav", string.format("shouldShowOSD=%s (mainFrame:%s, isShown:%s, currentView:%s)",
-        tostring(shouldShowOSD),
-        tostring(self.mainFrame),
-        self.mainFrame and tostring(self.mainFrame:IsShown()) or "nil",
-        self.currentView or "nil"))
-    
-    -- Create context for section change message - with forceUpdate flag
-    local context = {
-        isMainFrameVisible = self.mainFrame and self.mainFrame:IsShown() or false,
-        inOptionsView = self.currentView == "options" or false,
-        fromSync = suppressSync == "fromSync",
-        forceUpdate = true  -- Always force OSD content update
-    }
-    
-    -- Send section changed message which triggers OSD if appropriate
-    self:SendMessage("SECTION_CHANGED", sectionName, sectionIndex, numSections, context)
-    
-    -- Broadcast to group if sync enabled and not suppressed
-    if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
-        self:BroadcastSectionChange(sectionIndex)
-    end
-    
-    -- If enabled, update tanks
-    if self.SYNC and self.SYNC.tankSync and self:IsORA2Available() then
-        self:UpdateTanks()
-    end
-    
-    return true
 end
 
 -- Enhanced ToggleMainFrame function with better debugging
@@ -1079,6 +785,12 @@ function TWRA:ToggleMainFrame()
         -- Debug current view status
         self:Debug("ui", "Current view is: " .. (self.currentView or "nil"))
         
+        -- Initialize if needed
+        if not self.initialized then
+            self:LoadSavedAssignments()
+            self.initialized = true
+        end
+        
         -- Force update content
         if self.currentView == "options" then
             self:Debug("ui", "Switching to main view from options view")
@@ -1094,7 +806,7 @@ end
 
 -- Improve ShowOptionsView to properly set current view and safely handle UI elements
 function TWRA:ShowOptionsView()
-    -- Set view state
+    -- Set view state first
     self.currentView = "options"
 
     -- Create options interface if it doesn't exist yet
@@ -1110,7 +822,7 @@ function TWRA:ShowOptionsView()
             end
         end
     end
-
+    
     -- Clear any footers and rows
     self:ClearFooters()
     self:ClearRows()
@@ -1124,32 +836,22 @@ function TWRA:ShowOptionsView()
         if self.navigation.handlerText then self.navigation.handlerText:Hide() end
     end
     
+    -- Hide other main view buttons
+    if self.announceButton then self.announceButton:Hide() end
+    if self.updateTanksButton then self.updateTanksButton:Hide() end
+    
     -- Reset frame height to default while in options
     self.mainFrame:SetHeight(300)
-
+    
     -- Change button text if options button exists
     if self.optionsButton then
         self.optionsButton:SetText("Back")
     end
     
-    -- -- Hide main view elements if they exist
-    -- if self.navigation then
-    --     if self.navigation.prevButton then self.navigation.prevButton:Hide() end
-    --     if self.navigation.nextButton then self.navigation.nextButton:Hide() end
-    --     if self.navigation.handlerText then self.navigation.handlerText:Hide() end
-    --     if self.navigation.dropdown and self.navigation.dropdown.container then
-    --         self.navigation.dropdown.container:Hide()
-    --     end
-    -- end
-    
-    -- Hide other main view buttons
-    if self.announceButton then self.announceButton:Hide() end
-    if self.updateTanksButton then self.updateTanksButton:Hide() end
-    
     self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
 end
 
--- Fix ShowMainView to better handle section restoration after import
+-- Fix ShowMainView to better handle section restoration after imports
 function TWRA:ShowMainView()
     -- Set view state first
     self.currentView = "main"
@@ -1163,11 +865,6 @@ function TWRA:ShowMainView()
         end
     end
     
-    -- Change button text if options button exists
-    if self.optionsButton then
-        self.optionsButton:SetText("Options")
-    end
-    
     -- Show navigation elements if they exist
     if self.navigation then
         if self.navigation.prevButton then self.navigation.prevButton:Show() end
@@ -1179,7 +876,6 @@ function TWRA:ShowMainView()
         end
     end
     
-
     -- Show other main view buttons
     if self.announceButton then self.announceButton:Show() end
     if self.updateTanksButton then self.updateTanksButton:Show() end
@@ -1276,11 +972,6 @@ function TWRA:ClearData()
     -- Clear rows
     self:ClearRows()
     
-    -- -- Clear navigation text if it exists -- we need this information for persistance during an import.
-    -- if self.navigation and self.navigation.handlerText then
-    --     self.navigation.handlerText:SetText("")
-    -- end
-    
     -- Clear UI elements if they exist
     if self.mainFrame then
         -- Clear highlights and footers
@@ -1293,7 +984,6 @@ function TWRA:ClearData()
                 if footer.texture then
                     footer.texture:Hide()
                 else
-                    if footer.bg then footer.bg:Hide() end
                     if footer.icon then footer.icon:Hide() end
                     if footer.text then footer.text:Hide() end
                 end
@@ -1312,10 +1002,23 @@ function TWRA:ClearData()
         -- Clear action buttons
         if self.announceButton then self.announceButton:Hide() end
         if self.updateTanksButton then self.updateTanksButton:Hide() end
+        
+        -- Reset any example-related flags
+        self.usingExampleData = false
+        
+        self:Debug("data", "Data cleared successfully")
+    end
+end
+
+-- Helper function to determine if OSD should be shown
+function TWRA:ShouldShowOSD()
+    -- Only show OSD if it's enabled
+    if not self.OSD or not self.OSD.enabled then
+        return false
     end
     
-    -- Reset any example-related flags
-    self.usingExampleData = false
-    
-    self:Debug("data", "Data cleared successfully")
+    -- Show OSD when main frame isn't visible or we're in options view
+    return not self.mainFrame or 
+           not self.mainFrame:IsShown() or 
+           self.currentView == "options"
 end

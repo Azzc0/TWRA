@@ -330,6 +330,18 @@ Clears all current data.
 **Used in:**
 - ui/Options.lua (before import)
 
+### TWRA:ShouldShowOSD()
+Helper function that determines if the On-Screen Display should be shown based on current UI state.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating whether OSD should be shown
+
+**Used in:**
+- TWRA:DisplayCurrentSection()
+
 ## core/Core.lua
 ### TWRA:OnLoad()
 Handler for addon load event.
@@ -464,13 +476,28 @@ Updates OSD content with current section information.
 - totalSections: Total number of sections
 
 **Used in:**
-- TWRA.lua (LoadSavedAssignments)
+- TWRA.lua (DisplayCurrentSection)
 
 ### TWRA:ToggleOSD()
 Toggles OSD visibility.
 
 **Used in:**
 - Keybindings
+
+### TWRA:ShouldShowOSD()
+Helper function that determines if OSD should be shown.
+
+**Used in:**
+- DisplayCurrentSection
+
+### TWRA:DisplayCurrentSection()
+Centralized function that displays the current section in all UI components, including the main frame and OSD.
+
+**Arguments:**
+- None
+
+**Used in:**
+- Multiple places throughout the addon
 
 ## ui/OSDContent.lua
 ### TWRA:PrepOSD(sectionData)
@@ -685,82 +712,33 @@ Handles group composition changes.
 # Duplicate functions
 Some functions are expected to have duplicates, the first instance is less complete version that gets called in init. But that is more of an exception than normal practice. Below we list all functions that have duplicate definition in the code base using the same structure as above and with an added description under the function name describing why there are duplicates.
 
-## TWRA.lua & core/Core.lua
+## Resolved Duplications
+The following functions were previously duplicated but have been consolidated:
+
 ### TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
-This function is duplicated in two primary files, creating confusion about which implementation is used.
+**Consolidated to:** core/Core.lua
 
-**Arguments:**
-- data: Assignment data to save
-- sourceString: Source identifier
-- originalTimestamp: Optional timestamp
-- noAnnounce: Boolean to suppress announcement
+This function was duplicated in TWRA.lua and core/Core.lua, creating confusion about which implementation was used. The consolidated version combines cleaning functionality, example data handling, and section preservation.
 
-**Used in:**
-- ui/Options.lua (import)
-
-**First defined in:** TWRA.lua  
-**Also defined in:** core/Core.lua
-
-**Issue:**
-The two implementations have slightly different logic. The TWRA.lua version adds cleaning functionality and example data handling, while the Core.lua version focuses on section preservation. Both versions store data in TWRA_SavedVariables.assignments, but with slightly different processing. This duplication has caused bugs where empty sections still appear in saved data.
-
-## TWRA.lua & core/Core.lua
 ### TWRA:NavigateToSection(targetSection, suppressSync)
-This navigation function is implemented in both files with different logic.
+**Consolidated to:** core/Core.lua
 
-**Arguments:**
-- targetSection: Section to navigate to (index or name)
-- suppressSync: Boolean to suppress sync broadcast
+This navigation function was implemented in both TWRA.lua and core/Core.lua with different logic. The consolidated version includes messaging system integration for consistent behavior.
 
-**Used in:**
-- Multiple places for section navigation
-
-**First defined in:** TWRA.lua  
-**Also defined in:** core/Core.lua
-
-**Issue:**
-The Core.lua version has additional messaging system integration not present in the TWRA.lua version. This can cause inconsistent behavior when navigating between sections depending on which function is called.
-
-## TWRA.lua & Bindings.lua
 ### TWRA:ToggleMainFrame()
-This function toggles the main window visibility.
+**Consolidated to:** TWRA.lua
 
-**Used in:**
-- Slash commands
-- Keybindings
+This function was duplicated in TWRA.lua and Bindings.lua. The consolidated version includes comprehensive debug output and view management functionality.
 
-**First defined in:** TWRA.lua  
-**Also defined in:** Bindings.lua
-
-**Issue:**
-The Bindings.lua version is simpler and lacks some of the debug output and view management of the TWRA.lua version. This can cause inconsistent behavior depending on how the frame is toggled.
-
-## TWRA.lua & features/AutoTanks.lua
 ### TWRA:UpdateTanks()
-Updates tank assignments in oRA2.
+**Consolidated to:** features/AutoTanks.lua
 
-**Used in:**
-- Navigation functions
-- UI button handlers
+This function was duplicated in TWRA.lua and features/AutoTanks.lua. The consolidated version provides consistent error handling and debug output.
 
-**First defined in:** TWRA.lua  
-**Also defined in:** features/AutoTanks.lua
-
-**Issue:**
-Both implementations contain similar logic but with different error handling and debug output. This can lead to inconsistent behavior when updating tanks.
-
-## ui/Frame.lua & ui/OSD.lua
 ### TWRA:DisplayCurrentSection()
-Displays the current section in the UI.
+**Relocated to:** ui/OSD.lua
 
-**Used in:**
-- Multiple places for UI updates
-
-**First defined in:** ui/Frame.lua
-**Also defined in:** ui/OSD.lua
-
-**Issue:**
-This key UI function has multiple implementations with varying levels of complexity. The function is critical for presenting the correct data to users, and having different implementations can lead to UI inconsistencies and bugs.
+This function was previously implemented in TWRA.lua but has been moved to ui/OSD.lua as it primarily deals with OSD functionality. The function now serves as a centralized way to update both the OSD display and the main UI elements (menuButton, handlerText) when changing sections. The placement in ui/OSD.lua makes architectural sense since OSD is the component most frequently updated during section changes.
 
 ## Recommendations for resolving duplication issues:
 

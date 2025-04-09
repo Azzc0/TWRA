@@ -24,6 +24,7 @@ function TWRA:IsORA2Available()
     return oRA and oRA.maintanktable ~= nil  -- Changed to lowercase
 end
 
+-- Consolidated UpdateTanks function with comprehensive functionality
 function TWRA:UpdateTanks()
     -- Debug output our sync state
     self:Debug("tank", "Updating tanks for section " .. 
@@ -31,13 +32,13 @@ function TWRA:UpdateTanks()
     
     -- Check if oRA2 is available
     if not self:IsORA2Available() then
-        self:Debug("tank", "oRA2 is required for tank management")
+        self:Debug("error", "oRA2 is required for tank management")
         return
     end
     
     -- Check if we have data
     if not self.fullData or table.getn(self.fullData) == 0 then
-        self:Debug("tank", "No data to update tanks from")
+        self:Debug("error", "No data to update tanks from")
         return
     end
     
@@ -48,7 +49,7 @@ function TWRA:UpdateTanks()
     end
     
     if not currentSection then
-        self:Debug("tank", "No section selected")
+        self:Debug("error", "No section selected")
         return
     end
     
@@ -64,35 +65,33 @@ function TWRA:UpdateTanks()
     end
     
     if not headerRow then
-        self:Debug("tank", "Invalid data format - header row not found")
+        self:Debug("error", "Invalid data format - header row not found")
         return
     end
     
     -- Find tank columns for current section
     local tankColumns = {}
-    -- Find Tank columns in this section's header
     for k = 4, table.getn(headerRow) do
         if headerRow[k] == "Tank" then
-            table.insert(tankColumns, k)
             self:Debug("tank", "Found tank column at index " .. k)
+            table.insert(tankColumns, k)
         end
     end
     
     if table.getn(tankColumns) == 0 then
-        self:Debug("tank", "No tank columns found in section " .. currentSection)
+        self:Debug("error", "No tank columns found in section " .. currentSection)
         return
     end
     
     -- First pass: collect unique tanks in order
     local uniqueTanks = {}
-    for _, columnIndex in ipairs(tankColumns) do  -- Fixed typo here (was ttankColumns)
+    for _, columnIndex in ipairs(tankColumns) do
         for i = 1, table.getn(self.fullData) do
             local row = self.fullData[i]
             if row[1] == currentSection and 
                row[2] ~= "Icon" and 
                row[2] ~= "Note" and 
                row[2] ~= "Warning" then
-                
                 if row[columnIndex] and row[columnIndex] ~= "" then
                     local tankName = row[columnIndex]
                     local alreadyAdded = false
@@ -109,32 +108,17 @@ function TWRA:UpdateTanks()
                     if not alreadyAdded and table.getn(uniqueTanks) < 10 then
                         table.insert(uniqueTanks, tankName)
                     end
-                end
+                end 
             end
         end
     end
     
     -- Clear existing tanks first
-    SendAddonMessage("CTRA", "MT CLEAR", "RAID")
-    -- This block does it but it's verbose
     -- for i = 1, 10 do
-    --     oRALMainTank:Remove(i)
+    --     oRA.maintanktable[i] = nil
     -- end
-
-    -- This block might work
-    -- if oRA2 and oRA2.mainTank and oRA2.mainTank.tanks then
-    --     -- Clear all tanks silently
-    --     wipe(oRA2.mainTank.tanks)
-        
-    --     -- If you need to update the GUI as well
-    --     if oRA2.mainTank.UpdateDisplay then
-    --         oRA2.mainTank:UpdateDisplay()
-    --     end
-    -- end
-
-
     -- if GetNumRaidMembers() > 0 then
-    --     SendAddonMessage("CTRA", "MT CLEAR", "RAID")
+        SendAddonMessage("CTRA", "MT CLEAR", "RAID")
     -- end
     
     -- Second pass: assign tanks in order

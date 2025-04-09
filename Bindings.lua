@@ -13,39 +13,6 @@ TWRA.KEYBIND = {
     initialized = false
 }
 
--- Toggle the main frame visibility
-function TWRA:ToggleMainFrame()
-    -- Make sure frame exists
-    if not self.mainFrame then
-        if self.CreateMainFrame then
-            self:CreateMainFrame()
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Error - Unable to create main frame")
-            return
-        end
-    end
-    
-    if self.mainFrame:IsShown() then
-        self.mainFrame:Hide()
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Window hidden")
-    else
-        self.mainFrame:Show()
-        
-        -- Force update content if first time opening
-        if not self.initialized then
-            self:LoadSavedAssignments()
-            self.initialized = true
-        end
-        
-        -- -- Make sure we're showing main view, not options. Commenting these. I want to show the options if I have the options open.
-        -- if self.currentView == "options" then
-        --     self:ShowMainView()
-        -- end
-        
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Window shown")
-    end
-end
-
 -- Simplified initialization function - only keep the basic key bindings
 function TWRA:InitializeBindings()
     -- Register for key events
