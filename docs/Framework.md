@@ -32,3 +32,6 @@ We've got these categories
 - "data" for data handling operations
 
 forceOutput and isDetail are booleans and pretty self explanatory
+
+# Function documentation
+We're keeping a function master index in docs/Functionmap.md. It needs to be updated as we make changes

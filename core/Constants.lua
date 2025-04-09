@@ -158,7 +158,7 @@ TWRA.ICONS = {
     ["Warning"] = {"Interface\\GossipFrame\\AvailableQuestIcon", 0, 1, 0, 1}, -- Updated to AvailableQuestIcon
     ["Note"] = {"Interface\\GossipFrame\\ActiveQuestIcon", 0, 1, 0, 1},       -- Updated to ActiveQuestIcon
     ["GUID"] = {"Interface\\Icons\\INV_Misc_Note_01", 0, 1, 0, 1},
-    ["Missing"] = {"Interface\\Buttons\\UI-CheckBox-Check", 0, 1, 0, 1},
+    ["Missing"] = {"Interface\\Buttons\\UI-GroupLoot-Pass-Up", 0, 1, 0, 1},
 }
 
 -- Colored text for raid markers in announcements
