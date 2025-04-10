@@ -11,6 +11,7 @@ TWRA.SYNC.pendingSection = nil -- Section to navigate to after sync
 TWRA.SYNC.lastRequestTime = 0 -- When we last requested data
 TWRA.SYNC.requestTimeout = 5 -- Seconds to wait between requests
 TWRA.SYNC.monitorMessages = false -- Monitor all addon messages
+TWRA.SYNC.justActivated = false -- Suppress initial broadcasts
 
 -- Command constants for addon messages
 TWRA.SYNC.COMMANDS = {
@@ -98,39 +99,19 @@ function TWRA:ActivateLiveSync()
     -- Enable message handling
     self:Debug("sync", "Live Sync fully activated")
     
-    -- Hook into section changes if they happen
-    if self.navigation and self.navigation.currentIndex then
-        self:Debug("sync", "Current section found: " .. self.navigation.currentIndex)
-        
-        -- Always broadcast current section when activating live sync, even if UI not shown
-        if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-            local currentSection = self.navigation.currentIndex
-            if currentSection and self.BroadcastSectionChange then
-                self:Debug("sync", "Broadcasting initial section: " .. currentSection)
-                self:BroadcastSectionChange(currentSection)
-            end
-        end
-    else
-        self:Debug("sync", "No current section available yet")
-    end
-    
     -- Ensure the option is saved in saved variables
     if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
     TWRA_SavedVariables.options.liveSync = true
     
-    -- Set up an OnUpdate function to ensure sync works even without UI
-    if not self.syncInitTimer then
-        self.syncInitTimer = self:ScheduleTimer(function()
-            -- This ensures we have proper sync regardless of UI state
-            if self.navigation and self.navigation.currentIndex and 
-               not self.syncInitialBroadcastSent and self.BroadcastSectionChange and
-               (GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0) then
-                self:Debug("sync", "Sending delayed initial broadcast")
-                self:BroadcastSectionChange(self.navigation.currentIndex)
-                self.syncInitialBroadcastSent = true
-            end
-        end, 3)  -- Generous delay to ensure everything is loaded
-    end
+    -- IMPORTANT: Do NOT broadcast current section immediately on login/reload
+    -- Flag that we've just activated so we don't broadcast automatically
+    self.SYNC.justActivated = true
+    
+    -- Clear this flag after a short delay
+    self:ScheduleTimer(function()
+        self.SYNC.justActivated = false
+        self:Debug("sync", "Initial section broadcast suppression cleared")
+    end, 5)
     
     return true
 end
@@ -158,8 +139,14 @@ function TWRA:DeactivateLiveSync()
     return true
 end
 
--- Enhanced BroadcastSectionChange function with timestamp support
+-- Enhanced BroadcastSectionChange function with timestamp support and login suppression
 function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
+    -- Skip if we've just activated (to prevent broadcasting on login)
+    if self.SYNC.justActivated then
+        self:Debug("sync", "Section change broadcast suppressed (just activated)")
+        return false
+    end
+    
     -- Default channel selection (RAID or PARTY)
     local channel = "RAID"
     if GetNumRaidMembers() == 0 then
@@ -207,26 +194,38 @@ function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
     end
 end
 
--- Process incoming addon communication messages
+-- Process incoming addon communication messages with reduced debugging spam
 function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
-    -- Global message monitoring for debugging
+    -- Only debug if it's our addon prefix or message monitoring is enabled
+    local isOurPrefix = (prefix == self.SYNC.PREFIX)
+    
+    -- Skip detailed debugging for non-TWRA messages unless monitoring is enabled
+    if not isOurPrefix and not self.SYNC.monitorMessages then
+        return
+    end
+    
+    -- Global message monitoring for debugging - keep this
     if self.SYNC.monitorMessages then
         -- Display all addon messages in a more visible way
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[ADDON MSG]|r |cFF33FF33" .. 
             prefix .. "|r from |cFF33FFFF" .. sender .. "|r: |cFFFFFFFF" .. message .. "|r")
     end
     
-    -- Check if message is from our addon
-    if prefix ~= self.SYNC.PREFIX then return end
+    -- If not our prefix, we're done
+    if not isOurPrefix then return end
     
     -- Skip our own messages
-    if sender == UnitName("player") then return end
+    if sender == UnitName("player") then 
+        self:Debug("sync", "Ignoring own message: " .. message)
+        return 
+    end
     
-    -- Forward to our message handler
+    -- Forward to our message handler - reduced debug output here
     if self.HandleAddonMessage then
+        -- Only show detailed debug for our own prefix
         self:HandleAddonMessage(message, distribution, sender)
     else
-        self:Debug("sync", "HandleAddonMessage function not available, message received but not processed")
+        self:Debug("error", "HandleAddonMessage function not available")
     end
 end
 
@@ -253,6 +252,97 @@ function TWRA:SendAddonMessage(message, channel)
     -- Send the message
     SendAddonMessage(self.SYNC.PREFIX, message, channel)
     return true
+end
+
+-- Send data response to group
+function TWRA:SendDataResponse(encodedData, timestamp)
+    if not encodedData or encodedData == "" then
+        self:Debug("error", "No data to send in response - source string is empty")
+        return false
+    end
+    
+    -- Debug the data we're about to send
+    self:Debug("sync", "Preparing to send data response with timestamp: " .. timestamp)
+    self:Debug("sync", "Data length: " .. string.len(encodedData) .. " characters")
+    
+    -- Ensure proper Base64 padding before sending
+    local dataLen = string.len(encodedData)
+    local remainder = dataLen
+    while remainder > 0 and remainder < 4 do
+        encodedData = encodedData .. "="
+        remainder = remainder + 1
+        self:Debug("sync", "Added padding character to Base64 data")
+    end
+    
+    -- Check if data needs to be chunked
+    local maxMsgSize = 200  -- Safe maximum for addon messages
+    
+    if string.len(encodedData) > maxMsgSize then
+        -- Use chunk manager if available
+        if self.chunkManager then
+            self:Debug("sync", "Using chunk manager for large data response")
+            local chunks, totalChunks = self:SplitIntoChunks(encodedData, self.SYNC.COMMANDS.DATA_RESPONSE, timestamp)
+            
+            if chunks and totalChunks then
+                self:SendChunkedMessage(chunks, totalChunks)
+                return true
+            end
+        else
+            self:Debug("sync", "Chunk manager not available, using fallback chunking")
+            -- Fallback to basic chunking
+            local message = string.format("%s:%d:CHUNKED:%d", 
+                self.SYNC.COMMANDS.DATA_RESPONSE,
+                timestamp,
+                string.len(encodedData))
+                
+            self:SendAddonMessage(message)
+            
+            -- Break into simple chunks with basic numbering
+            local position = 1
+            local chunkSize = 180
+            local chunkNum = 1
+            local totalChunks = math.ceil(string.len(encodedData) / chunkSize)
+            
+            self:Debug("sync", "Sending data in " .. totalChunks .. " chunks")
+            
+            -- Use scheduled timers to send chunks with delay
+            while position <= string.len(encodedData) do
+                local endPos = math.min(position + chunkSize - 1, string.len(encodedData))
+                local chunk = string.sub(encodedData, position, endPos)
+                
+                -- Use closure to capture current values
+                local currentChunk = chunk
+                local currentChunkNum = chunkNum
+                
+                -- Schedule sends with increasing delay
+                self:ScheduleTimer(function()
+                    local chunkMessage = string.format("%s:%d:CHUNK:%d:%d:%s", 
+                        self.SYNC.COMMANDS.DATA_RESPONSE,
+                        timestamp,
+                        currentChunkNum,
+                        totalChunks,
+                        currentChunk)
+                    
+                    self:SendAddonMessage(chunkMessage)
+                    self:Debug("sync", "Sent chunk " .. currentChunkNum .. "/" .. totalChunks)
+                end, (chunkNum - 1) * 0.2)
+                
+                position = endPos + 1
+                chunkNum = chunkNum + 1
+            end
+            
+            return true
+        end
+    else
+        -- Small enough for single message
+        local message = string.format("%s:%d:%s", 
+            self.SYNC.COMMANDS.DATA_RESPONSE,
+            timestamp,
+            encodedData)
+        
+        self:Debug("sync", "Sending data response in single message (size: " .. string.len(message) .. ")")
+        return self:SendAddonMessage(message)
+    end
 end
 
 -- Handle incoming addon messages - this connects to the CHAT_MSG_ADDON event in Core.lua

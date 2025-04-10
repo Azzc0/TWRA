@@ -141,6 +141,30 @@ function TWRA:Initialize()
     end
 end
 
+-- Event handler for all game events
+function TWRA:OnEvent(frame, event, ...)
+    self:Debug("general", "Event received: " .. event)
+    
+    if event == "ADDON_LOADED" and arg1 == "TWRA" then
+        self:Debug("general", "ADDON_LOADED fired for TWRA")
+        -- Initialize addon here
+        
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        self:Debug("general", "PLAYER_ENTERING_WORLD fired")
+        -- Additional initialization
+        
+    elseif event == "CHAT_MSG_ADDON" then
+        self:Debug("sync", "CHAT_MSG_ADDON: " .. arg1 .. " from " .. arg4)
+        self:OnChatMsgAddon(arg1, arg2, arg3, arg4)
+        
+    elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+        self:Debug("general", event .. " fired")
+        if self.OnGroupChanged then
+            self:OnGroupChanged()
+        end
+    end
+end
+
 -- Add this utility function to clean data at all entry points
 function TWRA:CleanAssignmentData(data, isTableFormat)
     self:Debug("data", "Cleaning assignment data")
@@ -1025,4 +1049,34 @@ function TWRA:ShouldShowOSD()
     return not self.mainFrame or 
            not self.mainFrame:IsShown() or 
            self.currentView == "options"
+end
+
+-- Handle CHAT_MSG_ADDON events
+function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
+    self:Debug("sync", "OnChatMsgAddon called - prefix: " .. prefix .. ", from: " .. sender)
+    
+    -- Forward to sync handler only if it's our prefix
+    if prefix == self.SYNC.PREFIX then
+        self:Debug("sync", "Recognized our prefix, forwarding to sync handlers")
+        
+        -- If message monitoring is enabled, show the message in chat frame
+        if self.SYNC.monitorMessages then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[ADDON MSG]|r |cFF33FF33" .. 
+                prefix .. "|r from |cFF33FFFF" .. sender .. "|r: |cFFFFFFFF" .. message .. "|r")
+        end
+        
+        -- Skip our own messages
+        if sender == UnitName("player") then
+            self:Debug("sync", "Ignoring own message")
+            return
+        end
+        
+        -- Forward to our handler
+        if self.HandleAddonMessage then
+            self:Debug("sync", "Calling HandleAddonMessage")
+            self:HandleAddonMessage(message, distribution, sender)
+        else
+            self:Debug("error", "HandleAddonMessage function not available")
+        end
+    end
 end

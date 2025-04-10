@@ -140,6 +140,35 @@ function TWRA:HasClassInRaid(className)
     return false
 end
 
+-- Split a string by delimiter - improved version with better debugging
+function TWRA:SplitString(str, delimiter)
+    if not str then return {} end
+    if not delimiter or delimiter == "" then return { str } end
+    
+    self:Debug("sync", "SplitString called on: " .. str .. ", delimiter: " .. delimiter)
+    
+    local result = {}
+    local from = 1
+    local delim_from, delim_to = string.find(str, delimiter, from, true)
+    
+    while delim_from do
+        table.insert(result, string.sub(str, from, delim_from - 1))
+        from = delim_to + 1
+        delim_from, delim_to = string.find(str, delimiter, from, true)
+    end
+    
+    table.insert(result, string.sub(str, from))
+    
+    -- Add debug output for the result
+    local resultInfo = "Split result:"
+    for i, part in ipairs(result) do
+        resultInfo = resultInfo .. " [" .. i .. "]=\"" .. part .. "\""
+    end
+    self:Debug("sync", resultInfo .. " (total: " .. table.getn(result) .. " parts)")
+    
+    return result
+end
+
 ---- Import from TWRA.lua
 
 -- Utility functions
