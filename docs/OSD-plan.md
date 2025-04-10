@@ -20,6 +20,26 @@
    - Implement new structured assignment format
    - Create consistent handling of player/target/role data
 
+## Performance Considerations
+
+### Identified Performance Issues
+- **GetRoleBasedAssignments and DatarowsOSD**: These functions were identified as causing a mini-freeze during navigation between sections
+- The issue was first introduced in the "Some icons in OSD" commit
+- Performance degrades in relation to the complexity and size of the data being processed
+- The poor performance is especially noticeable during rapid section navigation
+
+### Short-term Solutions
+- Consider implementing a throttling mechanism to prevent UI freezing during rapid navigation
+- Optimize the data processing in GetRoleBasedAssignments to reduce processing time
+- Consider implementing a cache for processed role assignments to avoid redundant calculations
+
+### Long-term Refactoring Goals
+- Move heavy processing to a background thread or spread across multiple frames
+- Implement progressive rendering where the OSD displays basic information first, then enhances with additional details
+- Consider lazy loading of class icons and other visual enhancements
+- Restructure the data format to require less processing during display updates
+- Simplify the role-based templates to prioritize performance while maintaining usability
+
 ## Implementation Guidelines
 
 ### Class Icons Integration
