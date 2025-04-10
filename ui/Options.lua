@@ -27,6 +27,9 @@ function TWRA:InitOptions()
     end
     
     -- Ensure OSD settings exist and have defaults
+    options.osd = options.osd or {}
+    local osd = options.osd
+    
     local osdDefaults = self.DEFAULT_OSD_SETTINGS or {
         point = "CENTER",
         xOffset = 0,
@@ -37,9 +40,6 @@ function TWRA:InitOptions()
         enabled = true,
         showOnNavigation = true
     }
-    
-    options.osd = options.osd or {}
-    local osd = options.osd
     
     for key, defaultValue in pairs(osdDefaults) do
         if osd[key] == nil then
@@ -469,7 +469,10 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- ====================== LOAD SAVED VALUES ======================
     -- Get saved options and apply them to the UI elements
-    local options = TWRA_SavedVariables.options
+    local options = TWRA_SavedVariables.options or {}
+    
+    -- Make sure options.osd exists to avoid nil errors
+    options.osd = options.osd or {}
     
     -- Live Sync checkbox
     local liveSyncEnabled = self.SYNC and self.SYNC.liveSync or false
@@ -520,7 +523,7 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- OSD Enable checkbox
     local osdEnabled = true
-    if options.osd.enabled ~= nil then
+    if options.osd and options.osd.enabled ~= nil then
         osdEnabled = options.osd.enabled
     elseif self.OSD and self.OSD.enabled ~= nil then
         osdEnabled = self.OSD.enabled
@@ -1017,11 +1020,11 @@ function TWRA:RestartAutoNavigateTimer()
     end
 end
 
--- Initialize saved variables
+-- Initialize saved variables with proper safety checks
 function TWRA:InitializeSavedOptions()
     -- Ensure options structure exists
-    if not TWRA_SavedVariables then TWRA_SavedVariables = {} end
-    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
+    TWRA_SavedVariables = TWRA_SavedVariables or {}
+    TWRA_SavedVariables.options = TWRA_SavedVariables.options or {}
     
     -- Apply defaults for any missing options
     local defaults = self.DEFAULT_OPTIONS or {
@@ -1040,7 +1043,7 @@ function TWRA:InitializeSavedOptions()
     end
     
     -- Initialize OSD options
-    if not TWRA_SavedVariables.options.osd then TWRA_SavedVariables.options.osd = {} end
+    TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
     
     -- Apply OSD defaults
     local osdDefaults = self.DEFAULT_OSD_SETTINGS or {
@@ -1084,6 +1087,9 @@ function TWRA:ApplyInitialSettings()
         self:Debug("general", "No saved options found, using defaults")
         return
     end
+    
+    -- Ensure options.osd exists to avoid nil errors in the rest of the function
+    options.osd = options.osd or {}
     
     -- Apply Live Section Sync setting
     if options.liveSync then
