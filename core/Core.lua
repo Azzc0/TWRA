@@ -692,8 +692,6 @@ function TWRA:EnsureUIUtils()
     self:Debug("ui", "UI utils check complete")
     return true
 end
-
--- Call this function during initialization
 TWRA:EnsureUIUtils()
 
 -- Add a function to check and debug the options system
@@ -937,3 +935,23 @@ function TWRA:CreateMinimapButton()
     return miniButton
 end
 TWRA:CreateMinimapButton()
+
+-- Add this function to your Core.lua file to handle slash command registration
+
+-- Register a custom slash command
+function TWRA:RegisterSlashCommand(command, handler)
+    if not command or not handler then return end
+    
+    -- Create a unique global name for this command
+    local cmdName = "TWRA_CMD_" .. string.upper(command)
+    
+    -- Register the slash command
+    _G["SLASH_" .. cmdName .. "1"] = "/" .. command
+    _G[cmdName] = handler
+    
+    SlashCmdList[cmdName] = function(msg)
+        handler(msg)
+    end
+    
+    self:Debug("general", "Registered slash command: /" .. command)
+end

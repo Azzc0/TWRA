@@ -842,14 +842,14 @@ function TWRA:HandleDebugCommand(args)
         else
             self:Debug("error", "Sync status function not available")
         end
-    elseif args[1] == "ui" then
-        -- Show UI debug info
-        if self.DebugOptions then
-            self:DebugOptions()
+    elseif args[1] == "monitor" or args[1] == "mon" then
+        -- Toggle message monitoring
+        if self.ToggleMessageMonitoring then
+            self:ToggleMessageMonitoring()
         else
-            self:Debug("error", "UI debug function not available")
+            self:Debug("error", "Message monitoring function not available")
         end
-        
+
     -- Category toggle - check if arg1 is a valid category name in DEBUG_CATEGORIES
     -- THIS IS THE KEY ADDITION: Check DEBUG_CATEGORIES directly first
     elseif self.DEBUG_CATEGORIES and self.DEBUG_CATEGORIES[args[1]] then

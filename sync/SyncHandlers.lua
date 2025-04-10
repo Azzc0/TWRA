@@ -25,48 +25,46 @@ function TWRA:HandleAddonMessage(message, channel, sender)
     
     -- Extract command and arguments
     local command = parts[1]
-    local args = {}
-    for i = 2, table.getn(parts) do
-        table.insert(args, parts[i])
-    end
     
     -- Route to appropriate handler based on command
     self:Debug("sync", "Received " .. command .. " from " .. sender)
     
     if command == self.SYNC.COMMANDS.SECTION then
-        self:HandleSectionCommand(args, sender)
+        -- For section messages, keep the original format for parsing
+        self:HandleSectionCommand(message, sender)
     elseif command == self.SYNC.COMMANDS.ANNOUNCE then
-        self:HandleAnnounceCommand(args, sender)
+        self:HandleAnnounceCommand(message, sender)
     elseif command == self.SYNC.COMMANDS.DATA_REQUEST then
-        self:HandleDataRequestCommand(args, sender)
+        self:HandleDataRequestCommand(message, sender)
     elseif command == self.SYNC.COMMANDS.DATA_RESPONSE then
-        self:HandleDataResponseCommand(args, sender)
+        self:HandleDataResponseCommand(message, sender)
     elseif command == self.SYNC.COMMANDS.VERSION then
-        self:HandleVersionCommand(args, sender)
+        self:HandleVersionCommand(message, sender)
     else
         self:Debug("sync", "Unknown command from " .. sender .. ": " .. command)
     end
 end
 
 -- Handle section change commands (live section sync)
-function TWRA:HandleSectionCommand(args, sender)
-    -- Validate arguments
-    if table.getn(args) < 3 then
-        self:Debug("sync", "Malformed section command from " .. sender)
+function TWRA:HandleSectionCommand(message, sender)
+    -- Extract parts from the message
+    local parts = self:SplitString(message, ":")
+    if table.getn(parts) < 4 then
+        self:Debug("sync", "Malformed section command from " .. sender .. ": " .. message)
         return
     end
     
-    -- Extract arguments
-    local timestamp = tonumber(args[1])
-    local sectionIndex = tonumber(args[2])
-    local sectionName = args[3]
+    -- Extract arguments - format is "SECTION:timestamp:sectionIndex:sectionName"
+    local timestamp = tonumber(parts[2])
+    local sectionIndex = tonumber(parts[3])
+    local sectionName = parts[4]
     
     -- Debug info
     self:Debug("sync", string.format("Section change from %s: '%s' (index: %d, timestamp: %d)", 
         sender, sectionName, sectionIndex, timestamp))
     
     -- Verify we have live sync enabled
-    if not self.SYNC.liveSync then
+    if not self.SYNC or not self.SYNC.liveSync then
         self:Debug("sync", "Ignoring section change (live sync disabled)")
         return
     end
@@ -102,16 +100,17 @@ function TWRA:HandleSectionCommand(args, sender)
 end
 
 -- Handle table announcement commands (manual imports by other users)
-function TWRA:HandleAnnounceCommand(args, sender)
-    -- Validate arguments
-    if table.getn(args) < 2 then
-        self:Debug("sync", "Malformed announce command from " .. sender)
+function TWRA:HandleAnnounceCommand(message, sender)
+    -- Extract parts from the message
+    local parts = self:SplitString(message, ":")
+    if table.getn(parts) < 3 then
+        self:Debug("sync", "Malformed announce command from " .. sender .. ": " .. message)
         return
     end
     
-    -- Extract arguments
-    local timestamp = tonumber(args[1])
-    local importerName = args[2]
+    -- Extract arguments - format is "ANC:timestamp:importerName"
+    local timestamp = tonumber(parts[2])
+    local importerName = parts[3]
     
     -- Debug info
     self:Debug("sync", string.format("New import announced by %s (timestamp: %d)", 
@@ -133,15 +132,16 @@ function TWRA:HandleAnnounceCommand(args, sender)
 end
 
 -- Handle data request commands
-function TWRA:HandleDataRequestCommand(args, sender)
-    -- Validate arguments
-    if table.getn(args) < 1 then
-        self:Debug("sync", "Malformed data request command from " .. sender)
+function TWRA:HandleDataRequestCommand(message, sender)
+    -- Extract parts from the message
+    local parts = self:SplitString(message, ":")
+    if table.getn(parts) < 2 then
+        self:Debug("sync", "Malformed data request command from " .. sender .. ": " .. message)
         return
     end
     
-    -- Extract arguments
-    local requestedTimestamp = tonumber(args[1])
+    -- Extract arguments - format is "DREQ:timestamp"
+    local requestedTimestamp = tonumber(parts[2])
     
     -- Debug info
     self:Debug("sync", string.format("Data request from %s (timestamp: %d)", 
@@ -170,7 +170,7 @@ function TWRA:HandleDataRequestCommand(args, sender)
     
     -- Add random delay to prevent multiple responses at once
     -- Delay proportional to group size: 0-2 seconds in a 40-man raid
-    local groupSize = GetNumPartyMembers() + GetNumRaidMembers()
+    local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
     local maxDelay = math.min(2, groupSize * 0.05)
     local delay = maxDelay * math.random()
     
@@ -183,21 +183,22 @@ function TWRA:HandleDataRequestCommand(args, sender)
 end
 
 -- Handle data response commands
-function TWRA:HandleDataResponseCommand(args, sender)
-    -- Validate arguments - first arg is timestamp, rest is the encoded data
-    if table.getn(args) < 2 then
-        self:Debug("sync", "Malformed data response from " .. sender)
+function TWRA:HandleDataResponseCommand(message, sender)
+    -- Extract the timestamp from the beginning of the message
+    local parts = self:SplitString(message, ":")
+    if table.getn(parts) < 3 then
+        self:Debug("sync", "Malformed data response from " .. sender .. ": " .. message)
         return
     end
     
     -- Extract timestamp
-    local timestamp = tonumber(args[1])
+    local timestamp = tonumber(parts[2])
     
     -- Reconstruct the encoded data (may contain colons which were split)
-    local encodedData = args[2]
-    for i = 3, table.getn(args) do
-        encodedData = encodedData .. ":" .. args[i]
-    end
+    -- Get the rest of the message after "DRES:timestamp:"
+    local prefix = parts[1] .. ":" .. parts[2] .. ":"
+    local prefixLen = string.len(prefix)
+    local encodedData = string.sub(message, prefixLen + 1)
     
     self:Debug("sync", string.format("Received data response from %s (timestamp: %d, length: %d)", 
         sender, timestamp, string.len(encodedData)))
@@ -237,9 +238,9 @@ function TWRA:HandleDataResponseCommand(args, sender)
 end
 
 -- Handle version check commands
-function TWRA:HandleVersionCommand(args, sender)
+function TWRA:HandleVersionCommand(message, sender)
     -- Currently just logs the version info
-    self:Debug("sync", "Version check from " .. sender .. " (args: " .. table.concat(args, ", ") .. ")")
+    self:Debug("sync", "Version check from " .. sender .. " (message: " .. message .. ")")
 end
 
 -- Request data sync from group
@@ -283,8 +284,14 @@ end
 -- Send section change notification to group
 function TWRA:BroadcastSectionChange(sectionIndex, sectionName)
     -- Check if we're in a group
-    if GetNumPartyMembers() == 0 and GetNumRaidMembers() == 0 then
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
         self:Debug("sync", "Not in a group, skipping section broadcast")
+        return false
+    end
+    
+    -- Make sure live sync is enabled
+    if not self.SYNC or not self.SYNC.liveSync then
+        self:Debug("sync", "Live sync disabled, skipping section broadcast")
         return false
     end
     

@@ -8,6 +8,9 @@ TWRA.SYNC.liveSync = false -- Live sync enabled
 TWRA.SYNC.tankSync = false -- Tank sync enabled
 TWRA.SYNC.isActive = false -- Is sync system active
 TWRA.SYNC.pendingSection = nil -- Section to navigate to after sync
+TWRA.SYNC.lastRequestTime = 0 -- When we last requested data
+TWRA.SYNC.requestTimeout = 5 -- Seconds to wait between requests
+TWRA.SYNC.monitorMessages = false -- Monitor all addon messages
 
 -- Command constants for addon messages
 TWRA.SYNC.COMMANDS = {
@@ -180,18 +183,18 @@ function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
         -- Get section name for better debug information
         local sectionName = self.navigation.handlers[sectionIndex] or "unknown"
         
-        -- Create the message with timestamp, section name, and index
-        -- Format: SECTION:timestamp:sectionName:sectionIndex
-        local message = string.format("%s:%d:%s:%d", 
+        -- Create the message with timestamp, section index, and section name
+        -- Format: SECTION:timestamp:sectionIndex:sectionName
+        local message = string.format("%s:%d:%d:%s", 
             self.SYNC.COMMANDS.SECTION,
             timestamp or 0,
-            sectionName,
-            sectionIndex)
+            sectionIndex,
+            sectionName)
         
         -- Send the message
         if self.SendAddonMessage then
             self:SendAddonMessage(message)
-            self:Debug("sync", "Broadcasted section change: " .. sectionIndex .. 
+            self:Debug("sync", "Broadcast section change: " .. sectionIndex .. 
                       " (" .. sectionName .. ") with timestamp " .. (timestamp or 0))
             return true
         else
@@ -206,43 +209,24 @@ end
 
 -- Process incoming addon communication messages
 function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
+    -- Global message monitoring for debugging
+    if self.SYNC.monitorMessages then
+        -- Display all addon messages in a more visible way
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[ADDON MSG]|r |cFF33FF33" .. 
+            prefix .. "|r from |cFF33FFFF" .. sender .. "|r: |cFFFFFFFF" .. message .. "|r")
+    end
+    
     -- Check if message is from our addon
     if prefix ~= self.SYNC.PREFIX then return end
     
     -- Skip our own messages
     if sender == UnitName("player") then return end
     
-    -- Check for section change messages
-    if string.sub(message, 1, 8) == "SECTION:" then
-        -- Only process if live sync is enabled
-        if not self.SYNC.liveSync then return end
-        
-        -- Extract section index
-        local sectionIndex = tonumber(string.sub(message, 9))
-        
-        -- Validate section index
-        if not sectionIndex or sectionIndex < 1 then
-            self:Debug("sync", "Invalid section index received: " .. string.sub(message, 9))
-            return
-        end
-        
-        self:Debug("sync", "Received section change to " .. sectionIndex .. " from " .. sender)
-        
-        -- Navigate to the new section if valid
-        if self.navigation and self.navigation.handlers then
-            local maxSection = table.getn(self.navigation.handlers)
-            
-            if sectionIndex > maxSection then
-                self:Debug("sync", "Section index out of range: " .. sectionIndex .. " (max: " .. maxSection .. ")")
-                return
-            end
-            
-            -- Navigate to the section with "fromSync" flag
-            if self.NavigateToSection then
-                self:NavigateToSection(sectionIndex, "fromSync")
-                self:Debug("sync", "Navigated to section " .. sectionIndex .. " due to sync from " .. sender)
-            end
-        end
+    -- Forward to our message handler
+    if self.HandleAddonMessage then
+        self:HandleAddonMessage(message, distribution, sender)
+    else
+        self:Debug("sync", "HandleAddonMessage function not available, message received but not processed")
     end
 end
 
@@ -260,6 +244,12 @@ function TWRA:SendAddonMessage(message, channel)
         return false
     end
     
+    -- Log outgoing message if monitoring is enabled
+    if self.SYNC.monitorMessages then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[ADDON SEND]|r |cFFFFFF00" .. 
+            self.SYNC.PREFIX .. "|r to |cFF33FFFF" .. channel .. "|r: |cFFFFFFFF" .. message .. "|r")
+    end
+    
     -- Send the message
     SendAddonMessage(self.SYNC.PREFIX, message, channel)
     return true
@@ -271,6 +261,50 @@ function TWRA:CHAT_MSG_ADDON(prefix, message, distribution, sender)
     if self.OnChatMsgAddon then
         self:OnChatMsgAddon(prefix, message, distribution, sender)
     end
+end
+
+-- Function to toggle message monitoring
+function TWRA:ToggleMessageMonitoring(enable)
+    if enable ~= nil then
+        self.SYNC.monitorMessages = enable
+    else
+        self.SYNC.monitorMessages = not self.SYNC.monitorMessages
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA Sync Message Monitoring: " .. 
+        (self.SYNC.monitorMessages and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
+end
+
+-- Debug function to show sync status information
+function TWRA:ShowSyncStatus()
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Sync Status:|r")
+    DEFAULT_CHAT_FRAME:AddMessage("  Live Sync: " .. (self.SYNC.liveSync and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("  Tank Sync: " .. (self.SYNC.tankSync and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("  Active: " .. (self.SYNC.isActive and "|cFF00FF00YES|r" or "|cFFFF0000NO|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("  Message Monitoring: " .. (self.SYNC.monitorMessages and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("  Prefix: " .. self.SYNC.PREFIX)
+    
+    -- Check event registration
+    local frame = getglobal("TWRAEventFrame")
+    local isRegistered = frame and frame:IsEventRegistered("CHAT_MSG_ADDON")
+    DEFAULT_CHAT_FRAME:AddMessage("  Event Registration: " .. (isRegistered and "|cFF00FF00REGISTERED|r" or "|cFFFF0000NOT REGISTERED|r"))
+    
+    -- Show group status
+    local inRaid = GetNumRaidMembers() > 0
+    local inParty = GetNumPartyMembers() > 0
+    local groupSize = inRaid and GetNumRaidMembers() or (inParty and GetNumPartyMembers() or 0)
+    DEFAULT_CHAT_FRAME:AddMessage("  Group Status: " .. (inRaid and "RAID (" .. groupSize .. " members)" or (inParty and "PARTY (" .. groupSize .. " members)" or "NOT IN GROUP")))
+
+    -- Check command handlers
+    DEFAULT_CHAT_FRAME:AddMessage("  Command Handlers:")
+    DEFAULT_CHAT_FRAME:AddMessage("    Section: " .. (self.HandleSectionCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("    Announce: " .. (self.HandleAnnounceCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("    Data Request: " .. (self.HandleDataRequestCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("    Data Response: " .. (self.HandleDataResponseCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
+    
+    DEFAULT_CHAT_FRAME:AddMessage("  Activation Commands:")
+    DEFAULT_CHAT_FRAME:AddMessage("    /twra debug sync - Show this status")
+    DEFAULT_CHAT_FRAME:AddMessage("    /twra syncmon - Toggle message monitoring")
 end
 
 -- Register with ADDON_LOADED to initialize sync
@@ -306,6 +340,14 @@ function TWRA:InitializeSync()
     
     -- Mark as initialized to prevent duplicate initialization
     self.SYNC.initialized = true
+    
+    -- Register the syncmon slash command
+    SLASH_SYNCMON1 = "/syncmon"
+    SlashCmdList["SYNCMON"] = function(msg)
+        TWRA:ToggleMessageMonitoring()
+    end
+    
+    self:Debug("sync", "Registered /syncmon command")
 end
 
 -- Execute registration of sync events immediately

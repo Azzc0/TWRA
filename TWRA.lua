@@ -111,9 +111,13 @@ function TWRA:Initialize()
             if self.OnGroupChanged then
                 self:OnGroupChanged()
             end
-        elseif event == "CHAT_MSG_ADDON" and arg1 == self.SYNC.PREFIX then
-            -- Handle addon messages
-            self:HandleAddonMessage(arg2, arg3, arg4)
+        elseif event == "CHAT_MSG_ADDON" then
+            -- Critical fix: properly route addon messages to our handler
+            if self.OnChatMsgAddon then
+                self:OnChatMsgAddon(arg1, arg2, arg3, arg4)
+            else
+                self:Debug("error", "OnChatMsgAddon handler not available")
+            end
         elseif event == "UPDATE_BINDINGS" then
             -- Handle keybinding updates
             if self.UpdateBindings then
