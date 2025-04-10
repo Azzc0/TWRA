@@ -392,10 +392,8 @@ function TWRA:RebuildNavigation()
     if not self.navigation then
         self.navigation = { handlers = {}, currentIndex = 1 }
     else
-        -- Keep the existing handlers array if it exists
-        if not self.navigation.handlers then
-            self.navigation.handlers = {}
-        end
+        -- IMPORTANT CHANGE: Always completely clear handlers array before rebuilding
+        self.navigation.handlers = {}
     end
     
     -- Use an ordered list to maintain section order
@@ -404,7 +402,8 @@ function TWRA:RebuildNavigation()
     -- First pass: collect sections in the order they appear in the data
     for i = 1, table.getn(self.fullData) do
         local sectionName = self.fullData[i][1]
-        if sectionName and sectionName ~= "" and not seenSections[sectionName] then 
+        -- Stricter empty check and whitespace trimming
+        if sectionName and sectionName ~= "" and string.gsub(sectionName, "%s", "") ~= "" and not seenSections[sectionName] then 
             seenSections[sectionName] = true  -- Mark as seen
             table.insert(self.navigation.handlers, sectionName)  -- Add to ordered list
         end
@@ -502,6 +501,14 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
         -- Also update dropdown text if it exists
         if self.navigation.menuButton and self.navigation.menuButton.text then
             self.navigation.menuButton.text:SetText(sectionName)
+        end
+        
+        -- IMPORTANT CHANGE: Filter and display the selected section's data
+        if self.FilterAndDisplayHandler then
+            self:FilterAndDisplayHandler(sectionName)
+            self:Debug("nav", "Updated main frame content for section: " .. sectionName)
+        else
+            self:Debug("error", "FilterAndDisplayHandler function not found")
         end
         
         -- And refresh the assignment table to show the new section
