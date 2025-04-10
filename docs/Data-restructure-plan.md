@@ -58,13 +58,16 @@ We'll use a phased approach to minimize disruption:
 ### Phase 1: Import/Export Functions
 
 #### `core/Base64.lua`
-- ~~Update `TWRA_ConvertFromOldFormat` function to transform old format to new~~ I don't think this is worth pursuing. We should just remove the old format and not worry about it.
 - Modify `TWRA_ProcessImportString` to handle the new structured format
-- ~~Update `TWRA_GenerateExportString` to create structured format~~ We have never been interested in export. Remove any remnants of export functionality on sight.
+- Remove any export functionality as it's not needed
 
 #### `core/Core.lua`
-- ~~Add version flag in saved variables~~ Probably not needed since we're not worried about backwards compatibility at this stage (no release yet)
-- ~~Implement migration logic for existing saved data ~~ Since we haven't released I can just purge this data from the saved variables.
+- Purge old format data from saved variables
+
+#### `core/Example.lua`
+- Update example data to match the new structured format
+- Include examples of "Relevant Rows" and "Formatted Assignments"
+- Ensure examples cover various UI scenarios (tanks, healers, etc.)
 
 ### Phase 2: Core Logic
 
@@ -91,9 +94,6 @@ We'll use a phased approach to minimize disruption:
 - Update to use pre-processed "Formatted Assignments"
 - Modify display logic to work with new structure
 - Remove redundant processing code
-
-#### `ui/Options.lua`
-- ~~Update options panel for any new settings related to format~~ redundant, new data format does not require new settings
 
 ### Phase 4: Enhancements
 
@@ -130,29 +130,22 @@ end
 section["Formatted Assignments"] = formattedAssignments
 ```
 
-## 5. Migration Strategy
-
-~~1. Add backward compatibility for reading old format~~
-~~2. Update UI components to handle both formats during transition~~
-~~3. Convert old format to new upon import/export operations~~
-~~4. After sufficient testing, remove old format support~~
-
-## 6. Testing Strategy
+## 5. Testing Strategy
 
 1. Create test cases for various data scenarios
-~~2. Verify import/export with both formats~~
-3. Test navigation between sections
-4. Confirm UI rendering with the new structure
-5. Validate sync functionality between clients
+2. Test navigation between sections
+3. Confirm UI rendering with the new structure
+4. Validate sync functionality between clients
+5. Test with updated example data
 
-## 7. Potential Challenges
+## 6. Potential Challenges
 
-1. **Backward Compatibility**: Ensuring older exports still work
-2. **Sync Protocol**: Ensuring clients with different versions can communicate
-3. **Performance Impact**: Validating actual performance improvements
-4. **UI Edge Cases**: Handling unusual data combinations
+1. **Sync Protocol**: Ensuring all clients use the new format
+2. **Performance Impact**: Validating actual performance improvements
+3. **UI Edge Cases**: Handling unusual data combinations
+4. **Processing Logic**: Moving computation from runtime to import time
 
-## 8. Timeline Estimate
+## 7. Timeline Estimate
 
 - Phase 1 (Import/Export): 1-2 days
 - Phase 2 (Core Logic): 2-3 days
@@ -161,7 +154,7 @@ section["Formatted Assignments"] = formattedAssignments
 
 Total time for basic migration: ~7-9 days
 
-## 9. Future Considerations
+## 8. Future Considerations
 
 - Implement additional metadata at section level
 - Add support for section-specific settings
