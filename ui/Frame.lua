@@ -421,14 +421,89 @@ function TWRA:CreateMainFrame()
     return self.mainFrame
 end
 
+-- Modify ShowMainView to ensure content is displayed properly when switching from options
+function TWRA:ShowMainView()
+    -- Set view state first
+    self.currentView = "main"
+    
+    -- Hide options UI elements if they exist
+    if self.optionsElements then
+        for _, element in pairs(self.optionsElements) do
+            if element.Hide then
+                element:Hide()
+            end
+        end
+    end
+    
+    -- Show navigation elements if they exist
+    if self.navigation then
+        if self.navigation.prevButton then self.navigation.prevButton:Show() end
+        if self.navigation.nextButton then self.navigation.nextButton:Show() end
+        if self.navigation.menuButton then self.navigation.menuButton:Show() end
+        if self.navigation.handlerText then self.navigation.handlerText:Show() end
+        if self.navigation.dropdown and self.navigation.dropdown.container then
+            self.navigation.dropdown.container:Show()
+        end
+    end
+    
+    -- Show other main view buttons
+    if self.announceButton then self.announceButton:Show() end
+    if self.updateTanksButton then self.updateTanksButton:Show() end
+
+    -- Change button text if options button exists
+    if self.optionsButton then
+        self.optionsButton:SetText("Options")
+    end
+    
+    -- Debug the state before displaying content
+    self:Debug("ui", "ShowMainView: About to display content. CurrentIndex: " .. 
+        (self.navigation and self.navigation.currentIndex or "nil") .. 
+        ", handlers count: " .. (self.navigation and self.navigation.handlers and table.getn(self.navigation.handlers) or "nil"))
+    
+    -- Clear any elements that might remain from options view
+    self:ClearRows()
+    self:ClearFooters()
+    
+    -- Make sure we have a current section to display
+    if self.navigation and self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
+        if not self.navigation.currentIndex or self.navigation.currentIndex < 1 or 
+           self.navigation.currentIndex > table.getn(self.navigation.handlers) then
+            self.navigation.currentIndex = 1
+        end
+        
+        -- Update navigation text first
+        if self.navigation.handlerText then
+            local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+            self.navigation.handlerText:SetText(sectionName)
+            self:Debug("ui", "Updated handlerText to: " .. sectionName)
+        end
+        
+        -- Display current section directly using FilterAndDisplayHandler instead of DisplayCurrentSection
+        -- This ensures we rebuild the content directly rather than depending on possible hooks
+        local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
+        if currentHandler then
+            self:Debug("ui", "Directly calling FilterAndDisplayHandler for section: " .. currentHandler)
+            self:FilterAndDisplayHandler(currentHandler)
+        end
+    else
+        self:Debug("error", "No handlers available to display in ShowMainView")
+    end
+    
+    self:Debug("ui", "Switched to main view - final currentView = " .. self.currentView)
+end
+
 -- Helper function for handler management
 local function getUniqueHandlers(data)
     local handlers = {}
     local seen = {}
-    for i = 2, table.getn(data) do  -- Start from row 2 (skip only header)
+    
+    if not data then return handlers end
+    
+    -- In new format, we shouldn't have to skip a header row
+    for i = 1, table.getn(data) do  -- Process all rows
         if data[i][1] and not seen[data[i][1]] then
-            -- Skip empty or special rows
-            if data[i][1] ~= "" and data[i][1] ~= "Warning" and data[i][1] ~= "Note" then
+            -- Skip special rows with empty targets or note/warning/guid types
+            if data[i][1] ~= "" and data[i][1] ~= "Warning" and data[i][1] ~= "Note" and data[i][1] ~= "GUID" then
                 seen[data[i][1]] = true
                 table.insert(handlers, data[i][1])
             end
@@ -437,11 +512,11 @@ local function getUniqueHandlers(data)
     return handlers
 end
 
--- Replace FilterAndDisplayHandler to work exclusively with the new format
+-- Replace FilterAndDisplayHandler to work with the new format
 function TWRA:FilterAndDisplayHandler(currentHandler)
-    -- Create filtered data structure
-    local filteredData = {}
-
+    -- Debug entry
+    self:Debug("ui", "FilterAndDisplayHandler called for section: " .. (currentHandler or "nil"))
+    
     -- Get the current section data based on the handler name
     local sectionData = nil
     if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
@@ -455,16 +530,20 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     end
     
     if not sectionData then
-        self:Debug("ui", "No section data found for handler: " .. (currentHandler or "nil"))
+        self:Debug("error", "No section data found for handler: " .. (currentHandler or "nil"))
         return
     end
     
-    -- Process header
+    -- Create filtered data structure
+    local filteredData = {}
+    
+    -- Process header from Section Header
     if sectionData["Section Header"] then
         table.insert(filteredData, sectionData["Section Header"])
         
         -- Determine max columns from header
         self.headerColumns = table.getn(sectionData["Section Header"])
+        self:Debug("ui", "Got header with " .. self.headerColumns .. " columns")
     else
         self:Debug("error", "No header found in section data")
         return
@@ -473,62 +552,89 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Process rows, skipping special rows in new format
     if sectionData["Section Rows"] then
         for i, rowData in ipairs(sectionData["Section Rows"]) do
-            -- Skip special rows based on the row type
-            local rowType = rowData[2]  -- Second column is typically the icon/type
-            if rowType ~= "Note" and rowType ~= "Warning" and rowType ~= "GUID" then
+            -- Skip special rows (Note, Warning, GUID rows)
+            if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
                 -- Insert the row into our filtered data
                 table.insert(filteredData, rowData)
+                self:Debug("ui", "Added row with icon: " .. tostring(rowData[1]) .. ", target: " .. tostring(rowData[2]))
             end
         end
     else
         self:Debug("error", "No rows found in section data")
+        return
     end
     
-    -- Clear any existing content
+    -- Clear existing content
     self:ClearRows()
     
     -- Create new rows
+    self:Debug("ui", "Creating " .. table.getn(filteredData) .. " rows from filtered data")
     self:CreateRows(filteredData, true)
     
     -- Create footers for this section (notes and warnings)
     self:CreateFootersNewFormat(currentHandler, sectionData)
     
-    self:Debug("ui", "Displayed " .. table.getn(filteredData) .. " rows for section: " .. currentHandler)
+    self:Debug("ui", "DisplayCurrentSection complete - displayed " .. table.getn(filteredData) .. " rows")
 end
 
--- Add new function to create footers from the new format
+-- Add function to create footers from the new format
 function TWRA:CreateFootersNewFormat(currentHandler, sectionData)
     -- Clear any existing footers
     self:ClearFooters()
     
     -- Skip if no section data
-    if not sectionData then return end
+    if not sectionData then 
+        self:Debug("ui", "No section data for footers")
+        return 
+    end
     
     -- Find Notes and Warnings in the section data
     local notes = {}
     local warnings = {}
     
-    -- Process special rows
+    -- Process special rows from Section Rows with better debugging
     if sectionData["Section Rows"] then
-        for _, rowData in ipairs(sectionData["Section Rows"]) do
-            if rowData[2] == "Note" and rowData[3] and rowData[3] ~= "" then
-                table.insert(notes, {
-                    text = rowData[3],
-                    icon = rowData[2]
-                })
-            elseif rowData[2] == "Warning" and rowData[3] and rowData[3] ~= "" then
-                table.insert(warnings, {
-                    text = rowData[3],
-                    icon = rowData[2]
-                })
+        self:Debug("ui", "Scanning " .. table.getn(sectionData["Section Rows"]) .. " rows for notes/warnings")
+        
+        for i, rowData in ipairs(sectionData["Section Rows"]) do
+            -- More detailed debugging
+            self:Debug("ui", "Row " .. i .. " check: [1]=" .. tostring(rowData[1]) .. 
+                       ", [2]=" .. tostring(rowData[2] or "nil"))
+            
+            -- Note rows have "Note" in first column and text in second column
+            if rowData[1] == "Note" then
+                if rowData[2] and rowData[2] ~= "" then
+                    table.insert(notes, {
+                        text = rowData[2],  -- Text is in column 2
+                        icon = "Note"
+                    })
+                    self:Debug("ui", "Found note: " .. rowData[2])
+                end
+            -- Warning rows have "Warning" in first column and text in second column
+            elseif rowData[1] == "Warning" then
+                if rowData[2] and rowData[2] ~= "" then
+                    table.insert(warnings, {
+                        text = rowData[2],  -- Text is in column 2
+                        icon = "Warning"
+                    })
+                    self:Debug("ui", "Found warning: " .. rowData[2])
+                end
             end
         end
+    else
+        self:Debug("ui", "No Section Rows found for footers")
     end
+    
+    -- Debug the counts we found
+    self:Debug("ui", "Found: " .. table.getn(warnings) .. " warnings and " .. table.getn(notes) .. " notes")
     
     -- If no notes or warnings, just return
     if table.getn(notes) == 0 and table.getn(warnings) == 0 then
+        self:Debug("ui", "No notes or warnings found")
         return
     end
+    
+    self:Debug("ui", "Creating footers: " .. table.getn(warnings) .. " warnings, " .. table.getn(notes) .. " notes")
     
     -- Initialize footer storage if needed
     if not self.footers then
@@ -567,7 +673,7 @@ function TWRA:CreateFootersNewFormat(currentHandler, sectionData)
     end
     
     -- Extend frame height if needed to fit footers
-    local totalHeight = 40 +                                    -- Initial offset
+    local totalHeight = 40 +                                   -- Initial offset
                       (table.getn(self.rowFrames) * 20) +     -- Data rows
                       25 +                                     -- Padding before separator
                       1 +                                      -- Separator line
@@ -577,45 +683,18 @@ function TWRA:CreateFootersNewFormat(currentHandler, sectionData)
 
     if totalHeight > 300 then  -- 300 is the default frame height
         self.mainFrame:SetHeight(totalHeight)
+        self:Debug("ui", "Adjusted frame height to " .. totalHeight)
     end
 end
 
--- Simplify CreateRows to focus only on row creation
-function TWRA:CreateRows(data, forceHeader)
-    if not data or table.getn(data) == 0 then
-        return
-    end
-    
-    -- Initialize row frames array if needed
-    if not self.rowFrames then
-        self.rowFrames = {}
-    end
-    
-    -- Get rows relevant to current player for highlighting
-    local relevantRows = self:GetPlayerRelevantRows(data)
-    
-    -- Create rows based on data
-    for i = 1, table.getn(data) do
-        -- Check if this row should be highlighted
-        local shouldHighlight = false
-        for _, rowIdx in ipairs(relevantRows) do
-            if i == rowIdx then
-                shouldHighlight = true
-                break
-            end
-        end
-        
-        self.rowFrames[i] = self:CreateRow(i, data[i], shouldHighlight)
-    end
-end
-
+-- Helper function for clearing rows to support modifications
 function TWRA:ClearRows()
     -- Initialize rowHighlights if it doesn't exist
     if not self.rowHighlights then
         self.rowHighlights = {}
     end
     
-    -- Clear existing highlights more thoroughly
+    -- Clear existing highlights
     for i, highlight in pairs(self.rowHighlights) do
         highlight:Hide()
         highlight:SetParent(nil) 
@@ -624,23 +703,18 @@ function TWRA:ClearRows()
     end
     self.rowHighlights = {}
 
-    -- Clear existing row frames more thoroughly
+    -- Clear existing row frames
     if self.rowFrames then
         for i, row in pairs(self.rowFrames) do
             for j, cell in pairs(row) do
-                -- Hide and remove all elements in the cell
-                for _, element in pairs({"text", "bg", "icon"}) do
-                    if cell[element] then 
-                        cell[element]:Hide()
-                        cell[element]:SetParent(nil)
-                        cell[element]:ClearAllPoints()
-                        cell[element] = nil
-                    end
-                end
-                row[j] = nil
+                if cell.text then cell.text:Hide() end
+                if cell.bg then cell.bg:Hide() end
+                if cell.icon then cell.icon:Hide() end
             end
             self.rowFrames[i] = nil
         end
+        self.rowFrames = {}
+    else
         self.rowFrames = {}
     end
     
@@ -650,13 +724,51 @@ function TWRA:ClearRows()
     self.headerColumns = nil
 end
 
--- Row creation with proper formatting
+-- Improved row creation function
+function TWRA:CreateRows(data, forceHeader)
+    if not data or table.getn(data) == 0 then
+        self:Debug("ui", "CreateRows called with empty data")
+        return
+    end
+
+    -- Initialize row frames array if needed
+    if not self.rowFrames then
+        self.rowFrames = {}
+    end
+    
+    -- Initialize row highlights array if needed
+    if not self.rowHighlights then
+        self.rowHighlights = {}
+    end
+    
+    -- Get rows relevant to current player for highlighting
+    local relevantRows = self:GetPlayerRelevantRows(data)
+    self:Debug("ui", "Found " .. table.getn(relevantRows) .. " rows relevant to player")
+    
+    -- Create rows based on data
+    for i = 1, table.getn(data) do
+        -- Check if this row should be highlighted
+        local shouldHighlight = false
+        for j = 1, table.getn(relevantRows) do
+            if i == relevantRows[j] then
+                shouldHighlight = true
+                break
+            end
+        end
+        
+        -- Create the row
+        self.rowFrames[i] = self:CreateRow(i, data[i], shouldHighlight)
+    end
+    
+    self:Debug("ui", "Created " .. table.getn(self.rowFrames) .. " total rows")
+end
+
+-- Update CreateRow to hide header text for first column (Icon) and adjust column width
 function TWRA:CreateRow(rowNum, data, shouldHighlight)
     local rowFrames = {}
     local yOffset = -40 - (rowNum * 20)
     local fontStyle = rowNum == 1 and "GameFontNormalLarge" or "GameFontNormal"
     local isHeader = rowNum == 1
-    local isSpecialRow = data[1] == "Warning" or data[1] == "Note"
     
     -- Player row highlighting logic
     if not isHeader and shouldHighlight then
@@ -670,95 +782,41 @@ function TWRA:CreateRow(rowNum, data, shouldHighlight)
         table.insert(self.rowHighlights, highlight)
     end
     
-    -- For special rows (Notes and Warnings) - handle differently with full width span
-    if isSpecialRow then
-        -- Calculate the full available width of the frame
-        local totalWidth = self.mainFrame:GetWidth() - 40  -- 20px padding on each side
-        
-        -- Create background for special row - spans full width
-        local bg = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
-        bg:SetPoint("TOPLEFT", 20, yOffset)
-        bg:SetWidth(totalWidth)
-        bg:SetHeight(14)
-        bg:SetVertexColor(0.1, 0.1, 0.1, 0.3)
-        
-        -- Create icon for special rows - positioned at far left
-        local iconTexture = nil
-        if data[2] and TWRA.ICONS[data[2]] then
-            iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-            iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
-            iconTexture:SetWidth(12)
-            iconTexture:SetHeight(12)
-            local iconInfo = TWRA.ICONS[data[2]]
-            iconTexture:SetTexture(iconInfo[1])
-            iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-        end
-        
-        -- Create text that spans full width
-        local cell = self.mainFrame:CreateFontString(nil, "OVERLAY", fontStyle)
-        
-        -- Position text with icon consideration and set width to fill the remaining space
-        local iconPadding = iconTexture and 20 or 8  -- More space when icon exists
-        cell:SetPoint("TOPLEFT", 20 + iconPadding, yOffset)
-        cell:SetWidth(totalWidth - iconPadding - 4)  -- Full width minus icon space and padding
-        cell:SetText(data[3] or "")
-        cell:SetJustifyH("LEFT")
-        
-        -- Use a different color for Notes vs Warnings
-        if data[1] == "Warning" then
-            cell:SetTextColor(1, 0.7, 0.7)  -- Light red for warnings
-        else
-            cell:SetTextColor(0.9, 0.9, 1)  -- Light blue-white for notes
-        end
-        
-        rowFrames[1] = {text = cell, bg = bg, icon = iconTexture}
-        return rowFrames
-    end
-    
-    -- For normal rows - handle all columns consistently
-    -- Calculate column widths - we'll combine columns 1 & 2 (Section & Icon)
-    -- and treat column 3 (Target) as the first visible column
     local numColumns = self.headerColumns or table.getn(data)
-    local visibleColumns = numColumns - 2  -- Skip section and icon columns
     
     -- Calculate total available width
     local totalAvailableWidth = self.mainFrame:GetWidth() - 40
 
-    -- Use a fixed width for target column that fits "Grand Widow Faerlina"
-    local fixedTargetWidth = 170 -- Fixed width for target column
-    local remainingWidth = totalAvailableWidth - fixedTargetWidth
-    local standardColumnWidth = math.floor(remainingWidth / math.max(1, visibleColumns - 1))
-
-    -- Ensure minimum width for standard columns to fit player names
-    local minStandardWidth = 100 -- Minimum width for player columns
-    if standardColumnWidth < minStandardWidth and visibleColumns > 1 then
-        -- If standard columns would be too narrow, adjust proportionally
-        standardColumnWidth = minStandardWidth
-        
-        -- If we can't fit everything, reduce target column width (but preserve minimum)
-        if (standardColumnWidth * (visibleColumns - 1)) > remainingWidth then
-            local minTargetWidth = 140 -- Minimum for target column
-            local totalNeeded = (standardColumnWidth * (visibleColumns - 1))
-            
-            -- Check if we can reduce target column
-            if totalNeeded <= (totalAvailableWidth - minTargetWidth) then
-                fixedTargetWidth = totalAvailableWidth - totalNeeded
-            else
-                -- Last resort - proportionally reduce all columns
-                local totalColumns = visibleColumns
-                local widthPerColumn = math.floor(totalAvailableWidth / totalColumns)
-                fixedTargetWidth = widthPerColumn
-                standardColumnWidth = widthPerColumn
-            end
-        end
+    -- Adjust icon column width here - change this value to make the icon column wider/narrower
+    local iconColumnWidth = 10  -- Reduced from 40px to 30px
+    local targetColumnWidth = 170
+    local remainingWidth = totalAvailableWidth - iconColumnWidth - targetColumnWidth
+    local roleColumnsCount = numColumns - 2
+    
+    local roleColumnWidth = 100 -- Default minimum width
+    if roleColumnsCount > 0 then
+        roleColumnWidth = math.max(roleColumnWidth, math.floor(remainingWidth / roleColumnsCount))
+    end
+    
+    -- If columns don't fit, adjust proportionally
+    if iconColumnWidth + targetColumnWidth + (roleColumnWidth * roleColumnsCount) > totalAvailableWidth then
+        local totalWidth = totalAvailableWidth
+        iconColumnWidth = math.floor(totalWidth / (numColumns + 0.5)) -- Icon column is half-sized
+        targetColumnWidth = math.floor(totalWidth / numColumns)
+        roleColumnWidth = math.floor(totalWidth / numColumns)
     end
     
     local xOffset = 20 -- Starting offset
     
-    -- Process all visible columns (starting from column 3)
-    for i = 3, numColumns do
-        local displayIndex = i - 2  -- Adjust index (1 = target, 2 = first role, etc.)
-        local cellWidth = (i == 3) and fixedTargetWidth or standardColumnWidth
+    -- Process all columns
+    for i = 1, numColumns do
+        local cellWidth = iconColumnWidth
+        if i == 2 then
+            cellWidth = targetColumnWidth
+        elseif i > 2 then
+            cellWidth = roleColumnWidth
+        end
+        
         local cellData = data[i] or ""
         
         -- Create cell background (except for header row)
@@ -770,7 +828,7 @@ function TWRA:CreateRow(rowNum, data, shouldHighlight)
             bg:SetHeight(14)
             
             -- Alternate background shading
-            local isEven = (i / 2) == math.floor(i / 2)
+            local isEven = (math.floor(i / 2) * 2) == i -- Check if i is even
             bg:SetVertexColor(0.1, 0.1, 0.1, isEven and 0.3 or 0.1)
         end
         
@@ -780,112 +838,78 @@ function TWRA:CreateRow(rowNum, data, shouldHighlight)
         -- Prepare icon for this cell
         local iconTexture = nil
         
-        -- Target column (column 3) - use raid target icon if available
-        if i == 3 and not isHeader and data[2] and TWRA.ICONS[data[2]] then
-            iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-            iconTexture:SetPoint("LEFT", bg or self.mainFrame, "LEFT", xOffset - 16, 0)
-            iconTexture:SetWidth(12)
-            iconTexture:SetHeight(12)
-            local iconInfo = TWRA.ICONS[data[2]]
-            iconTexture:SetTexture(iconInfo[1])
-            iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-        elseif i > 3 and not isHeader then  -- Player columns - use class icon
-            local isClassGroup = TWRA.CLASS_GROUP_NAMES[cellData] and true or false
-            local className = isClassGroup and TWRA.CLASS_GROUP_NAMES[cellData] or nil
-            local inRaid, online = TWRA:GetPlayerStatus(cellData)
-            
-            -- Add class icon for players or class groups
-            if inRaid or isClassGroup or cellData == UnitName("player") then
-                local classToUse = className
-                if not isClassGroup then
-                    if cellData == UnitName("player") then
-                        -- Get actual player class
-                        local _, playerClass = UnitClass("player")
-                        classToUse = playerClass
-                    elseif self.usingExampleData then
-                        -- Get class directly from EXAMPLE_PLAYERS for example data
-                        local classInfo = self.EXAMPLE_PLAYERS[cellData]
-                        if classInfo then
-                            -- Strip any |OFFLINE suffix to get just the class
-                            classToUse = string.gsub(classInfo or "", "|OFFLINE", "")
-                        end
-                    else
-                        -- Find player's class from raid roster
-                        for j = 1, GetNumRaidMembers() do
-                            local name, _, _, _, _, class = GetRaidRosterInfo(j)
-                            if name == cellData then
-                                classToUse = class
-                                break
-                            end
-                        end
-                    end
-                end
+        -- Special handling based on column type
+        if i == 1 then
+            -- Icon column - don't show text, only icon
+            if isHeader then
+                -- Hide the header text for the icon column
+                cell:SetText("")
+                cell:SetJustifyH("CENTER")
+                cell:SetTextColor(1, 1, 1)
+            else
+                cell:SetText("") -- Don't show icon text
                 
-                if classToUse then
+                -- Create icon texture if we have valid icon data
+                if cellData and TWRA.ICONS and TWRA.ICONS[cellData] then
+                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                    iconTexture:SetPoint("CENTER", bg, "CENTER", 0, 0)
+                    iconTexture:SetWidth(16)
+                    iconTexture:SetHeight(16)
+                    local iconInfo = TWRA.ICONS[cellData]
+                    iconTexture:SetTexture(iconInfo[1])
+                    iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+                end
+            end
+        elseif i == 2 then
+            -- Target column
+            cell:SetText(cellData)
+            cell:SetTextColor(1, 1, 1) -- White text for target
+        else
+            -- Role/player columns
+            cell:SetText(cellData)
+            
+            if isHeader then
+                -- Header is white
+                cell:SetTextColor(1, 1, 1)
+            elseif cellData and cellData ~= "" then
+                -- Color by player status or class group
+                local isClassGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellData]
+                
+                if isClassGroup then
+                    -- Class group coloring
+                    local color = TWRA.VANILLA_CLASS_COLORS[TWRA.CLASS_GROUP_NAMES[cellData]]
+                    if color then
+                        cell:SetTextColor(color.r, color.g, color.b)
+                    else
+                        cell:SetTextColor(1, 1, 1)
+                    end
+                    
+                    -- Add class icon
                     iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
                     iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
                     iconTexture:SetWidth(12)
                     iconTexture:SetHeight(12)
                     iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
                     
-                    local coords = TWRA.CLASS_COORDS[string.upper(classToUse)]
+                    local coords = TWRA.CLASS_COORDS[string.upper(TWRA.CLASS_GROUP_NAMES[cellData])]
                     if coords then
                         iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
                     end
-                end
-            end
-        end
-        
-        -- Position text with consistent padding - ALWAYS reserve space for an icon
-        -- No matter if there's an icon or not, provide consistent indentation
-        local iconSpace = 18  -- Consistent space for all potential icons
-        cell:SetPoint("TOPLEFT", xOffset + iconSpace, yOffset)
-        cell:SetWidth(cellWidth - iconSpace - 4)
-        cell:SetText(cellData)
-        cell:SetJustifyH("LEFT")
-        
-        -- Set text color based on type and status
-        if isHeader then
-            -- Headers always white for visibility
-            cell:SetTextColor(1, 1, 1)
-        elseif i == 3 then
-            -- Target column always white
-            cell:SetTextColor(1, 1, 1)
-        else
-            -- Player/role columns - color by status
-            if not cellData or cellData == "" then
-                cell:SetTextColor(1, 1, 1)  -- Empty cells are white
-            else
-                -- Get player status for this cell
-                local inRaid, online = TWRA:GetPlayerStatus(cellData)
-                
-                -- Handle class groups differently
-                local isClassGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellData] and true or false
-                if isClassGroup then
-                    -- For class groups, use the class color directly
-                    local className = TWRA.CLASS_GROUP_NAMES[cellData]
-                    local color = TWRA.VANILLA_CLASS_COLORS[className]
-                    if color then
-                        cell:SetTextColor(color.r, color.g, color.b)
-                    else
-                        cell:SetTextColor(1, 1, 1)  -- Fallback to white
-                    end
                 else
-                    -- Use the proper class coloring for player names
+                    -- Player coloring
+                    local inRaid, online = self:GetPlayerStatus(cellData)
                     local classToUse = nil
                     
-                    -- First check if it's the current player
+                    -- Try to determine player class
                     if cellData == UnitName("player") then
                         local _, playerClass = UnitClass("player")
                         classToUse = playerClass
-                    elseif self.usingExampleData then
-                        -- Extract class from EXAMPLE_PLAYERS for example data
+                    elseif self.usingExampleData and self.EXAMPLE_PLAYERS then
                         local classInfo = self.EXAMPLE_PLAYERS[cellData]
                         if classInfo then
-                            classToUse = string.gsub(classInfo or "", "|OFFLINE", "")
+                            classToUse = string.gsub(classInfo, "|OFFLINE", "")
                         end
-                    else
-                        -- Find player's class from raid roster
+                    elseif inRaid then
                         for j = 1, GetNumRaidMembers() do
                             local name, _, _, _, _, class = GetRaidRosterInfo(j)
                             if name == cellData then
@@ -895,14 +919,63 @@ function TWRA:CreateRow(rowNum, data, shouldHighlight)
                         end
                     end
                     
-                    -- Now call ApplyClassColoring with complete information
-                    TWRA.UI:ApplyClassColoring(cell, cellData, classToUse, inRaid, online)
+                    -- Add class icon if we found a class
+                    if classToUse then
+                        iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                        iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
+                        iconTexture:SetWidth(12)
+                        iconTexture:SetHeight(12)
+                        iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+                        
+                        local coords = TWRA.CLASS_COORDS[string.upper(classToUse)]
+                        if coords then
+                            iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                        end
+                    end
+                    
+                    -- Color text based on raid status
+                    if TWRA.UI and TWRA.UI.ApplyClassColoring then
+                        TWRA.UI:ApplyClassColoring(cell, cellData, classToUse, inRaid, online)
+                    else
+                        -- Fallback coloring
+                        if inRaid and not online then
+                            cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
+                        elseif classToUse and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)] then
+                            local color = TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)]
+                            cell:SetTextColor(color.r, color.g, color.b)
+                        else
+                            cell:SetTextColor(1, 1, 1) -- White fallback
+                        end
+                    end
                 end
+            else
+                -- Empty cell is white
+                cell:SetTextColor(1, 1, 1)
             end
         end
         
+        -- Position text with proper padding
+        local iconPadding = 0
+        if i == 1 then
+            -- No padding for icon column when in header
+            if isHeader then
+                iconPadding = 0
+            else
+                -- Center the icon text
+                iconPadding = 0
+                cell:SetJustifyH("CENTER")
+            end
+        else
+            -- Add space for potential class icons in other columns
+            iconPadding = 18
+            cell:SetJustifyH("LEFT")
+        end
+        
+        cell:SetPoint("TOPLEFT", xOffset + iconPadding, yOffset)
+        cell:SetWidth(cellWidth - iconPadding - 4)
+        
         -- Store cell references
-        rowFrames[displayIndex] = {text = cell, bg = bg, icon = iconTexture}
+        rowFrames[i] = {text = cell, bg = bg, icon = iconTexture}
         
         -- Update offset for next column
         xOffset = xOffset + cellWidth
@@ -911,94 +984,138 @@ function TWRA:CreateRow(rowNum, data, shouldHighlight)
     return rowFrames
 end
 
--- Add this function to handle footer creation:
-
--- Creates and displays footer elements for Notes and Warnings
-function TWRA:CreateFooters(currentHandler)
-    -- Clear any existing footers
-    self:ClearFooters()
+-- Update the GetPlayerRelevantRows function for the new format
+function TWRA:GetPlayerRelevantRows(sectionData)
+    if not sectionData then return {} end
     
-    -- Find Notes and Warnings for the current handler
-    local notes = {}
-    local warnings = {}
+    local relevantRows = {}
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
     
-    -- Collect all notes and warnings for this handler
-    for i = 1, table.getn(self.fullData) do
-        if i > 1 and self.fullData[i-1][1] == currentHandler then
-            -- Skip GUID rows entirely
-            if self.fullData[i][2] ~= "GUID" then
-                if self.fullData[i][2] == "Note" and self.fullData[i][3] and self.fullData[i][3] ~= "" then
-                    table.insert(notes, {
-                        text = self.fullData[i][3],
-                        icon = self.fullData[i][2]
-                    })
-                elseif self.fullData[i][2] == "Warning" and self.fullData[i][3] and self.fullData[i][3] ~= "" then
-                    table.insert(warnings, {
-                        text = self.fullData[i][3],
-                        icon = self.fullData[i][2]
-                    })
+    -- Check each row
+    for rowIndex = 1, table.getn(sectionData) do
+        -- Skip the header row
+        if rowIndex > 1 then
+            local row = sectionData[rowIndex]
+            local isRelevantRow = false
+            
+            -- Check each column that might contain player names (starting from column 3)
+            for colIndex = 3, table.getn(row) do
+                local cellValue = row[colIndex]
+                
+                -- Check if the cell contains player name
+                if cellValue == playerName then
+                    isRelevantRow = true
+                    break
                 end
+                
+                -- Check if the cell is a class group matching player's class
+                local className = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellValue]
+                if className and className == playerClass then
+                    isRelevantRow = true
+                    break
+                end
+                
+                -- Check for group assignments like "Group 1,2"
+                if cellValue and type(cellValue) == "string" and string.find(cellValue, "Group") then
+                    -- Extract group numbers
+                    local groupNums = {}
+                    
+                    -- Find all digits in the string
+                    local pos = 1
+                    local str = cellValue
+                    while pos <= string.len(str) do
+                        local digitStart, digitEnd = string.find(str, "%d+", pos)
+                        if not digitStart then break end
+                        
+                        local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
+                        if groupNum then
+                            groupNums[groupNum] = true
+                        end
+                        pos = digitEnd + 1
+                    end
+                    
+                    -- Check if player is in any of these groups
+                    local playerGroup = 0
+                    for i = 1, GetNumRaidMembers() do
+                        local name, _, subgroup = GetRaidRosterInfo(i)
+                        if name == playerName then
+                            playerGroup = subgroup
+                            break
+                        end
+                    end
+                    if playerGroup > 0 and groupNums[playerGroup] then
+                        isRelevantRow = true
+                        break
+                    end
+                end
+            end
+            
+            -- If row is relevant, add to our list
+            if isRelevantRow then
+                table.insert(relevantRows, rowIndex)
             end
         end
     end
     
-    -- If no notes or warnings, just return
-    if table.getn(notes) == 0 and table.getn(warnings) == 0 then
+    return relevantRows
+end
+
+-- Clears all footer elements properly
+function TWRA:ClearFooters()
+    self:Debug("ui", "Clearing footers")
+    
+    if not self.footers then
+        self.footers = {}
         return
     end
     
-    -- Initialize footer storage if needed
-    if not self.footers then
-        self.footers = {}
+    for i, footer in pairs(self.footers) do
+        -- Special handling for separator which only has a texture
+        if footer.texture then
+            footer.texture:Hide()
+            footer.texture:SetParent(nil)
+            footer.texture = nil
+        else
+            -- Normal footer with multiple elements
+            if footer.bg then
+                footer.bg:Hide()
+                footer.bg:SetParent(nil)
+                footer.bg = nil
+            end
+            if footer.icon then
+                footer.icon:Hide()
+                footer.icon:SetParent(nil)
+                footer.icon = nil
+            end
+            if footer.text then
+                footer.text:Hide()
+                footer.text:SetParent(nil)
+                footer.text = nil
+            end
+            -- Also handle the clickable overlay
+            if footer.clickFrame then
+                footer.clickFrame:Hide()
+                footer.clickFrame:EnableMouse(false)
+                footer.clickFrame:SetParent(nil)
+                footer.clickFrame = nil
+            end
+        end
+        self.footers[i] = nil
     end
     
-    -- Calculate positions and dimensions
-    local footerHeight = 28  -- Increased height for each footer element
-    local yOffset = -(40 + (table.getn(self.rowFrames) * 20) + 25)  -- Start below the last row with padding
+    self.footers = {}
     
-    -- Create separator line
-    local separator = self.mainFrame:CreateTexture(nil, "BACKGROUND")
-    separator:SetTexture(0.3, 0.3, 0.3, 1)
-    separator:SetHeight(1)
-    separator:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 20, yOffset)
-    separator:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, yOffset)
-    table.insert(self.footers, {texture = separator})
-    
-    -- Adjust starting position for first footer
-    yOffset = yOffset - 5
-    
-    -- First create warnings (more important)
-    for i = 1, table.getn(warnings) do
-        local warning = warnings[i]
-        local footer = self:CreateFooterElement(warning.text, warning.icon, "Warning", yOffset)
-        table.insert(self.footers, footer)
-        yOffset = yOffset - footerHeight
-    end
-    
-    -- Then create notes
-    for i = 1, table.getn(notes) do
-        local note = notes[i]
-        local footer = self:CreateFooterElement(note.text, note.icon, "Note", yOffset)
-        table.insert(self.footers, footer)
-        yOffset = yOffset - footerHeight
-    end
-    
-    -- Extend frame height if needed to fit footers
-    local totalHeight = 40 +                                    -- Initial offset
-                        (table.getn(self.rowFrames) * 20) +     -- Data rows
-                        25 +                                     -- Padding before separator
-                        1 +                                      -- Separator line
-                        5 +                                      -- Padding after separator
-                        ((table.getn(notes) + table.getn(warnings)) * footerHeight) + -- Footer elements
-                        10                                       -- Bottom padding
-
-    if totalHeight > 300 then  -- 300 is the default frame height
-        self.mainFrame:SetHeight(totalHeight)
+    -- Reset frame height to default
+    if self.mainFrame then
+        self.mainFrame:SetHeight(300)
     end
 end
 
--- Creates a single footer element (Note or Warning)
+-- Make sure CreateFooterElement creates visible elements
 function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
+    self:Debug("ui", "Creating footer element: " .. footerType .. " at y=" .. yOffset)
+    
     local footer = {}
     
     -- Create background
@@ -1012,38 +1129,30 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     bg:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, yOffset)
     bg:SetHeight(26)  -- Larger background height
     
-    -- Create icon
+    -- Create icon - use footerType directly instead of iconName
     local icon = nil
-    if iconName and TWRA.ICONS[iconName] then
+    local iconToUse = footerType  -- Use Warning or Note directly
+    
+    if TWRA.ICONS and TWRA.ICONS[iconToUse] then
         icon = self.mainFrame:CreateTexture(nil, "OVERLAY")
-        icon:SetPoint("TOPLEFT", bg, "TOPLEFT", 6, -5)  -- Lower position by 1px
-        icon:SetWidth(18)  -- Larger icon width
-        icon:SetHeight(18)  -- Larger icon height
-        local iconInfo = TWRA.ICONS[iconName]
+        icon:SetPoint("TOPLEFT", bg, "TOPLEFT", 6, -5)
+        icon:SetWidth(18)
+        icon:SetHeight(18)
+        local iconInfo = TWRA.ICONS[iconToUse]
         icon:SetTexture(iconInfo[1])
         icon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
     end
     
-    -- FIXED: Check if text already contains an item link before processing
-    -- Process text to replace item names with proper links
-    local processedText
-    if string.find(text, "|Hitem:") then
-        -- Text already contains item links, don't process further
-        processedText = text
-    else
-        processedText = TWRA.Items and TWRA.Items.ProcessText and TWRA.Items:ProcessText(text) or text
-    end
-    
-    -- Create text
+    -- Create text (don't process with Items module yet to avoid nil errors)
     local textElement = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     textElement:SetPoint("TOPLEFT", bg, "TOPLEFT", icon and 32 or 10, -6)  -- More space for larger icon
     textElement:SetPoint("TOPRIGHT", bg, "TOPRIGHT", -10, -4)
-    textElement:SetText(processedText)
+    textElement:SetText(text)
     textElement:SetJustifyH("LEFT")
     
     -- Set text color based on type
     if footerType == "Warning" then
-        textElement:SetTextColor(1, 1, 1)  -- White text for warnings
+        textElement:SetTextColor(1, 0.7, 0.7)  -- Light red for warnings
     else
         textElement:SetTextColor(0.85, 0.85, 1)  -- Light blue for notes
     end
@@ -1082,67 +1191,9 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     
     -- Add the click handler to send to chat
     clickFrame:SetScript("OnClick", function()
-        -- Determine which channels to use based on options
-        local messageChannel = "RAID"  -- Default
-        local channelNumber = nil
-        
-        -- Get saved channel preference from options
-        local selectedChannel = TWRA_SavedVariables.options and 
-                              TWRA_SavedVariables.options.announceChannel or 
-                              "GROUP"
-        
-        -- For warnings, use raid warning if player has assist/leader and using GROUP channel
-        local isWarning = (footerType == "Warning")
-        local isOfficer = IsRaidLeader() or IsRaidOfficer()
-        
-        -- Adjust channels based on selection and current group context
-        if selectedChannel == "GROUP" then
-            if GetNumRaidMembers() > 0 then
-                -- In a raid, use raid warning for warnings if player has permission
-                if isWarning and isOfficer then
-                    messageChannel = "RAID_WARNING"
-                else
-                    messageChannel = "RAID"
-                end
-            elseif GetNumPartyMembers() > 0 then
-                messageChannel = "PARTY"
-            else
-                messageChannel = "SAY"
-            end
-        elseif selectedChannel == "CHANNEL" then
-            -- Get custom channel name
-            local customChannel = TWRA_SavedVariables.options and TWRA_SavedVariables.options.customChannel
-            if customChannel and customChannel ~= "" then
-                -- Find the channel number
-                channelNumber = GetChannelName(customChannel)
-                if channelNumber > 0 then
-                    messageChannel = "CHANNEL"
-                else
-                    -- No channel found, fall back to say
-                    messageChannel = "SAY"
-                    self:Debug("ui", "Channel '" .. customChannel .. "' not found, using Say instead")
-                end
-            else
-                -- No custom channel specified, fall back to say
-                messageChannel = "SAY"
-                self:Debug("ui", "No custom channel specified, using Say instead")
-            end
-        end
-        
-        -- FIXED: Remove prepending of prefixes. We don't want any prefix anymore.
-        local announceText = text
-        
-        -- FIXED: Check if the text already contains an item link
-        if not string.find(announceText, "|Hitem:") and TWRA.Items and TWRA.Items.ProcessText then
-            announceText = TWRA.Items:ProcessText(announceText)
-        end
-        
-        -- Send the message to the appropriate channel
-        if messageChannel == "CHANNEL" then
-            SendChatMessage(announceText, messageChannel, nil, channelNumber)
-        else
-            SendChatMessage(announceText, messageChannel)
-        end
+        -- Call the announce function with the footer text
+        self:Debug("ui", "Announcing footer: " .. text)
+        SendChatMessage(text, "RAID")
         
         -- Visual feedback for click
         if footerType == "Warning" then
@@ -1169,123 +1220,6 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     footer.clickFrame = clickFrame
     
     return footer
-end
-
--- Clears all footer elements
-function TWRA:ClearFooters()
-    if not self.footers then
-        self.footers = {}
-        return
-    end
-    
-    for _, footer in pairs(self.footers) do
-        -- Special handling for separator which only has a texture
-        if footer.texture then
-            footer.texture:Hide()
-            footer.texture:SetParent(nil)
-        else
-            -- Normal footer with multiple elements
-            if footer.bg then
-                footer.bg:Hide()
-                footer.bg:SetParent(nil)
-            end
-            if footer.icon then
-                footer.icon:Hide()
-                footer.icon:SetParent(nil)
-            end
-            if footer.text then
-                footer.text:Hide()
-                footer.text:SetParent(nil)
-            end
-            -- Also handle the clickable overlay
-            if footer.clickFrame then
-                footer.clickFrame:Hide()
-                footer.clickFrame:EnableMouse(false)
-                footer.clickFrame:SetParent(nil)
-            end
-        end
-    end
-    
-    self.footers = {}
-    
-    -- Reset frame height to default if no footers
-    self.mainFrame:SetHeight(300)
-end
-
--- Modify the GetPlayerRelevantRows function to work with example data
-function TWRA:GetPlayerRelevantRows(sectionData)
-    if not sectionData then return {} end
-    
-    local relevantRows = {}
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    
-    -- Check each row
-    for rowIndex = 1, table.getn(sectionData) do
-        -- Skip the header row
-        if rowIndex > 1 then
-            local row = sectionData[rowIndex]
-            local isRelevantRow = false
-            
-            -- Check each column except section name and icon
-            for colIndex = 3, table.getn(row) do
-                local cellValue = row[colIndex]
-                -- Check if the cell contains player name
-                if cellValue == playerName then
-                    isRelevantRow = true
-                    break
-                end
-                
-                -- Check if the cell is a class group matching player's class
-                local className = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellValue]
-                if className and className == playerClass then
-                    isRelevantRow = true
-                    break
-                end
-                
-                -- Check for group assignments like "Group 1,2"
-                if cellValue and type(cellValue) == "string" and string.find(cellValue, "Group") then
-                    -- Extract group numbers using a safer approach
-                    local groupNums = {}
-                    
-                    -- Use string.find instead of gmatch for compatibility
-                    local pos = 1
-                    local str = cellValue
-                    while pos <= string.len(str) do
-                        local digitStart, digitEnd = string.find(str, "%d+", pos)
-                        if not digitStart then break end
-                        
-                        local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
-                        if groupNum then
-                            groupNums[groupNum] = true
-                        end
-                        pos = digitEnd + 1
-                    end
-                    
-                    -- Check if player is in any of these groups
-                    local playerGroup = 0
-                    for i = 1, GetNumRaidMembers() do
-                        local name, _, subgroup = GetRaidRosterInfo(i)
-                        if name == playerName then
-                            playerGroup = subgroup
-                            break
-                        end
-                    end
-                    if playerGroup > 0 and groupNums[playerGroup] then
-                        isRelevantRow = true
-                        break
-                    end
-                end
-            end
-            
-            -- If row is relevant, add to our list
-            if isRelevantRow then
-                table.insert(relevantRows, rowIndex)
-            end
-        end
-    end
-    
-    return relevantRows
 end
 
 -- AutoMarker toggle (only shown if SuperWoW is available)
@@ -1364,3 +1298,26 @@ end
 
 -- Call this function during OnLoad to fix any 0/1 values
 TWRA:ConvertOptionValues()
+
+-- Update RefreshAssignmentTable to properly display content using FilterAndDisplayHandler
+function TWRA:RefreshAssignmentTable()
+    self:Debug("ui", "RefreshAssignmentTable called")
+    
+    -- Ensure we have navigation and handlers
+    if not self.navigation or not self.navigation.handlers or 
+       not self.navigation.currentIndex or table.getn(self.navigation.handlers) == 0 then
+        self:Debug("error", "Cannot refresh - navigation data incomplete")
+        return
+    end
+    
+    -- Get current section name
+    local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+    if not currentSection then
+        self:Debug("error", "Cannot refresh - no current section found")
+        return
+    end
+    
+    -- Use FilterAndDisplayHandler for consistent display
+    self:Debug("ui", "Refreshing assignment table to section: " .. currentSection)
+    self:FilterAndDisplayHandler(currentSection)
+end

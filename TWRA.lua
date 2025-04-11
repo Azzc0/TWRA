@@ -3,32 +3,90 @@ TWRA_SavedVariables = TWRA_SavedVariables or {
 }
 TWRA = TWRA or {}
 
--- Update NavigateHandler to save current section
-function TWRA:NavigateHandler(delta)
-    -- Ensure navigation exists
-    if not self.navigation then
-        self.navigation = { handlers = {}, currentIndex = 1 }
-    end
+-- Fix NavigateToSection to properly update UI when changing sections
+function TWRA:NavigateToSection(index, source)
+    -- Debug entry
+    self:Debug("nav", "NavigateToSection(" .. tostring(index) .. ", " .. tostring(source) .. ") - " ..
+               "mainFrame:" .. tostring(self.mainFrame) .. 
+               ", isShown:" .. (self.mainFrame and self.mainFrame:IsShown() and "1" or "0") .. 
+               ", currentView:" .. tostring(self.currentView))
     
-    local nav = self.navigation
-    
-    -- Safety check for handlers
-    if not nav.handlers or table.getn(nav.handlers) == 0 then
+    -- Safety checks
+    if not self.navigation or not self.navigation.handlers then
+        self:Debug("error", "NavigateToSection: No navigation or handlers")
         return
     end
     
-    local newIndex = nav.currentIndex + delta
+    -- Set the current index with bounds checking
+    local maxIndex = table.getn(self.navigation.handlers)
+    if index < 1 then index = 1 end
+    if index > maxIndex then index = maxIndex end
     
-    if newIndex < 1 then 
-        newIndex = table.getn(nav.handlers)
-    elseif newIndex > table.getn(nav.handlers) then
-        newIndex = 1
+    -- Store the previous index for comparison
+    local previousIndex = self.navigation.currentIndex
+    
+    -- Update the current index
+    self.navigation.currentIndex = index
+    
+    -- Save current section in saved variables for persistence
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+        local sectionName = self.navigation.handlers[index]
+        TWRA_SavedVariables.assignments.currentSection = index
+        TWRA_SavedVariables.assignments.currentSectionName = sectionName
+        self:Debug("nav", "Saved current section: " .. index .. " (" .. sectionName .. ")")
     end
     
-    -- Use the central NavigateToSection function that handles syncing
-    self:NavigateToSection(newIndex)
+    -- Update UI if main frame exists and is shown
+    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+        -- Update main frame content
+        if previousIndex ~= index or source == "reload" then
+            if self.DisplayCurrentSection then
+                self:DisplayCurrentSection()
+            end
+            self:Debug("nav", "Updated main frame content for section: " .. self.navigation.handlers[index])
+        end
+    end
     
-    -- No need to call SaveCurrentSection here as it's now called inside NavigateToSection
+    -- Determine if we should show OSD
+    local shouldShowOSD = false
+    if self.OSD and self.OSD.enabled and self.OSD.showOnNavigation then
+        -- Don't show OSD if main frame is shown and in main view
+        if not (self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main") then
+            shouldShowOSD = true
+        end
+    end
+    
+    self:Debug("nav", "shouldShowOSD=" .. tostring(shouldShowOSD) .. 
+              " (mainFrame:" .. tostring(self.mainFrame) .. 
+              ", isShown:" .. (self.mainFrame and self.mainFrame:IsShown() and "1" or "0") .. 
+              ", currentView:" .. self.currentView .. ")")
+    
+    -- Update OSD if enabled
+    if shouldShowOSD then
+        if self.UpdateOSDContent and self.ShowOSD then
+            local currentSectionName = self.navigation.handlers[index]
+            local totalSections = table.getn(self.navigation.handlers)
+            self:UpdateOSDContent(currentSectionName, index, totalSections)
+            self:ShowOSD()
+        else
+            self:Debug("osd", "OSD functions not available")
+        end
+    else
+        self:Debug("osd", "OSD skipped - not enabled or not set to show on navigation")
+    end
+    
+    -- Broadcast section change if not coming from sync
+    if source ~= "fromSync" and source ~= "reload" then
+        -- Broadcast to sync the change to other clients
+        if self.BroadcastSectionChange then
+            self:BroadcastSectionChange(index)
+        end
+    end
+    
+    -- Update tank UI if on that section
+    if self.UpdateTanks then
+        self:UpdateTanks()
+    end
 end
 
 -- Helper function to rebuild navigation after data updates
@@ -67,6 +125,7 @@ function TWRA:UpdateUI()
         end
     end
 end
+
 -- Main initialization - called only once
 function TWRA:Initialize()
     local frame = CreateFrame("Frame")
@@ -75,6 +134,7 @@ function TWRA:Initialize()
     frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
     frame:RegisterEvent("CHAT_MSG_ADDON")
     frame:RegisterEvent("UPDATE_BINDINGS")
+    frame:RegisterEvent("PLAYER_ENTERING_WORLD")  -- Add this to catch UI reloads
     
     frame:SetScript("OnEvent", function()
         if event == "VARIABLES_LOADED" then
@@ -87,6 +147,33 @@ function TWRA:Initialize()
             end
             
             self:Debug("general", "Variables loaded")
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            -- This fires on initial load and UI reload
+            self:Debug("general", "Player entering world - checking for UI reload")
+            
+            -- Delay slightly to ensure other systems are ready
+            self:ScheduleTimer(function()
+                -- If main frame exists and is shown, force refresh content
+                if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+                    self:Debug("ui", "UI reload detected with visible frame - refreshing content")
+                    
+                    -- Ensure navigation is restored first
+                    if not self.navigation or not self.navigation.handlers or 
+                       not self.navigation.currentIndex then
+                        self:Debug("ui", "Rebuilding navigation after UI reload")
+                        self:RebuildNavigation()
+                    end
+                    
+                    -- Force display current section
+                    if self.navigation and self.navigation.handlers and 
+                       self.navigation.currentIndex and 
+                       self.navigation.handlers[self.navigation.currentIndex] then
+                        local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+                        self:Debug("ui", "Refreshing to section: " .. currentSection)
+                        self:FilterAndDisplayHandler(currentSection)
+                    end
+                end
+            end, 0.5)  -- Half second delay to ensure everything is loaded
         elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
             -- Handle group changes
             if self.OnGroupChanged then
@@ -120,7 +207,43 @@ function TWRA:Initialize()
     if self.InitDebug then 
         self:Debug("general", "Debug system initialized")
     end
+
+    -- Check if this is a UI reload and restore state
+    if self.mainFrame and TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+        -- Restore current view
+        if TWRA_SavedVariables.currentView then
+            self.currentView = TWRA_SavedVariables.currentView
+        end
+        
+        -- If we were in main view before reload, restore section too
+        if self.currentView == "main" and 
+           TWRA_SavedVariables.assignments.currentSection then
+            self:Debug("ui", "UI reload detected - restoring section: " .. 
+                      TWRA_SavedVariables.assignments.currentSection)
+            self:NavigateToSection(TWRA_SavedVariables.assignments.currentSection, "reload")
+        end
+    end
 end
+
+-- Save current view state on unload
+function TWRA:OnUnload()
+    -- Save which view we were in
+    if self.currentView then
+        TWRA_SavedVariables.currentView = self.currentView
+    end
+    
+    -- Any other state that needs to be saved on unload
+    self:Debug("general", "Saved settings on unload")
+end
+
+-- Register for PLAYER_LOGOUT to save state
+local logoutFrame = CreateFrame("Frame")
+logoutFrame:RegisterEvent("PLAYER_LOGOUT")
+logoutFrame:SetScript("OnEvent", function()
+    if event == "PLAYER_LOGOUT" then
+        TWRA:OnUnload()
+    end
+end)
 
 -- Event handler for all game events
 function TWRA:OnEvent(frame, event, ...)
@@ -225,6 +348,9 @@ function TWRA:LoadSavedAssignments()
         end
     end
     
+    -- Properly restore section position
+    local restoreSection = nil
+    
     if isNewFormat then
         -- New data format handling
         -- No need to set fullData - the new format is accessed differently
@@ -236,13 +362,12 @@ function TWRA:LoadSavedAssignments()
         -- Set example data flag properly
         self.usingExampleData = saved.usingExampleData or saved.isExample or false
         
-        -- Try to navigate to the previously selected section by name first
-        local sectionRestored = false
+        -- Save the section we need to display
         if saved.currentSectionName and self.navigation.handlers then
             for i, name in ipairs(self.navigation.handlers) do
                 if name == saved.currentSectionName then
                     self.navigation.currentIndex = i
-                    sectionRestored = true
+                    restoreSection = name
                     self:Debug("nav", "Restored section by name: " .. name)
                     break
                 end
@@ -250,13 +375,15 @@ function TWRA:LoadSavedAssignments()
         end
         
         -- If section wasn't restored by name, try by index
-        if not sectionRestored then
+        if not restoreSection then
             local index = saved.currentSection or 1
             if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
                 self.navigation.currentIndex = index
+                restoreSection = self.navigation.handlers[index]
                 self:Debug("nav", "Restored section by index: " .. index)
             else
                 self.navigation.currentIndex = 1
+                restoreSection = self.navigation.handlers[1]
                 self:Debug("nav", "Using default section index: 1")
             end
         end
@@ -271,13 +398,12 @@ function TWRA:LoadSavedAssignments()
         -- Set example data flag properly
         self.usingExampleData = saved.usingExampleData or saved.isExample or false
         
-        -- Try to navigate to the previously selected section by name first
-        local sectionRestored = false
+        -- Save the section we need to display
         if saved.currentSectionName and self.navigation.handlers then
             for i, name in ipairs(self.navigation.handlers) do
                 if name == saved.currentSectionName then
                     self.navigation.currentIndex = i
-                    sectionRestored = true
+                    restoreSection = name
                     self:Debug("nav", "Restored section by name: " .. name)
                     break
                 end
@@ -285,16 +411,24 @@ function TWRA:LoadSavedAssignments()
         end
         
         -- If section wasn't restored by name, try by index
-        if not sectionRestored then
+        if not restoreSection then
             local index = saved.currentSection or 1
             if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
                 self.navigation.currentIndex = index
+                restoreSection = self.navigation.handlers[index]
                 self:Debug("nav", "Restored section by index: " .. index)
             else
                 self.navigation.currentIndex = 1
+                restoreSection = self.navigation.handlers[1]
                 self:Debug("nav", "Using default section index: 1")
             end
         end
+    end
+    
+    -- If main frame is already visible, update content immediately
+    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" and restoreSection then
+        self:Debug("ui", "Main frame already visible - updating content to section: " .. restoreSection)
+        self:FilterAndDisplayHandler(restoreSection)
     end
     
     -- Update OSD with current section after loading (important for UI reload)
@@ -832,7 +966,21 @@ function TWRA:ToggleMainFrame()
             self:ShowMainView()
         else
             self:Debug("ui", "Already in main view - refreshing content")
-            self:RefreshAssignmentTable()
+            -- Use FilterAndDisplayHandler directly instead of RefreshAssignmentTable
+            -- This ensures we always display the current section properly
+            if self.navigation and self.navigation.handlers and 
+               self.navigation.currentIndex and 
+               self.navigation.handlers[self.navigation.currentIndex] then
+                local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+                self:Debug("ui", "Displaying current section: " .. currentSection)
+                self:FilterAndDisplayHandler(currentSection)
+            else
+                self:Debug("error", "Cannot display section - navigation data incomplete")
+                -- Attempt to refresh the table using the legacy method as fallback
+                if self.RefreshAssignmentTable then
+                    self:RefreshAssignmentTable()
+                end
+            end
         end
         
         self:Debug("ui", "Window shown")
@@ -914,6 +1062,11 @@ function TWRA:ShowMainView()
     -- Show other main view buttons
     if self.announceButton then self.announceButton:Show() end
     if self.updateTanksButton then self.updateTanksButton:Show() end
+
+    -- Change button text if options button exists
+    if self.optionsButton then
+        self.optionsButton:SetText("Options")
+    end
     
     -- Display current section content
     if self.DisplayCurrentSection then
