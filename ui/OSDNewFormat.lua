@@ -140,7 +140,7 @@ end
 if TWRA.PrepareOSDContent then
     local originalPrepareOSDContent = TWRA.PrepareOSDContent
     TWRA.PrepareOSDContent = function(self)
-        if self:IsNewDataFormat and self:IsNewDataFormat() then
+        if self.IsNewDataFormat and type(self.IsNewDataFormat) == "function" then
             return self:PrepareOSDContentNewFormat()
         else
             return originalPrepareOSDContent(self)

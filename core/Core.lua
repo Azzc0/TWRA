@@ -112,6 +112,10 @@ function TWRA:OnEvent()
             self:Error("InitOptions function not found")
         end
         
+        -- Rebuild navigation from saved data
+        self:Debug("nav", "Rebuilding navigation from saved data")
+        self:RebuildNavigation()
+        
         -- Add emergency UI reset function
         self.ResetUI = function()
             self:Debug("ui", "Performing emergency UI reset")
@@ -386,8 +390,6 @@ end
 
 -- Helper function to rebuild navigation after data updates
 function TWRA:RebuildNavigation()
-    if not self.fullData then return end
-    
     -- Initialize or reset navigation
     if not self.navigation then
         self.navigation = { handlers = {}, currentIndex = 1 }
@@ -396,26 +398,70 @@ function TWRA:RebuildNavigation()
         self.navigation.handlers = {}
     end
     
-    -- Use an ordered list to maintain section order
-    local seenSections = {}
+    -- Check if we have data to work with
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or
+       not TWRA_SavedVariables.assignments.data then
+        self:Debug("error", "No assignment data available")
+        return false
+    end
     
-    -- First pass: collect sections in the order they appear in the data
-    for i = 1, table.getn(self.fullData) do
-        local sectionName = self.fullData[i][1]
-        -- Stricter empty check and whitespace trimming
-        if sectionName and sectionName ~= "" and string.gsub(sectionName, "%s", "") ~= "" and not seenSections[sectionName] then 
-            seenSections[sectionName] = true  -- Mark as seen
-            table.insert(self.navigation.handlers, sectionName)  -- Add to ordered list
+    -- Special handling for the new format structure (table with numerical indices)
+    if type(TWRA_SavedVariables.assignments.data) == "table" then
+        -- Check if we're dealing with the new format (structured data)
+        local isNewFormat = false
+        for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+            if type(section) == "table" and section["Section Name"] then
+                isNewFormat = true
+                break
+            end
+        end
+        
+        if isNewFormat then
+            -- Collect section names from our new format structure
+            local sections = {}
+            for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+                if type(section) == "table" and section["Section Name"] and section["Section Name"] ~= "" then
+                    table.insert(self.navigation.handlers, section["Section Name"])
+                    table.insert(sections, section["Section Name"])
+                end
+            end
+            
+            -- Report what we found
+            local sectionCount = table.getn(self.navigation.handlers)
+            self:Debug("nav", "Built " .. sectionCount .. " sections from new format")
+            
+            if sectionCount > 0 and table.getn(sections) > 0 then
+                self:Debug("nav", "Section names: " .. table.concat(sections, ", "))
+            end
+            
+            return true
         end
     end
     
-    -- Debug output to verify sections
-    if self.Debug then
-        self:Debug("nav", "Built " .. table.getn(self.navigation.handlers) .. " sections: " .. 
-                   table.concat(self.navigation.handlers, ", "))
+    -- Fall back to old format handling
+    if self.fullData then
+        -- Use an ordered list to maintain section order
+        local seenSections = {}
+        
+        -- First pass: collect sections in the order they appear in the data
+        for i = 1, table.getn(self.fullData) do
+            local sectionName = self.fullData[i][1]
+            -- Stricter empty check and whitespace trimming
+            if sectionName and sectionName ~= "" and string.gsub(sectionName, "%s", "") ~= "" and not seenSections[sectionName] then
+                seenSections[sectionName] = true
+                table.insert(self.navigation.handlers, sectionName)
+            end
+        end
+        
+        -- Debug output to verify sections
+        self:Debug("nav", "Built " .. table.getn(self.navigation.handlers) .. " sections from old format")
+        
+        return true
     end
     
-    return self.navigation.handlers
+    -- No data found
+    self:Debug("error", "No data found for rebuilding navigation")
+    return false
 end
 
 -- Add an internal message system

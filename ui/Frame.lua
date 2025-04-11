@@ -339,29 +339,77 @@ function TWRA:CreateMainFrame()
 
     -- After creating all UI elements, load data
     if TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
-        self.fullData = TWRA_SavedVariables.assignments.data
-        
-        -- Update navigation handlers
-        self.navigation.handlers = {}
-        local seenSections = {}
-        
-        for i = 1, table.getn(self.fullData) do
-            local sectionName = self.fullData[i][1]
-            if sectionName and not seenSections[sectionName] then
-                seenSections[sectionName] = true
-                table.insert(self.navigation.handlers, sectionName)
+        -- Check if we're using the new data format
+        local isNewFormat = false
+        if type(TWRA_SavedVariables.assignments.data) == "table" then
+            for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+                if type(section) == "table" and section["Section Name"] then
+                    isNewFormat = true
+                    break
+                end
             end
         end
-
-        -- Restore saved section index
-        if TWRA_SavedVariables.assignments.currentSection then
-            self.navigation.currentIndex = TWRA_SavedVariables.assignments.currentSection
+        
+        if isNewFormat then
+            -- For new format, use RebuildNavigation to get handlers
+            self:Debug("ui", "Main frame detected new data format, rebuilding navigation")
+            self:RebuildNavigation()
+            
+            -- Set example data flag properly
+            self.usingExampleData = TWRA_SavedVariables.assignments.usingExampleData or
+                                    TWRA_SavedVariables.assignments.isExample or false
+            
+            -- Restore saved section index or name
+            if TWRA_SavedVariables.assignments.currentSectionName and self.navigation.handlers then
+                local found = false
+                for i, name in ipairs(self.navigation.handlers) do
+                    if name == TWRA_SavedVariables.assignments.currentSectionName then
+                        self.navigation.currentIndex = i
+                        found = true
+                        self:Debug("nav", "Main frame restored section by name: " .. name)
+                        break
+                    end
+                end
+                
+                -- If not found by name, try by index
+                if not found and TWRA_SavedVariables.assignments.currentSection then
+                    local index = TWRA_SavedVariables.assignments.currentSection
+                    if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
+                        self.navigation.currentIndex = index
+                        self:Debug("nav", "Main frame restored section by index: " .. index)
+                    else
+                        self.navigation.currentIndex = 1
+                        self:Debug("nav", "Main frame using default section index: 1")
+                    end
+                end
+            end
         else
-            self.navigation.currentIndex = 1
+            -- Legacy format handling (unchanged)
+            self.fullData = TWRA_SavedVariables.assignments.data
+            
+            -- Update navigation handlers
+            self.navigation.handlers = {}
+            local seenSections = {}
+            
+            for i = 1, table.getn(self.fullData) do
+                local sectionName = self.fullData[i][1]
+                if sectionName and not seenSections[sectionName] then
+                    seenSections[sectionName] = true
+                    table.insert(self.navigation.handlers, sectionName)
+                end
+            end
+
+            -- Restore saved section index
+            if TWRA_SavedVariables.assignments.currentSection then
+                self.navigation.currentIndex = TWRA_SavedVariables.assignments.currentSection
+            else
+                self.navigation.currentIndex = 1
+            end
         end
         
         -- Update menu button text
-        if self.navigation.handlerText and self.navigation.handlers[self.navigation.currentIndex] then
+        if self.navigation.handlerText and self.navigation.handlers and 
+           self.navigation.currentIndex and self.navigation.handlers[self.navigation.currentIndex] then
             self.navigation.handlerText:SetText(self.navigation.handlers[self.navigation.currentIndex])
         end
         
@@ -389,63 +437,147 @@ local function getUniqueHandlers(data)
     return handlers
 end
 
--- Update the FilterAndDisplayHandler function to ignore GUID rows
-
+-- Replace FilterAndDisplayHandler to work exclusively with the new format
 function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Create filtered data structure
     local filteredData = {}
-    local maxColumns = 2
-    
-    -- First, find the header row for this specific section
-    local headerRow = nil
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentHandler and self.fullData[i][2] == "Icon" then
-            headerRow = self.fullData[i]
-            break
-        end
-    end
-    
-    -- If no section-specific header found, use the global header (first row)
-    if not headerRow then
-        for i = 1, table.getn(self.fullData) do
-            if self.fullData[i][2] == "Icon" then
-                headerRow = self.fullData[i]
+
+    -- Get the current section data based on the handler name
+    local sectionData = nil
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+       TWRA_SavedVariables.assignments.data then
+        for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+            if section["Section Name"] == currentHandler then
+                sectionData = section
                 break
             end
         end
     end
     
-    -- Add header row first and determine max columns from it
-    if headerRow then
-        -- Always use the full width of the header row
-        maxColumns = table.getn(headerRow)
-        table.insert(filteredData, headerRow)
+    if not sectionData then
+        self:Debug("ui", "No section data found for handler: " .. (currentHandler or "nil"))
+        return
     end
     
-    -- Add data rows for current handler (excluding Notes, Warnings, and GUIDs by icon)
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentHandler and 
-           self.fullData[i][2] ~= "Icon" and
-           self.fullData[i][2] ~= "GUID" and  -- Skip GUID rows
-           self.fullData[i][2] ~= "Note" and
-           self.fullData[i][2] ~= "Warning" then
-            
-            -- Ensure all rows have the same number of columns as the header
-            local paddedRow = {}
-            for j = 1, maxColumns do
-                paddedRow[j] = self.fullData[i][j] or ""
+    -- Process header
+    if sectionData["Section Header"] then
+        table.insert(filteredData, sectionData["Section Header"])
+        
+        -- Determine max columns from header
+        self.headerColumns = table.getn(sectionData["Section Header"])
+    else
+        self:Debug("error", "No header found in section data")
+        return
+    end
+    
+    -- Process rows, skipping special rows in new format
+    if sectionData["Section Rows"] then
+        for i, rowData in ipairs(sectionData["Section Rows"]) do
+            -- Skip special rows based on the row type
+            local rowType = rowData[2]  -- Second column is typically the icon/type
+            if rowType ~= "Note" and rowType ~= "Warning" and rowType ~= "GUID" then
+                -- Insert the row into our filtered data
+                table.insert(filteredData, rowData)
             end
-            table.insert(filteredData, paddedRow)
+        end
+    else
+        self:Debug("error", "No rows found in section data")
+    end
+    
+    -- Clear any existing content
+    self:ClearRows()
+    
+    -- Create new rows
+    self:CreateRows(filteredData, true)
+    
+    -- Create footers for this section (notes and warnings)
+    self:CreateFootersNewFormat(currentHandler, sectionData)
+    
+    self:Debug("ui", "Displayed " .. table.getn(filteredData) .. " rows for section: " .. currentHandler)
+end
+
+-- Add new function to create footers from the new format
+function TWRA:CreateFootersNewFormat(currentHandler, sectionData)
+    -- Clear any existing footers
+    self:ClearFooters()
+    
+    -- Skip if no section data
+    if not sectionData then return end
+    
+    -- Find Notes and Warnings in the section data
+    local notes = {}
+    local warnings = {}
+    
+    -- Process special rows
+    if sectionData["Section Rows"] then
+        for _, rowData in ipairs(sectionData["Section Rows"]) do
+            if rowData[2] == "Note" and rowData[3] and rowData[3] ~= "" then
+                table.insert(notes, {
+                    text = rowData[3],
+                    icon = rowData[2]
+                })
+            elseif rowData[2] == "Warning" and rowData[3] and rowData[3] ~= "" then
+                table.insert(warnings, {
+                    text = rowData[3],
+                    icon = rowData[2]
+                })
+            end
         end
     end
     
-    -- Update column count and create rows
-    self.headerColumns = maxColumns
-    self:ClearRows()
-    self:CreateRows(filteredData, true)
+    -- If no notes or warnings, just return
+    if table.getn(notes) == 0 and table.getn(warnings) == 0 then
+        return
+    end
     
-    -- Create footers after rows
-    self:CreateFooters(currentHandler)
+    -- Initialize footer storage if needed
+    if not self.footers then
+        self.footers = {}
+    end
+    
+    -- Calculate positions and dimensions
+    local footerHeight = 28  -- Increased height for each footer element
+    local yOffset = -(40 + (table.getn(self.rowFrames) * 20) + 25)  -- Start below the last row with padding
+    
+    -- Create separator line
+    local separator = self.mainFrame:CreateTexture(nil, "BACKGROUND")
+    separator:SetTexture(0.3, 0.3, 0.3, 1)
+    separator:SetHeight(1)
+    separator:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 20, yOffset)
+    separator:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, yOffset)
+    table.insert(self.footers, {texture = separator})
+    
+    -- Adjust starting position for first footer
+    yOffset = yOffset - 5
+    
+    -- First create warnings (more important)
+    for i = 1, table.getn(warnings) do
+        local warning = warnings[i]
+        local footer = self:CreateFooterElement(warning.text, warning.icon, "Warning", yOffset)
+        table.insert(self.footers, footer)
+        yOffset = yOffset - footerHeight
+    end
+    
+    -- Then create notes
+    for i = 1, table.getn(notes) do
+        local note = notes[i]
+        local footer = self:CreateFooterElement(note.text, note.icon, "Note", yOffset)
+        table.insert(self.footers, footer)
+        yOffset = yOffset - footerHeight
+    end
+    
+    -- Extend frame height if needed to fit footers
+    local totalHeight = 40 +                                    -- Initial offset
+                      (table.getn(self.rowFrames) * 20) +     -- Data rows
+                      25 +                                     -- Padding before separator
+                      1 +                                      -- Separator line
+                      5 +                                      -- Padding after separator
+                      ((table.getn(notes) + table.getn(warnings)) * footerHeight) + -- Footer elements
+                      10                                       -- Bottom padding
+
+    if totalHeight > 300 then  -- 300 is the default frame height
+        self.mainFrame:SetHeight(totalHeight)
+    end
 end
 
 -- Simplify CreateRows to focus only on row creation

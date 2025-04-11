@@ -33,32 +33,13 @@ end
 
 -- Helper function to rebuild navigation after data updates
 function TWRA:RebuildNavigation()
-    if not self.fullData then return end
-    
-    -- Initialize or reset navigation
-    if not self.navigation then
-        self.navigation = { handlers = {}, currentIndex = 1 }
+    -- Use the implementation from core/Core.lua
+    if TWRA.core and TWRA.core.RebuildNavigation then
+        return TWRA.core:RebuildNavigation()
     else
-        self.navigation.handlers = {}
+        -- If not available, call implementation in Core.lua directly
+        return self:core_RebuildNavigation()
     end
-    
-    -- Use an ordered list to maintain section order
-    local seenSections = {}
-    
-    -- First pass: collect sections in the order they appear in the data
-    for i = 1, table.getn(self.fullData) do
-        local sectionName = self.fullData[i][1]
-        -- Add explicit check for non-empty strings (trim whitespace too)
-        if sectionName and sectionName ~= "" and string.gsub(sectionName, "%s", "") ~= "" and not seenSections[sectionName] then
-            seenSections[sectionName] = true
-            table.insert(self.navigation.handlers, sectionName)
-        end
-    end
-    
-    -- Debug output to verify sections
-    self:Debug("nav", "Built " .. table.getn(self.navigation.handlers) .. " sections")
-    
-    return self.navigation.handlers
 end
 
 -- Helper function to update UI elements based on current data
@@ -232,37 +213,87 @@ function TWRA:LoadSavedAssignments()
         return self:LoadExampleData()
     end
     
-    -- Load and clean the saved data
-    self.fullData = self:CleanAssignmentData(saved.data, false)
-    
-    -- Rebuild navigation
-    self:RebuildNavigation()
-    
-    -- Set example data flag properly
-    self.usingExampleData = saved.usingExampleData or saved.isExample or false
-    
-    -- Try to navigate to the previously selected section by name first
-    local sectionRestored = false
-    if saved.currentSectionName and self.navigation.handlers then
-        for i, name in ipairs(self.navigation.handlers) do
-            if name == saved.currentSectionName then
-                self.navigation.currentIndex = i
-                sectionRestored = true
-                self:Debug("nav", "Restored section by name: " .. name)
+    -- Check if we're using the new data format
+    local isNewFormat = false
+    if type(saved.data) == "table" then
+        for idx, section in pairs(saved.data) do
+            if type(section) == "table" and section["Section Name"] then
+                isNewFormat = true
+                self:Debug("data", "Detected new data format in saved data")
                 break
             end
         end
     end
     
-    -- If section wasn't restored by name, try by index
-    if not sectionRestored then
-        local index = saved.currentSection or 1
-        if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
-            self.navigation.currentIndex = index
-            self:Debug("nav", "Restored section by index: " .. index)
-        else
-            self.navigation.currentIndex = 1
-            self:Debug("nav", "Using default section index: 1")
+    if isNewFormat then
+        -- New data format handling
+        -- No need to set fullData - the new format is accessed differently
+        self:Debug("data", "Loading data using new format structure")
+        
+        -- Rebuild navigation using the new data format
+        self:RebuildNavigation()
+        
+        -- Set example data flag properly
+        self.usingExampleData = saved.usingExampleData or saved.isExample or false
+        
+        -- Try to navigate to the previously selected section by name first
+        local sectionRestored = false
+        if saved.currentSectionName and self.navigation.handlers then
+            for i, name in ipairs(self.navigation.handlers) do
+                if name == saved.currentSectionName then
+                    self.navigation.currentIndex = i
+                    sectionRestored = true
+                    self:Debug("nav", "Restored section by name: " .. name)
+                    break
+                end
+            end
+        end
+        
+        -- If section wasn't restored by name, try by index
+        if not sectionRestored then
+            local index = saved.currentSection or 1
+            if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
+                self.navigation.currentIndex = index
+                self:Debug("nav", "Restored section by index: " .. index)
+            else
+                self.navigation.currentIndex = 1
+                self:Debug("nav", "Using default section index: 1")
+            end
+        end
+    else
+        -- Legacy format handling
+        -- Load and clean the saved data
+        self.fullData = self:CleanAssignmentData(saved.data, false)
+        
+        -- Rebuild navigation
+        self:RebuildNavigation()
+        
+        -- Set example data flag properly
+        self.usingExampleData = saved.usingExampleData or saved.isExample or false
+        
+        -- Try to navigate to the previously selected section by name first
+        local sectionRestored = false
+        if saved.currentSectionName and self.navigation.handlers then
+            for i, name in ipairs(self.navigation.handlers) do
+                if name == saved.currentSectionName then
+                    self.navigation.currentIndex = i
+                    sectionRestored = true
+                    self:Debug("nav", "Restored section by name: " .. name)
+                    break
+                end
+            end
+        end
+        
+        -- If section wasn't restored by name, try by index
+        if not sectionRestored then
+            local index = saved.currentSection or 1
+            if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
+                self.navigation.currentIndex = index
+                self:Debug("nav", "Restored section by index: " .. index)
+            else
+                self.navigation.currentIndex = 1
+                self:Debug("nav", "Using default section index: 1")
+            end
         end
     end
     
@@ -280,7 +311,7 @@ function TWRA:LoadSavedAssignments()
         end
     end
     
-    self:Debug("data", "Loaded assignments (example mode: " .. (self.usingExampleData and "ON" or "OFF") .. ")")
+    self:Debug("data", "Loaded assignments (example mode: " .. (self.usingExampleData and "ON" or "OFF") .. ", new format: " .. (isNewFormat and "YES" or "NO") .. ")")
     return true
 end
 
@@ -335,12 +366,6 @@ end
 
 -- Announcement functionality - completely rewritten
 function TWRA:AnnounceAssignments()
-    -- Validate we have data
-    if not self.fullData or table.getn(self.fullData) == 0 then
-        self:Debug("ui", "No assignments data to announce")
-        return
-    end
-    
     -- Get current section from navigation
     local currentSection = nil
     if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
@@ -354,6 +379,13 @@ function TWRA:AnnounceAssignments()
     
     self:Debug("ui", "Preparing to announce section: " .. currentSection)
     
+    -- Get the current section data
+    local sectionData = self:GetCurrentSectionData()
+    if not sectionData then
+        self:Debug("error", "Failed to get section data for " .. currentSection)
+        return
+    end
+    
     -- First pass: collect all the messages we'll send
     local messageQueue = {}
     
@@ -363,45 +395,28 @@ function TWRA:AnnounceAssignments()
         type = "header"
     })
     
-    -- Find the header row for this section
-    local headerRow = nil
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
-            headerRow = self.fullData[i]
-            break
-        end
-    end
-    
-    -- Fallback to global header if needed
+    -- Get header row
+    local headerRow = sectionData["Section Header"]
     if not headerRow then
-        for i = 1, table.getn(self.fullData) do
-            if self.fullData[i][2] == "Icon" then
-                headerRow = self.fullData[i]
-                break
-            end
-        end
+        self:Debug("error", "No header found in section data")
+        return
     end
     
-    -- Create column role mapping if we found a header row
+    -- Create column role mapping from header
     local columnRoles = {}
-    if headerRow then
-        for i = 3, table.getn(headerRow) do
-            columnRoles[i] = headerRow[i]
-            self:Debug("ui", "Column " .. i .. " role: " .. (headerRow[i] or "nil"))
-        end
+    -- In new format: Column 1 = "Icon", Column 2 = "Target", Column 3+ = roles
+    for i = 3, table.getn(headerRow) do
+        columnRoles[i] = headerRow[i]
+        self:Debug("ui", "Column " .. i .. " role: " .. (headerRow[i] or "nil"))
     end
     
-    -- Collect normal assignment rows
-    for i = 1, table.getn(self.fullData) do
-        -- Only process rows for the current section
-        if self.fullData[i][1] == currentSection then
-            -- Process assignment rows (skipping Icon, Note, Warning, and GUID rows)
-            if self.fullData[i][2] ~= "Icon" and 
-               self.fullData[i][2] ~= "Note" and 
-               self.fullData[i][2] ~= "Warning" and 
-               self.fullData[i][2] ~= "GUID" then
-                local icon = self.fullData[i][2] 
-                local target = self.fullData[i][3] or ""
+    -- Process normal assignment rows
+    if sectionData["Section Rows"] then
+        for _, rowData in ipairs(sectionData["Section Rows"]) do
+            -- Skip special rows
+            if rowData[2] ~= "Note" and rowData[2] ~= "Warning" and rowData[2] ~= "GUID" then
+                local icon = rowData[1] -- Icon is now column 1
+                local target = rowData[2] or "" -- Target is now column 2
                 local messageText = ""
                 
                 -- Add colored icon text
@@ -414,12 +429,12 @@ function TWRA:AnnounceAssignments()
                 -- Group roles by type
                 local roleGroups = {}
                 
-                -- Process each column for roles
-                for j = 4, table.getn(self.fullData[i]) do
-                    local role = self.fullData[i][j]
+                -- Process each column for roles (start from column 3)
+                for j = 3, table.getn(rowData) do
+                    local role = rowData[j]
                     if role and role ~= "" then
                         -- Get role name from header
-                        local roleName = columnRoles[j] or "Role" -- Default to "Role" if header not found
+                        local roleName = columnRoles[j] or "Role"
                         
                         -- Create role group if it doesn't exist
                         if not roleGroups[roleName] then
@@ -441,7 +456,7 @@ function TWRA:AnnounceAssignments()
                             displayRoleName = roleName .. "s"
                         end
                         
-                        -- Add role header (e.g., "Tanks: ")
+                        -- Add role header
                         if roleAdded then
                             messageText = messageText .. " " .. displayRoleName .. ": "
                         else
@@ -480,19 +495,17 @@ function TWRA:AnnounceAssignments()
     end
     
     -- Collect warnings for the current section
-    local uniqueWarnings = {}  -- Use a hash table to track unique warnings
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Warning" then
-            local warningText = self.fullData[i][3]
-            if warningText and warningText ~= "" then
-                -- Only add this warning if we haven't seen it before
-                -- IMPORTANT: Use the raw text as the key, before any item processing
-                local warningKey = warningText
+    local uniqueWarnings = {}
+    if sectionData["Section Rows"] then
+        for _, rowData in ipairs(sectionData["Section Rows"]) do
+            if rowData[1] == "Warning" and rowData[3] and rowData[3] ~= "" then
+                local warningText = rowData[3]
+                local warningKey = warningText  -- Use the raw text as the key
+                
                 if not uniqueWarnings[warningKey] then
                     uniqueWarnings[warningKey] = true
-                    -- FIXED: Do NOT add "WARNING:" prefix - use the text as-is
                     table.insert(messageQueue, {
-                        text = warningText, -- Use raw text without "WARNING:" prefix
+                        text = warningText,
                         type = "warning"
                     })
                     self:Debug("ui", "Warning message created: " .. warningText)
@@ -503,13 +516,7 @@ function TWRA:AnnounceAssignments()
         end
     end
     
-    -- Debug print of all messages
-    self:Debug("ui", "Announcement message queue prepared with " .. table.getn(messageQueue) .. " messages:")
-    for i, msg in ipairs(messageQueue) do
-        self:Debug("ui", "  [" .. i .. "/" .. table.getn(messageQueue) .. "] (" .. msg.type .. ") " .. msg.text)
-    end
-    
-    -- Now send the messages using a separate function
+    -- Now send the messages using the existing function
     self:SendAnnouncementMessages(messageQueue)
 end
 
@@ -1108,20 +1115,111 @@ function TWRA_DataUtility_DisplayCurrentSection(self)
     return false
 end
 
--- -- Hook into the NavigateToSection function to ensure section is properly saved with new format
--- if TWRA.NavigateToSection then
---     local originalNavigateToSection = TWRA.NavigateToSection
---     TWRA.NavigateToSection = function(self, index, suppressSync)
---         local result = originalNavigateToSection(self, index, suppressSync)
+-- Helper function to check if we're using the new data format
+function TWRA:IsNewDataFormat()
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or 
+       not TWRA_SavedVariables.assignments.data then
+        return false
+    end
+    
+    -- Check for version marker (most reliable way)
+    if TWRA_SavedVariables.assignments.version == 2 then
+        return true
+    end
+    
+    -- Check structure as a fallback
+    if type(TWRA_SavedVariables.assignments.data) == "table" then
+        for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+            if type(section) == "table" and section["Section Name"] then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Helper function to get current section data in the new format
+function TWRA:GetCurrentSectionData()
+    if not self.navigation or not self.navigation.currentIndex or not self.navigation.handlers then
+        return nil
+    end
+    
+    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+    if not sectionName then return nil end
+    
+    -- Look for the section with this name in the saved data
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+       TWRA_SavedVariables.assignments.data then
+        for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+            if section["Section Name"] == sectionName then
+                return section
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Updated DisplayCurrentSection function to work with new format
+function TWRA:DisplayCurrentSection()
+    -- Ensure we have a navigation index and handlers
+    if not self.navigation or not self.navigation.currentIndex or 
+       not self.navigation.handlers or table.getn(self.navigation.handlers) == 0 then
+        self:Debug("ui", "No data or navigation available")
+        return
+    end
+    
+    local currentIndex = self.navigation.currentIndex
+    local totalSections = table.getn(self.navigation.handlers)
+    local sectionName = self.navigation.handlers[currentIndex]
+    
+    -- Update UI elements that show section info
+    if self.mainFrame and self.mainFrame:IsShown() then
+        -- Update section text
+        if self.navigation.handlerText then
+            self.navigation.handlerText:SetText(sectionName)
+        end
         
---         -- Additional handling for new format
---         if self:IsNewDataFormat and self:IsNewDataFormat() and TWRA_SavedVariables and TWRA_SavedVariables.assignments then
---             TWRA_SavedVariables.assignments.currentSection = index
---             if self.navigation and self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
---                 self:Debug("nav", "Saved current section: " .. index .. " (" .. self.navigation.handlers[index] .. ")")
---             end
---         end
+        -- Update menuButton text if it exists
+        if self.navigation.menuButton and self.navigation.menuButton.text then
+            self.navigation.menuButton.text:SetText(sectionName)
+        end
         
---         return result
---     end
--- end
+        -- Filter and display the current handler's content in the main frame
+        self:FilterAndDisplayHandler(sectionName)
+    end
+    
+    -- Determine if we should also show the OSD
+    -- Use ShouldShowOSD helper if it exists
+    local shouldShowOSD = self.ShouldShowOSD and self:ShouldShowOSD()
+    
+    -- Show OSD if appropriate
+    if shouldShowOSD then
+        -- If OSD exists, update and show it
+        if self.OSD then
+            -- Update OSD content
+            if self.UpdateOSDContent then
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+            end
+            
+            -- Show OSD
+            if self.ShowOSD then
+                self:ShowOSD()
+            end
+        end
+    end
+    
+    -- Support for autonavigation
+    if self.AUTONAVIGATE and self.AUTONAVIGATE.enabled then
+        -- Update current section in autonavigate system
+        self.AUTONAVIGATE.currentSectionIndex = currentIndex
+        self.AUTONAVIGATE.currentSectionName = sectionName
+    end
+    
+    -- Always update these values for consistent state
+    self.currentSectionIndex = currentIndex
+    self.currentSectionName = sectionName
+    
+    return true
+end
