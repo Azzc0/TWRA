@@ -22,59 +22,31 @@ function TWRA:InitChunkManager()
 end
 
 -- Split a large message into manageable chunks
-function TWRA:SplitIntoChunks(message, commandPrefix, timestamp)
-    if not message or message == "" then
-        self:Debug("error", "Cannot split empty message into chunks")
-        return nil
-    end
-    
-    -- Ensure proper Base64 padding before splitting
-    local dataLen = string.len(message)
-    local remainder = dataLen % 4
-    while remainder > 0 and remainder < 4 do
-        message = message .. "="
-        remainder = remainder + 1
-        self:Debug("sync", "Added padding character to Base64 data before chunking")
-    end
-    
+function TWRA:SplitMessageIntoChunks(message)
     local chunks = {}
-    local messageLength = string.len(message)
-    local chunkSize = self.chunkManager.maxChunkSize or 180
+    local chunkSize = 240 -- Maximum message size for addon messages
+    
+    if string.len(message) <= chunkSize then
+        return {message}
+    end
     
     -- Calculate how many chunks we'll need
-    local totalChunks = math.ceil(messageLength / chunkSize)
-    self:Debug("sync", "Splitting message into " .. totalChunks .. " chunks")
+    local numChunks = math.ceil(string.len(message) / chunkSize)
     
-    -- Create header message (doesn't contain actual data)
-    local headerMessage = string.format("%s:%d:CHUNKED:%d:%d", 
-        commandPrefix, 
-        timestamp,
-        messageLength,  -- total message size
-        totalChunks     -- number of chunks
-    )
-    chunks[0] = headerMessage  -- Use index 0 for the header
-    
-    -- Split message into chunks
-    local position = 1
-    for i = 1, totalChunks do
-        local endPos = math.min(position + chunkSize - 1, messageLength)
-        local chunkData = string.sub(message, position, endPos)
-        
-        -- Create chunk message
-        local chunkMessage = string.format("%s:%d:CHUNK:%d:%d:%s", 
-            commandPrefix,
-            timestamp,
-            i,              -- chunk number
-            totalChunks,    -- total chunks
-            chunkData       -- chunk data
-        )
-        
-        -- Add to chunks table
-        chunks[i] = chunkMessage
-        position = endPos + 1
+    -- Prepare each chunk
+    for i = 1, numChunks do
+        local startPos = (i - 1) * chunkSize + 1
+        local endPos = math.min(startPos + chunkSize - 1, string.len(message))
+        local chunk = string.sub(message, startPos, endPos)
+        table.insert(chunks, chunk)
     end
     
-    return chunks, totalChunks
+    -- Add chunk metadata to each chunk
+    for i = 1, numChunks do
+        chunks[i] = "C:" .. i .. ":" .. numChunks .. ":" .. chunks[i]
+    end
+    
+    return chunks
 end
 
 -- Send a chunked message with delays between chunks

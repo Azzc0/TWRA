@@ -10,16 +10,19 @@ core\Debug.lua
 core\Constants.lua
 core\Utils.lua
 core\Base64.lua
+core\ImportDiagnostic.lua
 Example.lua
 TWRA.lua
 core\Core.lua
 core\DataProcessing.lua
+core\DataUtility.lua
 
 # UI modules
 ui\UIUtils.lua
 ui\Frame.lua
 ui\OSD.lua
 ui\OSDContent.lua
+ui\OSDNewFormat.lua
 ui\Options.lua
 
 # Feature modules

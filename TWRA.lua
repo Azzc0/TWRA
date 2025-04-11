@@ -1080,3 +1080,48 @@ function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
         end
     end
 end
+
+-- Add a hook to the existing DisplayCurrentSection if it exists
+-- This should be added near the end of the file to override any existing implementation
+if TWRA.DisplayCurrentSection then
+    local originalDisplayCurrentSection = TWRA.DisplayCurrentSection
+    TWRA.DisplayCurrentSection = function(self)
+        -- Check if we have the DataUtility version of DisplayCurrentSection
+        if self.IsNewDataFormat and self.GetCurrentSectionData then
+            return self:IsNewDataFormat() and 
+                  self.GetCurrentSectionData and 
+                  self:GetCurrentSectionData() and
+                  TWRA_DataUtility_DisplayCurrentSection(self) or
+                  originalDisplayCurrentSection(self)
+        else
+            return originalDisplayCurrentSection(self)
+        end
+    end
+end
+
+-- Create a backup of the display function in case it gets overridden
+function TWRA_DataUtility_DisplayCurrentSection(self)
+    -- Make sure we have the utility functions
+    if self.IsNewDataFormat and self.GetCurrentSectionData then
+        return self:DisplayCurrentSection()
+    end
+    return false
+end
+
+-- -- Hook into the NavigateToSection function to ensure section is properly saved with new format
+-- if TWRA.NavigateToSection then
+--     local originalNavigateToSection = TWRA.NavigateToSection
+--     TWRA.NavigateToSection = function(self, index, suppressSync)
+--         local result = originalNavigateToSection(self, index, suppressSync)
+        
+--         -- Additional handling for new format
+--         if self:IsNewDataFormat and self:IsNewDataFormat() and TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+--             TWRA_SavedVariables.assignments.currentSection = index
+--             if self.navigation and self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
+--                 self:Debug("nav", "Saved current section: " .. index .. " (" .. self.navigation.handlers[index] .. ")")
+--             end
+--         end
+        
+--         return result
+--     end
+-- end

@@ -766,6 +766,13 @@ end
 function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     if not data or not sourceString then return end
     
+    -- Check if this is our new format structure with ["data"] key
+    local isNewFormat = false
+    if type(data) == "table" and data.data and type(data.data) == "table" then
+        isNewFormat = true
+        self:Debug("data", "Detected new format structure in SaveAssignments")
+    end
+    
     -- Use provided timestamp or generate new one
     local timestamp = originalTimestamp or time()
     
@@ -785,6 +792,48 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     self.pendingSectionName = currentSectionName
     self.pendingSectionIndex = currentSectionIndex
     
+    -- Handle new format directly
+    if isNewFormat then
+        -- Clear current data for clean import
+        if self.ClearData then
+            self:Debug("data", "Clearing current data")
+            self:ClearData()
+            self:Debug("data", "Data cleared successfully")
+        end
+        
+        -- Direct assignment to SavedVariables for new format
+        TWRA_SavedVariables = TWRA_SavedVariables or {}
+        TWRA_SavedVariables.assignments = {
+            data = data.data,
+            source = sourceString,
+            timestamp = timestamp,
+            currentSection = 1,  -- Start at first section for new imports
+            version = 2,  -- Mark as new format
+            isExample = false
+        }
+        
+        -- Build navigation from the imported sections
+        self:BuildNavigationFromNewFormat()
+        
+        self:Debug("data", "Assigned new format data directly to SavedVariables")
+        
+        -- Skip announcement if noAnnounce is true
+        if noAnnounce then return true end
+        
+        -- Announce update to group if we're in one
+        if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+            local announceMsg = string.format("%s:%d:%s", 
+                self.SYNC.COMMANDS.ANNOUNCE,
+                timestamp,
+                UnitName("player"))
+            
+            self:SendAddonMessage(announceMsg)
+        end
+        
+        return true
+    end
+    
+    -- Legacy format handling below - unchanged
     -- Clean the data using our centralized function
     local cleanedData = self:CleanAssignmentData(data, false)
     
@@ -821,7 +870,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     self:Debug("data", "Data saved with timestamp: " .. timestamp)
     
     -- Skip announcement if noAnnounce is true
-    if noAnnounce then return end
+    if noAnnounce then return true end
     
     -- Announce update to group if we're in one
     if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
@@ -832,6 +881,44 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         
         self:SendAddonMessage(announceMsg)
     end
+    
+    return true
+end
+
+-- Add helper function for the new format navigation
+function TWRA:BuildNavigationFromNewFormat()
+    self:Debug("nav", "Building navigation from new format data")
+    
+    -- Initialize navigation structure
+    self.navigation = self.navigation or { handlers = {}, currentIndex = 1 }
+    self.navigation.handlers = {}
+    self.navigation.currentIndex = 1
+    
+    -- Check if we have data to work with
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or
+       not TWRA_SavedVariables.assignments.data then
+        self:Debug("error", "No assignment data available")
+        return false
+    end
+    
+    -- Collect section names from our new format structure
+    local sections = {}
+    for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+        if type(section) == "table" and section["Section Name"] then
+            table.insert(self.navigation.handlers, section["Section Name"])
+            table.insert(sections, section["Section Name"])
+        end
+    end
+    
+    -- Report what we found
+    local sectionCount = table.getn(self.navigation.handlers)
+    self:Debug("nav", "Built " .. sectionCount .. " sections from new format")
+    
+    if sectionCount > 0 and table.getn(sections) > 0 then
+        self:Debug("nav", "Section names: " .. table.concat(sections, ", "))
+    end
+    
+    return (sectionCount > 0)
 end
 
 -- Add CreateMinimapButton function - moved from OSD.lua to TWRA.lua as requested

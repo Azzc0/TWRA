@@ -1149,3 +1149,123 @@ function TWRA:ApplyInitialSettings()
         self:Debug("nav", "AutoNavigate disabled in settings")
     end
 end
+
+-- Add this function to handle direct import of new format data
+function TWRA:DirectImportNewFormat(importText)
+    self:Debug("data", "Starting direct import of new format data")
+    
+    -- Step 1: Decode the Base64 string
+    local decodedString = self:DecodeBase64(importText)
+    
+    if not decodedString then
+        self:Debug("error", "Failed to decode Base64 string", true)
+        return false
+    end
+    
+    -- Debug the decoded string beginning (only for diagnostics)
+    self:Debug("data", "Decoded string length: " .. string.len(decodedString))
+    local previewText = string.sub(decodedString, 1, 40)
+    if string.len(decodedString) > 40 then
+        previewText = previewText .. "..."
+    end
+    self:Debug("data", "String begins with: " .. previewText)
+    
+    -- Step 2: Create a temporary environment to evaluate the string safely
+    local env = {}
+    
+    -- Step 3: Create a modified script that loads into our temp environment
+    local script = "local TWRA_ImportString; " .. decodedString .. "; return TWRA_ImportString"
+    
+    -- Execute the script
+    local func, err = loadstring(script)
+    if not func then
+        self:Debug("error", "Error in loadstring: " .. tostring(err), true)
+        return false
+    end
+    
+    -- Create a safe environment
+    setfenv(func, env)
+    
+    -- Execute and get result
+    local success, importData = pcall(func)
+    if not success or not importData then
+        self:Debug("error", "Error executing import script: " .. tostring(importData or "unknown error"), true)
+        return false
+    end
+    
+    -- Step 4: Check if the format matches our expected structure
+    if not importData.data or type(importData.data) ~= "table" then
+        self:Debug("data", "Not in new format - missing data field or wrong type")
+        return false
+    end
+    
+    -- Step 5: Check for our sections structure
+    local isNewFormat = false
+    local sectionCount = 0
+    
+    for idx, section in pairs(importData.data) do
+        sectionCount = sectionCount + 1
+        if type(section) == "table" and 
+           section["Section Name"] and 
+           section["Section Header"] and 
+           section["Section Rows"] then
+            isNewFormat = true
+            self:Debug("data", "Found section with new format: " .. section["Section Name"])
+            break
+        end
+    end
+    
+    if not isNewFormat then
+        self:Debug("data", "Not in new format - no sections with correct structure found")
+        return false
+    end
+    
+    self:Debug("data", "Verified new data format structure with " .. sectionCount .. " sections")
+    
+    -- Step 6: Save to TWRA_SavedVariables directly
+    TWRA_SavedVariables = TWRA_SavedVariables or {}
+    local timestamp = time()
+    
+    TWRA_SavedVariables.assignments = {
+        data = importData.data,
+        timestamp = timestamp,
+        version = 2, -- Mark as new format
+        currentSection = 1
+    }
+    
+    self:Debug("data", "Successfully assigned to TWRA_SavedVariables.assignments")
+    
+    -- Step 7: Build navigation from the imported data
+    self.navigation = self.navigation or { handlers = {}, currentIndex = 1 }
+    self.navigation.handlers = {}
+    self.navigation.currentIndex = 1
+    
+    -- Add sections to navigation
+    local sections = {}
+    for idx, section in pairs(importData.data) do
+        if type(section) == "table" and section["Section Name"] then
+            table.insert(self.navigation.handlers, section["Section Name"])
+            table.insert(sections, section["Section Name"])
+        end
+    end
+    
+    -- Log what we found
+    local sectionCount = table.getn(self.navigation.handlers)
+    self:Debug("nav", "Built " .. sectionCount .. " sections")
+    
+    if sectionCount > 0 and table.getn(sections) > 0 then
+        self:Debug("nav", "Section names: " .. table.concat(sections, ", "))
+    end
+    
+    -- Step 8: Update UI
+    if self.DisplayCurrentSection then
+        self:Debug("ui", "Updating display with new data")
+        self:DisplayCurrentSection()
+    end
+    
+    -- Success message
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Successfully imported new format data with " .. 
+        sectionCount .. " sections")
+    
+    return true
+end

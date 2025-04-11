@@ -164,14 +164,87 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return "?"  -- Fallback for invalid codes
     end)
     
-    -- Verify the string starts with "return {" - basic sanity check
-    if string.sub(luaCode, 1, 8) ~= "return {" then
-        self:Debug("error", "Decoded text does not appear to be a valid Lua table", true)
-        self:Debug("error", "Expected 'return {' but found: " .. string.sub(luaCode, 1, 10), true)
-        return nil
+    -- Check if we have the new format (starting with TWRA_ImportString = {)
+    if string.find(luaCode, "^TWRA_ImportString%s*=%s*{") then
+        self:Debug("data", "Detected new import string format")
+        
+        -- Create a temporary environment
+        local env = {}
+        
+        -- Execute the code in this environment
+        local func, err = loadstring(luaCode)
+        if not func then
+            self:Debug("error", "Error parsing new format: " .. (err or "unknown error"), true)
+            return nil
+        end
+        
+        -- Set environment and execute
+        setfenv(func, env)
+        local success, result = pcall(func)
+        
+        if not success then
+            self:Debug("error", "Error executing new format: " .. (result or "unknown error"), true)
+            return nil
+        end
+        
+        -- Get the result from environment
+        if env.TWRA_ImportString and type(env.TWRA_ImportString) == "table" then
+            self:Debug("data", "Successfully parsed new format structure")
+            
+            -- If this is a sync operation with timestamp, handle it directly
+            if syncTimestamp then
+                -- For the new format, we need to assign directly to SavedVariables
+                TWRA_SavedVariables = TWRA_SavedVariables or {}
+                TWRA_SavedVariables.assignments = {
+                    data = env.TWRA_ImportString.data,
+                    timestamp = syncTimestamp,
+                    version = 2
+                }
+                self:Debug("data", "Directly saved new format data to SavedVariables with timestamp: " .. syncTimestamp)
+                return env.TWRA_ImportString
+            end
+            
+            return env.TWRA_ImportString
+        else
+            self:Debug("error", "New format parsed but TWRA_ImportString not found", true)
+            return nil
+        end
     end
     
-    -- Execute the Lua code to get the table - use pcall for safety
+    -- Legacy format handling (starting with "return {")
+    -- Verify the string starts with "return {" - basic sanity check
+    if string.sub(luaCode, 1, 8) ~= "return {" then
+        self:Debug("error", "Decoded text does not appear to be a valid Lua table or new format", true)
+        self:Debug("error", "Expected 'return {' or 'TWRA_ImportString =' but found: " .. string.sub(luaCode, 1, 20), true)
+        
+        -- Try to salvage by prefixing with return
+        local modifiedCode = "return " .. luaCode
+        local func, err = loadstring(modifiedCode)
+        
+        if not func then
+            self:Debug("error", "Salvage attempt failed: " .. (err or "unknown error"), true)
+            return nil
+        end
+        
+        -- Execute the modified code
+        local success, result = pcall(func)
+        if not success or type(result) ~= "table" then
+            self:Debug("error", "Salvage execution failed: " .. (result or "unknown error"), true)
+            return nil
+        end
+        
+        -- Salvage succeeded
+        self:Debug("data", "Successfully salvaged data with 'return' prefix")
+        
+        -- If this is a sync operation with timestamp, handle it directly
+        if syncTimestamp then
+            self:SaveAssignments(result, base64Str, syncTimestamp, noAnnounce or true)
+        end
+        
+        return result
+    end
+    
+    -- Legacy path - unchanged
     local func, err = loadstring(luaCode)
     if not func then
         self:Debug("error", "Error parsing Lua code: " .. (err or "unknown error"), true)
@@ -197,7 +270,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     end
     
     -- If we get here, we have a valid table
-    self:Debug("data", "Successfully decoded table with " .. table.getn(result) .. " entries")
+    self:Debug("data", "Successfully decoded legacy table with " .. table.getn(result) .. " entries")
     
     -- If this is a sync operation with timestamp, handle it directly
     if syncTimestamp then
