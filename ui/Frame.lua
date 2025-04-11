@@ -98,6 +98,20 @@ function TWRA:CreateMainFrame()
     self.mainFrame:SetHeight(300)
     self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     
+    -- Create highlight pool for row highlighting
+    self.highlightPool = {}
+    local POOL_SIZE = 15  -- Maximum number of highlighted rows we expect
+    
+    for i = 1, POOL_SIZE do
+        local highlight = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, -2)
+        highlight:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "REPEAT", "REPEAT")
+        highlight:SetTexCoord(0.05, 0.95, 0.1, 0.9)
+        highlight:SetBlendMode("ADD")
+        highlight:SetVertexColor(1, 1, 0.5, 0.2)  -- Yellowish highlight
+        highlight:Hide()  -- Hidden by default
+        table.insert(self.highlightPool, highlight)
+    end
+    
     -- Add a proper backdrop with all required properties
     self.mainFrame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -571,6 +585,9 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     self:Debug("ui", "Creating " .. table.getn(filteredData) .. " rows from filtered data")
     self:CreateRows(filteredData, true)
     
+    -- Apply highlights based on section player info
+    self:ApplyRowHighlights(sectionData, filteredData)
+    
     -- Create footers for this section (notes and warnings)
     self:CreateFootersNewFormat(currentHandler, sectionData)
     
@@ -685,380 +702,6 @@ function TWRA:CreateFootersNewFormat(currentHandler, sectionData)
         self.mainFrame:SetHeight(totalHeight)
         self:Debug("ui", "Adjusted frame height to " .. totalHeight)
     end
-end
-
--- Helper function for clearing rows to support modifications
-function TWRA:ClearRows()
-    -- Initialize rowHighlights if it doesn't exist
-    if not self.rowHighlights then
-        self.rowHighlights = {}
-    end
-    
-    -- Clear existing highlights
-    for i, highlight in pairs(self.rowHighlights) do
-        highlight:Hide()
-        highlight:SetParent(nil) 
-        highlight:ClearAllPoints()
-        self.rowHighlights[i] = nil
-    end
-    self.rowHighlights = {}
-
-    -- Clear existing row frames
-    if self.rowFrames then
-        for i, row in pairs(self.rowFrames) do
-            for j, cell in pairs(row) do
-                if cell.text then cell.text:Hide() end
-                if cell.bg then cell.bg:Hide() end
-                if cell.icon then cell.icon:Hide() end
-            end
-            self.rowFrames[i] = nil
-        end
-        self.rowFrames = {}
-    else
-        self.rowFrames = {}
-    end
-    
-    -- Also clear footers
-    self:ClearFooters()
-    
-    self.headerColumns = nil
-end
-
--- Improved row creation function
-function TWRA:CreateRows(data, forceHeader)
-    if not data or table.getn(data) == 0 then
-        self:Debug("ui", "CreateRows called with empty data")
-        return
-    end
-
-    -- Initialize row frames array if needed
-    if not self.rowFrames then
-        self.rowFrames = {}
-    end
-    
-    -- Initialize row highlights array if needed
-    if not self.rowHighlights then
-        self.rowHighlights = {}
-    end
-    
-    -- Get rows relevant to current player for highlighting
-    local relevantRows = self:GetPlayerRelevantRows(data)
-    self:Debug("ui", "Found " .. table.getn(relevantRows) .. " rows relevant to player")
-    
-    -- Create rows based on data
-    for i = 1, table.getn(data) do
-        -- Check if this row should be highlighted
-        local shouldHighlight = false
-        for j = 1, table.getn(relevantRows) do
-            if i == relevantRows[j] then
-                shouldHighlight = true
-                break
-            end
-        end
-        
-        -- Create the row
-        self.rowFrames[i] = self:CreateRow(i, data[i], shouldHighlight)
-    end
-    
-    self:Debug("ui", "Created " .. table.getn(self.rowFrames) .. " total rows")
-end
-
--- Update CreateRow to hide header text for first column (Icon) and adjust column width
-function TWRA:CreateRow(rowNum, data, shouldHighlight)
-    local rowFrames = {}
-    local yOffset = -40 - (rowNum * 20)
-    local fontStyle = rowNum == 1 and "GameFontNormalLarge" or "GameFontNormal"
-    local isHeader = rowNum == 1
-    
-    -- Player row highlighting logic
-    if not isHeader and shouldHighlight then
-        local highlight = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, -2)
-        highlight:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 22, yOffset + 1)
-        highlight:SetPoint("BOTTOMRIGHT", self.mainFrame, "TOPRIGHT", -22, yOffset - 15)
-        highlight:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "REPEAT", "REPEAT")
-        highlight:SetTexCoord(0.05, 0.95, 0.1, 0.9)
-        highlight:SetBlendMode("ADD")
-        highlight:SetVertexColor(1, 1, 0.5, 0.2)
-        table.insert(self.rowHighlights, highlight)
-    end
-    
-    local numColumns = self.headerColumns or table.getn(data)
-    
-    -- Calculate total available width
-    local totalAvailableWidth = self.mainFrame:GetWidth() - 40
-
-    -- Adjust icon column width here - change this value to make the icon column wider/narrower
-    local iconColumnWidth = 10  -- Reduced from 40px to 30px
-    local targetColumnWidth = 170
-    local remainingWidth = totalAvailableWidth - iconColumnWidth - targetColumnWidth
-    local roleColumnsCount = numColumns - 2
-    
-    local roleColumnWidth = 100 -- Default minimum width
-    if roleColumnsCount > 0 then
-        roleColumnWidth = math.max(roleColumnWidth, math.floor(remainingWidth / roleColumnsCount))
-    end
-    
-    -- If columns don't fit, adjust proportionally
-    if iconColumnWidth + targetColumnWidth + (roleColumnWidth * roleColumnsCount) > totalAvailableWidth then
-        local totalWidth = totalAvailableWidth
-        iconColumnWidth = math.floor(totalWidth / (numColumns + 0.5)) -- Icon column is half-sized
-        targetColumnWidth = math.floor(totalWidth / numColumns)
-        roleColumnWidth = math.floor(totalWidth / numColumns)
-    end
-    
-    local xOffset = 20 -- Starting offset
-    
-    -- Process all columns
-    for i = 1, numColumns do
-        local cellWidth = iconColumnWidth
-        if i == 2 then
-            cellWidth = targetColumnWidth
-        elseif i > 2 then
-            cellWidth = roleColumnWidth
-        end
-        
-        local cellData = data[i] or ""
-        
-        -- Create cell background (except for header row)
-        local bg = nil
-        if not isHeader then
-            bg = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
-            bg:SetPoint("TOPLEFT", xOffset, yOffset)
-            bg:SetWidth(cellWidth)
-            bg:SetHeight(14)
-            
-            -- Alternate background shading
-            local isEven = (math.floor(i / 2) * 2) == i -- Check if i is even
-            bg:SetVertexColor(0.1, 0.1, 0.1, isEven and 0.3 or 0.1)
-        end
-        
-        -- Create cell text
-        local cell = self.mainFrame:CreateFontString(nil, "OVERLAY", fontStyle)
-        
-        -- Prepare icon for this cell
-        local iconTexture = nil
-        
-        -- Special handling based on column type
-        if i == 1 then
-            -- Icon column - don't show text, only icon
-            if isHeader then
-                -- Hide the header text for the icon column
-                cell:SetText("")
-                cell:SetJustifyH("CENTER")
-                cell:SetTextColor(1, 1, 1)
-            else
-                cell:SetText("") -- Don't show icon text
-                
-                -- Create icon texture if we have valid icon data
-                if cellData and TWRA.ICONS and TWRA.ICONS[cellData] then
-                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-                    iconTexture:SetPoint("CENTER", bg, "CENTER", 0, 0)
-                    iconTexture:SetWidth(16)
-                    iconTexture:SetHeight(16)
-                    local iconInfo = TWRA.ICONS[cellData]
-                    iconTexture:SetTexture(iconInfo[1])
-                    iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-                end
-            end
-        elseif i == 2 then
-            -- Target column
-            cell:SetText(cellData)
-            cell:SetTextColor(1, 1, 1) -- White text for target
-        else
-            -- Role/player columns
-            cell:SetText(cellData)
-            
-            if isHeader then
-                -- Header is white
-                cell:SetTextColor(1, 1, 1)
-            elseif cellData and cellData ~= "" then
-                -- Color by player status or class group
-                local isClassGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellData]
-                
-                if isClassGroup then
-                    -- Class group coloring
-                    local color = TWRA.VANILLA_CLASS_COLORS[TWRA.CLASS_GROUP_NAMES[cellData]]
-                    if color then
-                        cell:SetTextColor(color.r, color.g, color.b)
-                    else
-                        cell:SetTextColor(1, 1, 1)
-                    end
-                    
-                    -- Add class icon
-                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-                    iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
-                    iconTexture:SetWidth(12)
-                    iconTexture:SetHeight(12)
-                    iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-                    
-                    local coords = TWRA.CLASS_COORDS[string.upper(TWRA.CLASS_GROUP_NAMES[cellData])]
-                    if coords then
-                        iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                    end
-                else
-                    -- Player coloring
-                    local inRaid, online = self:GetPlayerStatus(cellData)
-                    local classToUse = nil
-                    
-                    -- Try to determine player class
-                    if cellData == UnitName("player") then
-                        local _, playerClass = UnitClass("player")
-                        classToUse = playerClass
-                    elseif self.usingExampleData and self.EXAMPLE_PLAYERS then
-                        local classInfo = self.EXAMPLE_PLAYERS[cellData]
-                        if classInfo then
-                            classToUse = string.gsub(classInfo, "|OFFLINE", "")
-                        end
-                    elseif inRaid then
-                        for j = 1, GetNumRaidMembers() do
-                            local name, _, _, _, _, class = GetRaidRosterInfo(j)
-                            if name == cellData then
-                                classToUse = class
-                                break
-                            end
-                        end
-                    end
-                    
-                    -- Add class icon if we found a class
-                    if classToUse then
-                        iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-                        iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
-                        iconTexture:SetWidth(12)
-                        iconTexture:SetHeight(12)
-                        iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-                        
-                        local coords = TWRA.CLASS_COORDS[string.upper(classToUse)]
-                        if coords then
-                            iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                        end
-                    end
-                    
-                    -- Color text based on raid status
-                    if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                        TWRA.UI:ApplyClassColoring(cell, cellData, classToUse, inRaid, online)
-                    else
-                        -- Fallback coloring
-                        if inRaid and not online then
-                            cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
-                        elseif classToUse and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)] then
-                            local color = TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)]
-                            cell:SetTextColor(color.r, color.g, color.b)
-                        else
-                            cell:SetTextColor(1, 1, 1) -- White fallback
-                        end
-                    end
-                end
-            else
-                -- Empty cell is white
-                cell:SetTextColor(1, 1, 1)
-            end
-        end
-        
-        -- Position text with proper padding
-        local iconPadding = 0
-        if i == 1 then
-            -- No padding for icon column when in header
-            if isHeader then
-                iconPadding = 0
-            else
-                -- Center the icon text
-                iconPadding = 0
-                cell:SetJustifyH("CENTER")
-            end
-        else
-            -- Add space for potential class icons in other columns
-            iconPadding = 18
-            cell:SetJustifyH("LEFT")
-        end
-        
-        cell:SetPoint("TOPLEFT", xOffset + iconPadding, yOffset)
-        cell:SetWidth(cellWidth - iconPadding - 4)
-        
-        -- Store cell references
-        rowFrames[i] = {text = cell, bg = bg, icon = iconTexture}
-        
-        -- Update offset for next column
-        xOffset = xOffset + cellWidth
-    end
-    
-    return rowFrames
-end
-
--- Update the GetPlayerRelevantRows function for the new format
-function TWRA:GetPlayerRelevantRows(sectionData)
-    if not sectionData then return {} end
-    
-    local relevantRows = {}
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    
-    -- Check each row
-    for rowIndex = 1, table.getn(sectionData) do
-        -- Skip the header row
-        if rowIndex > 1 then
-            local row = sectionData[rowIndex]
-            local isRelevantRow = false
-            
-            -- Check each column that might contain player names (starting from column 3)
-            for colIndex = 3, table.getn(row) do
-                local cellValue = row[colIndex]
-                
-                -- Check if the cell contains player name
-                if cellValue == playerName then
-                    isRelevantRow = true
-                    break
-                end
-                
-                -- Check if the cell is a class group matching player's class
-                local className = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellValue]
-                if className and className == playerClass then
-                    isRelevantRow = true
-                    break
-                end
-                
-                -- Check for group assignments like "Group 1,2"
-                if cellValue and type(cellValue) == "string" and string.find(cellValue, "Group") then
-                    -- Extract group numbers
-                    local groupNums = {}
-                    
-                    -- Find all digits in the string
-                    local pos = 1
-                    local str = cellValue
-                    while pos <= string.len(str) do
-                        local digitStart, digitEnd = string.find(str, "%d+", pos)
-                        if not digitStart then break end
-                        
-                        local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
-                        if groupNum then
-                            groupNums[groupNum] = true
-                        end
-                        pos = digitEnd + 1
-                    end
-                    
-                    -- Check if player is in any of these groups
-                    local playerGroup = 0
-                    for i = 1, GetNumRaidMembers() do
-                        local name, _, subgroup = GetRaidRosterInfo(i)
-                        if name == playerName then
-                            playerGroup = subgroup
-                            break
-                        end
-                    end
-                    if playerGroup > 0 and groupNums[playerGroup] then
-                        isRelevantRow = true
-                        break
-                    end
-                end
-            end
-            
-            -- If row is relevant, add to our list
-            if isRelevantRow then
-                table.insert(relevantRows, rowIndex)
-            end
-        end
-    end
-    
-    return relevantRows
 end
 
 -- Clears all footer elements properly
@@ -1320,4 +963,350 @@ function TWRA:RefreshAssignmentTable()
     -- Use FilterAndDisplayHandler for consistent display
     self:Debug("ui", "Refreshing assignment table to section: " .. currentSection)
     self:FilterAndDisplayHandler(currentSection)
+end
+
+-- Update CreateRow to remove highlighting
+function TWRA:CreateRow(rowNum, data)
+    local rowFrames = {}
+    local yOffset = -40 - (rowNum * 20)
+    local fontStyle = rowNum == 1 and "GameFontNormalLarge" or "GameFontNormal"
+    local isHeader = rowNum == 1
+    
+    local numColumns = self.headerColumns or table.getn(data)
+    
+    -- Calculate total available width
+    local totalAvailableWidth = self.mainFrame:GetWidth() - 40
+
+    -- Adjust icon column width here - change this value to make the icon column wider/narrower
+    local iconColumnWidth = 10  -- Reduced from 40px to 30px
+    local targetColumnWidth = 170
+    local remainingWidth = totalAvailableWidth - iconColumnWidth - targetColumnWidth
+    local roleColumnsCount = numColumns - 2
+    
+    local roleColumnWidth = 100 -- Default minimum width
+    if roleColumnsCount > 0 then
+        roleColumnWidth = math.max(roleColumnWidth, math.floor(remainingWidth / roleColumnsCount))
+    end
+    
+    -- If columns don't fit, adjust proportionally
+    if iconColumnWidth + targetColumnWidth + (roleColumnWidth * roleColumnsCount) > totalAvailableWidth then
+        local totalWidth = totalAvailableWidth
+        iconColumnWidth = math.floor(totalWidth / (numColumns + 0.5)) -- Icon column is half-sized
+        targetColumnWidth = math.floor(totalWidth / numColumns)
+        roleColumnWidth = math.floor(totalWidth / numColumns)
+    end
+    
+    local xOffset = 20 -- Starting offset
+    
+    -- Process all columns
+    for i = 1, numColumns do
+        local cellWidth = iconColumnWidth
+        if i == 2 then
+            cellWidth = targetColumnWidth
+        elseif i > 2 then
+            cellWidth = roleColumnWidth
+        end
+        
+        local cellData = data[i] or ""
+        
+        -- Create cell background (except for header row)
+        local bg = nil
+        if not isHeader then
+            bg = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
+            bg:SetPoint("TOPLEFT", xOffset, yOffset)
+            bg:SetWidth(cellWidth)
+            bg:SetHeight(14)
+            
+            -- Alternate background shading
+            local isEven = (math.floor(i / 2) * 2) == i -- Check if i is even
+            bg:SetVertexColor(0.1, 0.1, 0.1, isEven and 0.3 or 0.1)
+        end
+        
+        -- Create cell text
+        local cell = self.mainFrame:CreateFontString(nil, "OVERLAY", fontStyle)
+        
+        -- Prepare icon for this cell
+        local iconTexture = nil
+        
+        -- Special handling based on column type
+        if i == 1 then
+            -- Icon column - don't show text, only icon
+            if isHeader then
+                -- Hide the header text for the icon column
+                cell:SetText("")
+                cell:SetJustifyH("CENTER")
+                cell:SetTextColor(1, 1, 1)
+            else
+                cell:SetText("") -- Don't show icon text
+                
+                -- Create icon texture if we have valid icon data
+                if cellData and TWRA.ICONS and TWRA.ICONS[cellData] then
+                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                    iconTexture:SetPoint("CENTER", bg, "CENTER", 0, 0)
+                    iconTexture:SetWidth(16)
+                    iconTexture:SetHeight(16)
+                    local iconInfo = TWRA.ICONS[cellData]
+                    iconTexture:SetTexture(iconInfo[1])
+                    iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+                end
+            end
+        elseif i == 2 then
+            -- Target column
+            cell:SetText(cellData)
+            cell:SetTextColor(1, 1, 1) -- White text for target
+        else
+            -- Role/player columns
+            cell:SetText(cellData)
+            
+            if isHeader then
+                -- Header is white
+                cell:SetTextColor(1, 1, 1)
+            elseif cellData and cellData ~= "" then
+                -- Color by player status or class group
+                local isClassGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellData]
+                
+                if isClassGroup then
+                    -- Class group coloring
+                    local color = TWRA.VANILLA_CLASS_COLORS[TWRA.CLASS_GROUP_NAMES[cellData]]
+                    if color then
+                        cell:SetTextColor(color.r, color.g, color.b)
+                    else
+                        cell:SetTextColor(1, 1, 1)
+                    end
+                    
+                    -- Add class icon
+                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                    iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
+                    iconTexture:SetWidth(12)
+                    iconTexture:SetHeight(12)
+                    iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+                    
+                    local coords = TWRA.CLASS_COORDS[string.upper(TWRA.CLASS_GROUP_NAMES[cellData])]
+                    if coords then
+                        iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                    end
+                else
+                    -- Player coloring
+                    local inRaid, online = self:GetPlayerStatus(cellData)
+                    local classToUse = nil
+                    
+                    -- Try to determine player class
+                    if cellData == UnitName("player") then
+                        local _, playerClass = UnitClass("player")
+                        classToUse = playerClass
+                    elseif self.usingExampleData and self.EXAMPLE_PLAYERS then
+                        local classInfo = self.EXAMPLE_PLAYERS[cellData]
+                        if classInfo then
+                            classToUse = string.gsub(classInfo, "|OFFLINE", "")
+                        end
+                    elseif inRaid then
+                        for j = 1, GetNumRaidMembers() do
+                            local name, _, _, _, _, class = GetRaidRosterInfo(j)
+                            if name == cellData then
+                                classToUse = class
+                                break
+                            end
+                        end
+                    end
+                    
+                    -- Add class icon if we found a class
+                    if classToUse then
+                        iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                        iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
+                        iconTexture:SetWidth(12)
+                        iconTexture:SetHeight(12)
+                        iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+                        
+                        local coords = TWRA.CLASS_COORDS[string.upper(classToUse)]
+                        if coords then
+                            iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                        end
+                    end
+                    
+                    -- Color text based on raid status
+                    if TWRA.UI and TWRA.UI.ApplyClassColoring then
+                        TWRA.UI:ApplyClassColoring(cell, cellData, classToUse, inRaid, online)
+                    else
+                        -- Fallback coloring
+                        if inRaid and not online then
+                            cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
+                        elseif classToUse and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)] then
+                            local color = TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)]
+                            cell:SetTextColor(color.r, color.g, color.b)
+                        else
+                            cell:SetTextColor(1, 1, 1) -- White fallback
+                        end
+                    end
+                end
+            else
+                -- Empty cell is white
+                cell:SetTextColor(1, 1, 1)
+            end
+        end
+        
+        -- Position text with proper padding
+        local iconPadding = 0
+        if i == 1 then
+            -- No padding for icon column when in header
+            if isHeader then
+                iconPadding = 0
+            else
+                -- Center the icon text
+                iconPadding = 0
+                cell:SetJustifyH("CENTER")
+            end
+        else
+            -- Add space for potential class icons in other columns
+            iconPadding = 18
+            cell:SetJustifyH("LEFT")
+        end
+        
+        cell:SetPoint("TOPLEFT", xOffset + iconPadding, yOffset)
+        cell:SetWidth(cellWidth - iconPadding - 4)
+        
+        -- Store cell references
+        rowFrames[i] = {text = cell, bg = bg, icon = iconTexture}
+        
+        -- Update offset for next column
+        xOffset = xOffset + cellWidth
+    end
+    
+    return rowFrames
+end
+
+-- Update CreateRows to remove highlighting logic
+function TWRA:CreateRows(data, forceHeader)
+    if not data or table.getn(data) == 0 then
+        self:Debug("ui", "CreateRows called with empty data")
+        return
+    end
+
+    -- Initialize row frames array if needed
+    if not self.rowFrames then
+        self.rowFrames = {}
+    end
+    
+    -- Create rows based on data
+    for i = 1, table.getn(data) do
+        self.rowFrames[i] = self:CreateRow(i, data[i])
+    end
+    
+    self:Debug("ui", "Created " .. table.getn(self.rowFrames) .. " total rows")
+end
+
+-- Update ClearRows to hide all highlights but not destroy them
+function TWRA:ClearRows()
+    -- Hide all highlights from the pool
+    if self.highlightPool then
+        for _, highlight in ipairs(self.highlightPool) do
+            highlight:Hide()
+            highlight:ClearAllPoints()
+        end
+    end
+    
+    -- Clear existing row frames
+    if self.rowFrames then
+        for i, row in pairs(self.rowFrames) do
+            for j, cell in pairs(row) do
+                if cell.text then cell.text:Hide() end
+                if cell.bg then cell.bg:Hide() end
+                if cell.icon then cell.icon:Hide() end
+            end
+            self.rowFrames[i] = nil
+        end
+        self.rowFrames = {}
+    else
+        self.rowFrames = {}
+    end
+    
+    -- Also clear footers
+    self:ClearFooters()
+    
+    self.headerColumns = nil
+end
+
+-- Create a function to apply highlights based on section data
+function TWRA:ApplyRowHighlights(sectionData, displayData)
+    -- Hide all highlights first
+    for _, highlight in ipairs(self.highlightPool) do
+        highlight:Hide()
+        highlight:ClearAllPoints()
+    end
+    
+    -- If no section data or no display data, we're done
+    if not sectionData or not displayData then
+        self:Debug("ui", "ApplyRowHighlights: No data to work with")
+        return
+    end
+    
+    -- Check if we have relevant rows in section player info
+    if not sectionData["Section Player Info"] or not sectionData["Section Player Info"]["Relevant Rows"] then
+        self:Debug("ui", "ApplyRowHighlights: No player info available")
+        return
+    end
+    
+    -- Get the relevant rows we need to highlight
+    local relevantRows = sectionData["Section Player Info"]["Relevant Rows"]
+    if not relevantRows or table.getn(relevantRows) == 0 then
+        self:Debug("ui", "ApplyRowHighlights: No relevant rows to highlight")
+        return
+    end
+    
+    -- Create a mapping from section row index to display row index
+    -- This is needed because filtered display data skips special rows
+    local sectionToDisplayMap = {}
+    
+    -- Create mapping of normal rows between section data and display data
+    -- Normal row = not a note, warning or guid row
+    local normalRowCounter = 0
+    
+    -- First, count how many normal rows are in the section data and their indices
+    if sectionData["Section Rows"] then
+        for i, rowData in ipairs(sectionData["Section Rows"]) do
+            -- Skip special rows
+            if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
+                normalRowCounter = normalRowCounter + 1
+                
+                -- Map this normal row to its position in filtered data
+                -- +1 because display data has header at index 1
+                sectionToDisplayMap[i] = normalRowCounter + 1
+            end
+        end
+    end
+    
+    -- Debug the mapping
+    local debugMapping = "Section-to-Display mapping: "
+    for secIdx, dispIdx in pairs(sectionToDisplayMap) do
+        debugMapping = debugMapping .. secIdx .. "->" .. dispIdx .. " "
+    end
+    self:Debug("ui", debugMapping)
+    
+    -- Apply highlights to the relevant rows
+    local highlightCount = 0
+    
+    for _, sectionRowIdx in ipairs(relevantRows) do
+        local displayRowIdx = sectionToDisplayMap[sectionRowIdx]
+        
+        if displayRowIdx then
+            highlightCount = highlightCount + 1
+            
+            -- Make sure we don't exceed our pool size
+            if highlightCount <= table.getn(self.highlightPool) then
+                local highlight = self.highlightPool[highlightCount]
+                local yOffset = -40 - (displayRowIdx * 20)
+                
+                -- Position highlight over the correct row
+                highlight:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 22, yOffset + 1)
+                highlight:SetPoint("BOTTOMRIGHT", self.mainFrame, "TOPRIGHT", -22, yOffset - 15)
+                highlight:Show()
+                
+                self:Debug("ui", "Highlighted row " .. sectionRowIdx .. " -> " .. displayRowIdx)
+            else
+                self:Debug("error", "Not enough highlights in pool for all relevant rows")
+                break
+            end
+        end
+    end
+    
+    self:Debug("ui", "Applied " .. highlightCount .. " highlights")
 end
