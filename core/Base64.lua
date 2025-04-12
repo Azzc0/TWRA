@@ -237,27 +237,6 @@ function TWRA:ExpandAbbreviations(data)
         end
     end
     
-    -- For legacy format: flat array of rows
-    if type(data) == "table" and not data.data then
-        local didExpand = false
-        
-        for rowIndex, row in pairs(data) do
-            if type(row) == "table" then
-                for colIndex, value in pairs(row) do
-                    if type(value) == "string" and self.ABBREVIATION_MAPPINGS[value] then
-                        row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
-                        didExpand = true
-                        self:Debug("data", "Expanded legacy abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
-                    end
-                end
-            end
-        end
-        
-        if didExpand then
-            self:Debug("data", "Expanded abbreviations in legacy format data")
-        end
-    end
-    
     return data
 end
 
@@ -315,44 +294,6 @@ function TWRA:EnsureCompleteRows(data)
                 self:Debug("data", "Completed filling indices for section '" .. section["Section Name"] .. "'")
             end
         end
-    -- Handle the legacy format (flat array of rows)
-    elseif type(data) == "table" then
-        -- Determine the maximum number of columns across all rows
-        local maxColumns = 0
-        for i = 1, table.getn(data) do
-            if data[i] and type(data[i]) == "table" then
-                local rowLength = 0
-                for _ in pairs(data[i]) do
-                    rowLength = rowLength + 1
-                end
-                if rowLength > maxColumns then
-                    maxColumns = rowLength
-                end
-            end
-        end
-        
-        self:Debug("data", "Processing legacy format, ensuring " .. maxColumns .. " columns per row")
-        
-        -- Process each row
-        for rowIndex = 1, table.getn(data) do
-            if data[rowIndex] and type(data[rowIndex]) == "table" then
-                -- Create a new row with sequential indices
-                local newRow = {}
-                
-                -- Fill in all column indices from 1 to maxColumns
-                for colIndex = 1, maxColumns do
-                    -- Handle both nil values and missing indices
-                    if data[rowIndex][colIndex] ~= nil then
-                        newRow[colIndex] = data[rowIndex][colIndex]
-                    else
-                        newRow[colIndex] = ""
-                    end
-                end
-                
-                -- Replace the original sparse row with the complete row
-                data[rowIndex] = newRow
-            end
-        end
     end
     
     return data
@@ -365,13 +306,16 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return nil 
     end
     
+    -- Track operation start time for performance debugging
+    local startTime = debugprofilestop and debugprofilestop() or 0
+    
     -- Clean up the string
     base64Str = string.gsub(base64Str, " ", "")
     base64Str = string.gsub(base64Str, "\n", "")
     base64Str = string.gsub(base64Str, "\r", "")
     base64Str = string.gsub(base64Str, "\t", "")
     
-    self:Debug("data", "Decoding base64 string")
+    self:Debug("data", "Decoding base64 string of length " .. string.len(base64Str))
     
     -- Safety check for minimum length
     if string.len(base64Str) < 4 then
@@ -379,36 +323,78 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return nil
     end
     
+    -- Ensure string is a multiple of 4 characters by adding padding if necessary
+    -- Replace modulo with math.floor approach
+    local remainder = string.len(base64Str) - (math.floor(string.len(base64Str) / 4) * 4)
+    local padding = 0
+    if remainder > 0 then
+        padding = 4 - remainder
+    end
+    if padding > 0 then
+        for i = 1, padding do
+            base64Str = base64Str .. "="
+        end
+        self:Debug("data", "Added " .. padding .. " padding characters for proper decoding")
+    end
+    
     -- Convert Base64 to binary string with improved UTF-8 handling
     local luaCode = ""
     local bits = 0
     local bitCount = 0
     
-    for i = 1, string.len(base64Str) do
-        local b64char = string.sub(base64Str, i, i)
-        local b64value = b64Table[b64char]
-        
-        if b64value and b64value >= 0 then
-            -- Left shift bits by 6 and add new value
-            bits = (bits * 64) + b64value
-            bitCount = bitCount + 6
+    -- Use protected call for decoding loop to avoid crashing on bad input
+    local success, result = pcall(function()
+        for i = 1, string.len(base64Str) do
+            local b64char = string.sub(base64Str, i, i)
+            local b64value = b64Table[b64char]
             
-            -- If we have at least 8 bits, extract a byte
-            if bitCount >= 8 then
-                bitCount = bitCount - 8
+            -- Skip padding characters (=)
+            if b64char == "=" then
+                -- Just skip, padding at the end is normal
+            elseif not b64value then
+                -- Invalid character - graceful handling
+                self:Debug("error", "Invalid Base64 character: '" .. b64char .. "' at position " .. i, true)
+                -- Continue processing rather than breaking, to be more forgiving
+            elseif b64value >= 0 then
+                -- Left shift bits by 6 and add new value
+                bits = (bits * 64) + b64value
+                bitCount = bitCount + 6
                 
-                -- Extract next byte (shift right)
-                local byte = math.floor(bits / (2^bitCount))
-                
-                -- Keep only the lowest 8 bits (replace modulo with math.floor approach)
-                byte = byte - (math.floor(byte / 256) * 256)
-                
-                luaCode = luaCode .. string.char(byte)
-                
-                -- Remove the consumed bits (replace modulo with math.floor approach)
-                bits = bits - (math.floor(bits / (2^bitCount)) * (2^bitCount))
+                -- If we have at least 8 bits, extract a byte
+                while bitCount >= 8 do
+                    bitCount = bitCount - 8
+                    
+                    -- Extract next byte (shift right)
+                    local byte = math.floor(bits / (2^bitCount))
+                    
+                    -- Keep only the lowest 8 bits (replace modulo with math.floor approach)
+                    byte = byte - (math.floor(byte / 256) * 256)
+                    
+                    luaCode = luaCode .. string.char(byte)
+                    
+                    -- Remove the consumed bits (replace modulo with math.floor approach)
+                    bits = bits - (math.floor(bits / (2^bitCount)) * (2^bitCount))
+                end
             end
         end
+        return true
+    end)
+    
+    if not success then
+        self:Debug("error", "Error during Base64 decoding: " .. tostring(result), true)
+        return nil
+    end
+    
+    -- Report decoding time for performance monitoring
+    if debugprofilestop then
+        local decodeTime = debugprofilestop() - startTime
+        self:Debug("performance", "Base64 decoding completed in " .. decodeTime .. "ms")
+    end
+    
+    -- Handle empty result (should never happen with valid base64)
+    if string.len(luaCode) == 0 then
+        self:Debug("error", "Decoded to empty string", true)
+        return nil
     end
     
     self:Debug("data", "Decoded string length: " .. string.len(luaCode))
@@ -418,145 +404,96 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     end
     self:Debug("data", "String begins with: " .. previewText)
     
-    -- Check if we have the new format (starting with TWRA_ImportString = {)
-    if string.find(luaCode, "^TWRA_ImportString%s*=%s*{") then
-        self:Debug("data", "Detected new import string format")
-        
-        -- Create a temporary environment
-        local env = {}
-        
-        -- Execute the code in this environment
-        local script = "local TWRA_ImportString; " .. luaCode .. "; return TWRA_ImportString"
-        local func, err = loadstring(script)
-        if not func then
-            self:Debug("error", "Error parsing new format: " .. (err or "unknown error"), true)
-            return nil
-        end
-        
-        -- Set environment and execute
-        setfenv(func, env)
-        local success, result = pcall(func)
-        
-        if not success then
-            self:Debug("error", "Error executing new format: " .. (result or "unknown error"), true)
-            return nil
-        end
-        
-        -- Get the result from environment
-        if result and type(result) == "table" then
-            self:Debug("data", "Successfully parsed new format structure")
+    -- Process the luaCode to extract data - wrapped in pcall for safety
+    local finalResult = nil
+    local parseSuccess, parseResult = pcall(function()
+        -- Check if we have the new format (starting with TWRA_ImportString = {)
+        if string.find(luaCode, "^TWRA_ImportString%s*=%s*{") then
+            self:Debug("data", "Detected import string format")
             
-            -- Make sure to call abbreviation expansion before any other processing
-            self:Debug("data", "Expanding abbreviations in the imported data")
-            result = self:ExpandAbbreviations(result)
+            -- Create a temporary environment
+            local env = {}
             
-            -- Ensure all rows have entries for all columns
-            result = self:EnsureCompleteRows(result)
-            
-            -- Process the data to handle shortened keys and fix special characters
-            if self.ProcessImportedData then
-                result = self:ProcessImportedData(result)
+            -- Execute the code in this environment
+            local script = "local TWRA_ImportString; " .. luaCode .. "; return TWRA_ImportString"
+            local func, err = loadstring(script)
+            if not func then
+                self:Debug("error", "Error parsing format: " .. (err or "unknown error"), true)
+                return nil
             end
             
-            -- Fix special characters throughout the data
-            if self.FixSpecialCharacters then
-                result = self:FixSpecialCharacters(result)
+            -- Set environment and execute
+            setfenv(func, env)
+            local success, result = pcall(func)
+            
+            if not success then
+                self:Debug("error", "Error executing format: " .. (result or "unknown error"), true)
+                return nil
             end
             
-            -- If this is a sync operation with timestamp, handle it directly
-            if syncTimestamp then
-                -- For the new format, we need to assign directly to SavedVariables
-                TWRA_SavedVariables = TWRA_SavedVariables or {}
-                TWRA_SavedVariables.assignments = {
-                    data = result.data,
-                    timestamp = syncTimestamp,
-                    version = 2
-                }
-                self:Debug("data", "Directly saved new format data to SavedVariables with timestamp: " .. syncTimestamp)
+            -- Get the result from environment
+            if result and type(result) == "table" then
+                self:Debug("data", "Successfully parsed structure")
+                
+                -- Verify that the structure is what we expect
+                if not result.data then
+                    self:Debug("error", "Format missing 'data' field", true)
+                    return nil
+                end
+                
+                -- Make sure to call abbreviation expansion before any other processing
+                self:Debug("data", "Expanding abbreviations in the imported data")
+                result = self:ExpandAbbreviations(result)
+                
+                -- Ensure all rows have entries for all columns
+                result = self:EnsureCompleteRows(result)
+                
+                -- Process the data to handle shortened keys and fix special characters
+                if self.ProcessImportedData then
+                    result = self:ProcessImportedData(result)
+                end
+                
+                -- Fix special characters throughout the data
+                if self.FixSpecialCharacters then
+                    result = self:FixSpecialCharacters(result)
+                end
+                
+                -- If this is a sync operation with timestamp, handle it directly
+                if syncTimestamp then
+                    -- We need to assign directly to SavedVariables
+                    TWRA_SavedVariables = TWRA_SavedVariables or {}
+                    TWRA_SavedVariables.assignments = {
+                        data = result.data,
+                        timestamp = syncTimestamp,
+                        version = 2
+                    }
+                    self:Debug("data", "Directly saved data to SavedVariables with timestamp: " .. syncTimestamp)
+                end
+                
                 return result
+            else
+                self:Debug("error", "Format parsed but TWRA_ImportString not found", true)
+                return nil
             end
-            
-            return result
         else
-            self:Debug("error", "New format parsed but TWRA_ImportString not found", true)
+            self:Debug("error", "Unrecognized import format", true)
             return nil
         end
-    end
+    end)
     
-    -- Legacy format handling (starting with "return {")
-    -- Verify the string starts with "return {" - basic sanity check
-    if string.sub(luaCode, 1, 8) ~= "return {" then
-        self:Debug("error", "Decoded text does not appear to be a valid Lua table or new format", true)
-        self:Debug("error", "Expected 'return {' or 'TWRA_ImportString =' but found: " .. string.sub(luaCode, 1, 20), true)
-        
-        -- Try to salvage by prefixing with return
-        local modifiedCode = "return " .. luaCode
-        local func, err = loadstring(modifiedCode)
-        
-        if not func then
-            self:Debug("error", "Salvage attempt failed: " .. (err or "unknown error"), true)
-            return nil
-        end
-        
-        -- Execute the modified code
-        local success, result = pcall(func)
-        if not success or type(result) ~= "table" then
-            self:Debug("error", "Salvage execution failed: " .. (result or "unknown error"), true)
-            return nil
-        end
-        
-        -- Salvage succeeded
-        self:Debug("data", "Successfully salvaged data with 'return' prefix")
-        
-        -- If this is a sync operation with timestamp, handle it directly
-        if syncTimestamp then
-            self:SaveAssignments(result, base64Str, syncTimestamp, noAnnounce or true)
-        end
-        
-        return result
-    end
-    
-    -- Legacy path - unchanged
-    local func, err = loadstring(luaCode)
-    if not func then
-        self:Debug("error", "Error parsing Lua code: " .. (err or "unknown error"), true)
+    -- Handle any errors that occurred during processing
+    if not parseSuccess then
+        self:Debug("error", "Critical error during import parsing: " .. tostring(parseResult), true)
         return nil
     end
     
-    local success, result = pcall(func)
-    if not success then
-        self:Debug("error", "Error executing Lua code: " .. (result or "unknown error"), true)
-        return nil
+    -- Track total operation time if possible
+    if debugprofilestop then
+        local totalTime = debugprofilestop() - startTime
+        self:Debug("performance", "Total import processing completed in " .. totalTime .. "ms")
     end
     
-    -- Ensure we have a valid table
-    if type(result) ~= "table" then
-        self:Debug("error", "Decoded result is not a table (type: " .. type(result) .. ")", true)
-        return nil
-    end
-    
-    -- Verify the table has at least one entry
-    if table.getn(result) == 0 then
-        self:Debug("error", "Decoded table is empty", true)
-        return nil
-    end
-    
-    -- If we get here, we have a valid table
-    self:Debug("data", "Successfully decoded legacy table with " .. table.getn(result) .. " entries")
-    
-    -- Expand abbreviations for legacy format
-    self:Debug("data", "Expanding abbreviations in legacy format data")
-    result = self:ExpandAbbreviations(result)
-    
-    -- Ensure all rows have entries for all columns
-    result = self:EnsureCompleteRows(result)
-    
-    -- If this is a sync operation with timestamp, handle it directly
-    if syncTimestamp then
-        self:SaveAssignments(result, base64Str, syncTimestamp, noAnnounce or true)
-    end
-    
-    return result
+    return parseResult
 end
 
 -- Convert a table to a Lua code string
