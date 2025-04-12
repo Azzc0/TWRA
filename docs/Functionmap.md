@@ -403,6 +403,105 @@ Registers a handler for internal messages.
 **Used in:**
 - ui/OSD.lua
 
+### TWRA:BuildNavigationFromNewFormat()
+Builds navigation structure from the new data format.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:SaveAssignments()
+- TWRA:LoadSavedAssignments()
+
+### TWRA:CreateMinimapButton()
+Creates the minimap button for the addon.
+
+**Arguments:**
+- None
+
+**Returns:**
+- The created minimap button frame
+
+**Used in:**
+- core/Core.lua (initialization)
+
+### TWRA:RegisterSlashCommand(command, handler)
+Registers a custom slash command.
+
+**Arguments:**
+- command: Command string without the slash
+- handler: Function to handle the command
+
+**Returns:**
+- None
+
+**Used in:**
+- Various modules for registering commands
+
+### TWRA:InitializeUI()
+Initializes the UI systems.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- core/Core.lua (initialization)
+
+### TWRA:EnsureUIUtils() 
+Ensures UI utilities exist and are properly initialized.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- core/Core.lua (initialization)
+
+### TWRA:DebugOptions()
+Debugs the options system state.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- Debug slash commands
+
+### TWRA:ResetUI()
+Performs an emergency UI reset.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- Debug commands
+- Error recovery
+
+### TWRA:OnUnload()
+Handles addon unloading, saving state.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- PLAYER_LOGOUT event
+
 ## core/DataProcessing.lua
 ### TWRA:ProcessData(data)
 Processes raw data into usable format.
@@ -412,6 +511,149 @@ Processes raw data into usable format.
 
 **Used in:**
 - sync/SyncHandlers.lua
+
+### TWRA:ProcessLoadedData(data)
+Processes loaded data including scanning for GUIDs.
+
+**Arguments:**
+- data: The loaded data to process
+
+**Used in:**
+- core/Core.lua (after loading data)
+
+### TWRA:ProcessPlayerInfo()
+Processes player-specific information for all sections.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:UpdatePlayerInfo()
+- TWRA:ProcessLoadedData()
+
+### TWRA:GetPlayerRelevantRowsForSection(section)
+Identifies rows in a section that are relevant to the current player.
+
+**Arguments:**
+- section: Section data to analyze
+
+**Returns:**
+- Array of row indices relevant to the player
+
+**Used in:**
+- TWRA:ProcessPlayerInfo()
+- ui/OSDContent.lua
+
+### TWRA:UpdatePlayerInfo()
+Updates player information for all sections in the data.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:RefreshPlayerInfo()
+- TWRA.lua (after data changes)
+
+### TWRA:RefreshPlayerInfo()
+Refreshes player information when data or group composition changes.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA.lua (group composition changes)
+- features/AutoTanks.lua (tank assignments)
+
+### TWRA:GenerateOSDInfoForSection(section, relevantRows)
+Creates a compact representation of player's assignments for OSD display.
+
+**Arguments:**
+- section: Section data
+- relevantRows: Array of row indices relevant to the player
+
+**Returns:**
+- Array of formatted assignment data for OSD
+
+**Used in:**
+- TWRA:ProcessPlayerInfo()
+- ui/OSDContent.lua
+
+### TWRA:IsCellRelevantToPlayer(cellValue)
+Helper function to determine if a cell contains information relevant to the current player.
+
+**Arguments:**
+- cellValue: Cell content to check
+
+**Returns:**
+- Boolean indicating if the cell is relevant to the player
+
+**Used in:**
+- TWRA:GenerateOSDInfoForSection()
+- TWRA:GetPlayerRelevantRowsForSection()
+
+### TWRA:UpdateOSDWithPlayerInfo()
+Updates the OSD with new player information.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:UpdatePlayerInfo()
+- ui/OSD.lua
+
+## core/DataUtility.lua
+
+### TWRA:IsNewDataFormat()
+Checks if the addon is using the new structured data format.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating if new format is being used
+
+**Used in:**
+- Multiple functions that need format-specific handling
+- TWRA:DisplayCurrentSection()
+
+### TWRA:GetCurrentSectionData()
+Retrieves the data for the current section in the new format.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Table containing the current section data or nil if not found
+
+**Used in:**
+- TWRA:DisplayCurrentSection()
+- TWRA:AnnounceAssignments()
+- ui/OSD.lua
+
+### TWRA:BuildNavigationFromNewFormat()
+Builds navigation structure from the new data format.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:SaveAssignments()
+- TWRA:LoadSavedAssignments()
 
 ## ui/UIUtils.lua
 *Contains UI utility functions, helpers for creating frames and UI elements*
@@ -443,10 +685,21 @@ Refreshes the assignment table in the UI.
 - TWRA.lua (ToggleMainFrame)
 
 ### TWRA:DisplayCurrentSection()
-Displays the current section in the UI.
+**Status: Duplicated** (in TWRA.lua and ui/OSD.lua)
+
+Centralized function that displays the current section in all UI components, including the main frame and OSD.
+
+**Arguments:**
+- None
 
 **Used in:**
-- Multiple places
+- Multiple places throughout the addon
+
+**Resolution needed:** 
+The function currently exists in both TWRA.lua and ui/OSD.lua with different implementations. 
+The ui/OSD.lua version should be the canonical implementation as it properly coordinates updates
+to both the main UI and OSD components. The TWRA.lua version should be removed or replaced with
+a call to the OSD.lua version.
 
 ### TWRA:CreateOptionsInMainFrame()
 Creates the options interface within the main frame.
@@ -513,6 +766,182 @@ Centralized function that displays the current section in all UI components, inc
 
 **Used in:**
 - Multiple places throughout the addon
+
+### TWRA:UpdateOSDWithFormattedData()
+Updates the OSD display with formatted data from the current section.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:UpdateOSDContent()
+- TWRA:RefreshOSDContent()
+
+### TWRA:GetOSDFrame()
+Creates or retrieves the OSD frame.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Frame object for the OSD
+
+**Used in:**
+- Multiple OSD functions
+
+### TWRA:ShowOSDPermanent()
+Shows the OSD permanently without auto-hiding.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:ToggleOSD()
+- ui/Options.lua
+
+### TWRA:RefreshOSDContent()
+Refreshes the OSD content with the current section information.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:UpdatePlayerInfo()
+- TWRA:NavigateToSection()
+
+### TWRA:AdjustOSDFrameHeight()
+Helper function to adjust the OSD frame height based on content.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:UpdateOSDWithFormattedData()
+
+### TWRA:ShowOSD(duration)
+Shows the OSD with optional auto-hide.
+
+**Arguments:**
+- duration: Optional time in seconds before auto-hiding
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:DisplayCurrentSection()
+- TWRA:RefreshOSDContent()
+
+### TWRA:HideOSD()
+Hides the OSD.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- Timer callback after auto-hide duration
+- TWRA:ToggleOSD()
+
+### TWRA:ToggleOSDEnabled(enabled)
+Toggles the OSD enabled state.
+
+**Arguments:**
+- enabled: Optional explicit enabled state (true/false)
+
+**Returns:**
+- Current enabled state
+
+**Used in:**
+- ui/Options.lua (OSD options)
+
+### TWRA:ToggleOSDOnNavigation(enabled)
+Toggles showing OSD on section navigation.
+
+**Arguments:**
+- enabled: Optional explicit enabled state (true/false)
+
+**Returns:**
+- Current setting state
+
+**Used in:**
+- ui/Options.lua (OSD options)
+
+### TWRA:UpdateOSDSettings()
+Updates OSD display settings (scale, position, etc).
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- ui/Options.lua (after changing OSD settings)
+
+### TWRA:ResetOSDPosition()
+Resets the OSD position to the default center position.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- ui/Options.lua (reset position button)
+
+### TWRA:ShowSectionNameOverlay(sectionName, sectionIndex, totalSections)
+Shows section name in a temporary overlay.
+
+**Arguments:**
+- sectionName: Name of the section
+- sectionIndex: Index of the section
+- totalSections: Total number of sections
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:NavigateToSection() in certain contexts
+
+### TWRA:DebugOSDElements()
+Debugs the OSD elements and their state.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- Debug commands
+
+### TWRA:UpdateOSDFooters(footerContainer, sectionName)
+Updates the footer area of the OSD with warnings and notes.
+
+**Arguments:**
+- footerContainer: Footer frame container
+- sectionName: Current section name
+
+**Returns:**
+- Height of the created footer content
+
+**Used in:**
+- TWRA:UpdateOSDWithFormattedData()
 
 ## ui/OSDContent.lua
 ### TWRA:PrepOSD(sectionData)
@@ -639,6 +1068,67 @@ Checks current target GUID for auto-navigation.
 **Used in:**
 - core/Debug.lua (debug command)
 
+### TWRA:CheckSuperWoWSupport(quiet)
+Checks if SuperWoW features are available.
+
+**Arguments:**
+- quiet: Boolean to suppress debug messages
+
+**Returns:**
+- Boolean indicating SuperWoW support
+
+**Used in:**
+- TWRA:InitializeAutoNavigate()
+
+### TWRA:StartAutoNavigateScan()
+Starts periodic scanning for marked targets.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:InitializeAutoNavigate()
+- core/Core.lua (initialization)
+
+### TWRA:StopAutoNavigateScan()
+Stops periodic scanning for marked targets.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:ToggleAutoNavigate()
+
+### TWRA:ToggleAutoNavigate(enable)
+Toggles auto-navigation functionality.
+
+**Arguments:**
+- enable: Optional boolean to explicitly enable/disable
+
+**Returns:**
+- Current state after toggle
+
+**Used in:**
+- ui/Options.lua (checkbox)
+
+### TWRA:ScanForMarkedTarget()
+Scans for marked targets and attempts to match with GUIDs.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating if a match was found
+
+**Used in:**
+- Timer callback during scanning
+
 ## core/ItemLink.lua
 ### TWRA.Items:ProcessText(text)
 Processes text to handle item links.
@@ -648,6 +1138,44 @@ Processes text to handle item links.
 
 **Used in:**
 - TWRA.lua (SendAnnouncementMessages)
+
+### TWRA.Items:Initialize()
+Initializes the item processing system.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- core/Core.lua (initialization)
+
+### TWRA.Items:FindItems(text)
+Finds item links in a text string.
+
+**Arguments:**
+- text: Text to search for item links
+
+**Returns:**
+- Table of found item links
+
+**Used in:**
+- TWRA.Items:ProcessText()
+
+### TWRA.Items:ColorizeItem(itemLink, itemName, itemQuality)
+Adds color to an item name based on quality.
+
+**Arguments:**
+- itemLink: Original item link
+- itemName: Item name without formatting
+- itemQuality: Item quality (0-4)
+
+**Returns:**
+- Colorized item text
+
+**Used in:**
+- TWRA.Items:ProcessText()
 
 ## sync/SyncHandlers.lua
 ### TWRA:HandleAddonMessage(message, channel, sender)
@@ -701,6 +1229,55 @@ Handles data response commands.
 **Used in:**
 - sync/SyncHandlers.lua
 
+### TWRA:StartSync()
+Begins synchronization with the group.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating if sync was started
+
+**Used in:**
+- ui/Options.lua (sync button)
+
+### TWRA:StopSync()
+Stops synchronization with the group.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- ui/Options.lua (sync button)
+- Error recovery
+
+### TWRA:ToggleSync(enable)
+Toggles sync functionality.
+
+**Arguments:**
+- enable: Optional boolean to explicitly enable/disable
+
+**Returns:**
+- Current sync state
+
+**Used in:**
+- ui/Options.lua (sync checkbox)
+
+### TWRA:ToggleMessageMonitoring(enable)
+Toggles displaying all addon messages in chat.
+
+**Arguments:**
+- enable: Optional boolean to explicitly enable/disable
+
+**Returns:**
+- Current monitoring state
+
+**Used in:**
+- Debug commands
+
 ## sync/ChunkManager.lua
 ### TWRA:InitChunkManager()
 Initializes the chunk manager for large data sync.
@@ -717,6 +1294,31 @@ Sends data in manageable chunks.
 
 **Used in:**
 - sync/SyncHandlers.lua
+
+### TWRA:ChunkString(str, chunkSize)
+Splits a string into manageable chunks.
+
+**Arguments:**
+- str: String to split
+- chunkSize: Size of each chunk
+
+**Returns:**
+- Table of string chunks
+
+**Used in:**
+- TWRA:SendDataInChunks()
+
+### TWRA:ReassembleChunks(chunks)
+Reassembles string chunks into the original string.
+
+**Arguments:**
+- chunks: Table of string chunks
+
+**Returns:**
+- Reassembled string
+
+**Used in:**
+- TWRA:HandleDataResponseCommand()
 
 ## sync/Sync.lua
 ### TWRA:SendAddonMessage(message, target)
@@ -751,42 +1353,53 @@ Handles group composition changes.
 **Used in:**
 - TWRA.lua (event handler)
 
-
 # Duplicate functions
-Some functions are expected to have duplicates, the first instance is less complete version that gets called in init. But that is more of an exception than normal practice. Below we list all functions that have duplicate definition in the code base using the same structure as above and with an added description under the function name describing why there are duplicates.
+Some functions may have multiple implementations across different files. Below are functions that need attention regarding their duplication or special handling.
 
-## Resolved Duplications
-The following functions were previously duplicated but have been consolidated:
-
-### TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
-**Consolidated to:** core/Core.lua
-
-This function was duplicated in TWRA.lua and core/Core.lua, creating confusion about which implementation was used. The consolidated version combines cleaning functionality, example data handling, and section preservation.
-
-### TWRA:NavigateToSection(targetSection, suppressSync)
-**Consolidated to:** core/Core.lua
-
-This navigation function was implemented in both TWRA.lua and core/Core.lua with different logic. The consolidated version includes messaging system integration for consistent behavior.
-
-### TWRA:ToggleMainFrame()
-**Consolidated to:** TWRA.lua
-
-This function was duplicated in TWRA.lua and Bindings.lua. The consolidated version includes comprehensive debug output and view management functionality.
-
-### TWRA:UpdateTanks()
-**Consolidated to:** features/AutoTanks.lua
-
-This function was duplicated in TWRA.lua and features/AutoTanks.lua. The consolidated version provides consistent error handling and debug output.
+## Current Duplications
 
 ### TWRA:DisplayCurrentSection()
-**Consolidated to:** TWRA.lua
+**Location:** TWRA.lua and ui/OSD.lua
 
-This function was previously implemented in both TWRA.lua and ui/OSD.lua. It has been consolidated to TWRA.lua with the more complete implementation from OSD.lua. The function serves as a centralized way to update both the OSD display and the main UI elements when changing sections. It includes proper error handling, UI updates for both the main frame and OSD, and supports autonavigation.
+This function exists in both files with different implementations. The ui/OSD.lua version is more comprehensive as it properly coordinates updates to both the main UI and OSD components.
 
-## Recommendations for resolving duplication issues:
+**Recommendation:** 
+- Keep the implementation in ui/OSD.lua as the canonical version
+- Replace the TWRA.lua version with a call to ui/OSD.lua implementation
+- Add proper hooks or event handling to ensure consistent UI updates
 
-1. **Consolidate implementations**: Move each function to a single, logical location based on its purpose.
-2. **Use consistent cleaning**: Ensure data cleaning happens in one place with a unified approach.
-3. **Follow clear patterns**: For functions like SaveAssignments, establish whether they belong in TWRA.lua or Core.lua.
-4. **Documentation**: Keep this function map updated when refactoring to ensure new duplicates aren't introduced.
-5. **Clear responsibilities**: Establish clear module responsibilities and avoid function overlap between files.
+**Resolution Plan:**
+1. Update all references to use the ui/OSD.lua implementation
+2. Add an aliasing function in TWRA.lua that calls the ui/OSD.lua version
+3. Add debug assertions to ensure the correct version is being called
+
+### TWRA:IsNewDataFormat() / TWRA:GetCurrentSectionData()
+**Location:** TWRA.lua and core/DataUtility.lua
+
+These utility functions exist in both the main file and utility module. Core functionality should be in the utility module with potential wrapper functions in the main file.
+
+**Recommendation:**
+- Consolidate logic to core/DataUtility.lua
+- Use wrapper functions in TWRA.lua if needed for backward compatibility
+- Add documentation to clearly indicate the canonical implementation
+
+### TWRA:BuildNavigationFromNewFormat()
+**Location:** TWRA.lua and core/Core.lua
+
+Multiple implementations of navigation building for the new data format exist.
+
+**Recommendation:**
+- Consolidate to core/Core.lua implementation
+- Add proper fallback handling for legacy code paths
+
+## Special Function Handling
+
+### Initialization Functions
+Several init functions like `InitOSD()`, `InitDebug()`, etc. have simple initial implementations that are called early, with more complete versions loaded later.
+
+**Note:** This is an intentional design pattern for handling load order dependencies. These aren't true duplications and should be preserved.
+
+### Event Handlers
+Functions like `OnEvent()` exist in multiple files but handle different event contexts.
+
+**Note:** These should be documented for clarity but aren't true duplications as they serve different purposes.

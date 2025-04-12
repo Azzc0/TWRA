@@ -287,80 +287,41 @@ end
 
 -- UpdatePlayerInfo - Refreshes player info and updates UI elements with improved debugging
 function TWRA:UpdatePlayerInfo()
-    -- Main function debug message - always show
-    self:Debug("data", "======= UpdatePlayerInfo Started =======")
+    self:Debug("data", "Updating player info for all sections")
     
-    -- Process player info for all sections
-    self:ProcessPlayerInfo()
+    -- Check if we have data to work with
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or
+       not TWRA_SavedVariables.assignments.data then
+        self:Debug("error", "UpdatePlayerInfo: No assignment data available")
+        return false
+    end
     
-    -- More detailed debug for what we found - use isDetail=true
-    local count = 0
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
-        for _, section in pairs(TWRA_SavedVariables.assignments.data) do
-            if section["Section Player Info"] and section["Section Player Info"]["Relevant Rows"] then
-                count = count + 1
-                
-                -- Show basic info without detail flag
-                local rowCount = table.getn(section["Section Player Info"]["Relevant Rows"])
-                local sectionName = section["Section Name"] or "Unknown"
-                
-                -- Create readable row list for debug
-                local rowsList = ""
-                for i, rowIndex in ipairs(section["Section Player Info"]["Relevant Rows"]) do
-                    rowsList = rowsList .. rowIndex
-                    if i < table.getn(section["Section Player Info"]["Relevant Rows"]) then
-                        rowsList = rowsList .. ", "
-                    end
-                end
-                
-                self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
-                          rowCount .. " relevant rows [" .. rowsList .. "]")
-                
-                -- OSD info debug - more detailed
-                if section["Section Player Info"]["OSD Info"] then
-                    local osdList = ""
-                    for i, value in ipairs(section["Section Player Info"]["OSD Info"]) do
-                        osdList = osdList .. "\"" .. tostring(value) .. "\""
-                        if i < table.getn(section["Section Player Info"]["OSD Info"]) then
-                            osdList = osdList .. ", "
-                        end
-                    end
-                    self:Debug("data", "OSD Info for " .. sectionName .. ": {" .. osdList .. "}", false, true)
-                end
-            end
+    -- Check data format
+    local isNewFormat = TWRA_SavedVariables.assignments.version and TWRA_SavedVariables.assignments.version >= 2
+    
+    if not isNewFormat then
+        self:Debug("data", "UpdatePlayerInfo: Not using new data format, skipping")
+        return false
+    end
+    
+    -- Process each section
+    local sectionsUpdated = 0
+    for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+        if type(section) == "table" and section["Section Name"] then
+            -- Process player info for this section
+            TWRA_SavedVariables.assignments.data[idx] = self:ProcessPlayerInfo(section)
+            sectionsUpdated = sectionsUpdated + 1
         end
     end
     
-    self:Debug("data", "Processed " .. count .. " sections with player information")
-    
-    -- Update UI if main frame is visible
-    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
-        -- Get current section
-        if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
-            local currentSection = self.navigation.handlers[self.navigation.currentIndex]
-            if currentSection then
-                self:Debug("data", "Updating display for section: " .. currentSection)
-                -- Refresh display to use updated player info
-                self:FilterAndDisplayHandler(currentSection)
-            end
-        end
-    else
-        self:Debug("data", "Main frame not visible or not in main view - skipping UI update")
-    end
-    
-    -- Update OSD if needed
-    self:UpdateOSDWithPlayerInfo()
-    
-    self:Debug("data", "======= UpdatePlayerInfo Complete =======")
-    
-    -- Return success to indicate function worked
+    self:Debug("data", "Updated player info for " .. sectionsUpdated .. " sections")
     return true
 end
 
 -- Helper function to update OSD with new player info
 function TWRA:UpdateOSDWithPlayerInfo()
     -- Only update if OSD is visible
-    if not self.OSD or not self.OSD.frame or not self.OSD.frame:IsShown() then
+    if not self.OSD or not self.OSD.isVisible then
         self:Debug("data", "OSD not visible - skipping update")
         return false
     end
@@ -386,4 +347,165 @@ function TWRA:UpdateOSDWithPlayerInfo()
         self:Debug("error", "UpdateOSDContent function not available")
         return false
     end
+end
+
+-- Process all sections to update player info when data changes or player changes groups
+function TWRA:RefreshPlayerInfo()
+    self:Debug("data", "Refreshing player info for all sections")
+    
+    -- Update player info for all sections
+    self:UpdatePlayerInfo()
+    
+    -- If we have an active section, refresh the display
+    if self.navigation and self.navigation.currentIndex and 
+       self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
+        local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+        
+        -- Refresh UI if needed
+        if self.mainFrame and self.mainFrame:IsShown() and
+           self.currentView == "main" and self.FilterAndDisplayHandler then
+            self:FilterAndDisplayHandler(currentSection)
+            self:Debug("ui", "Refreshed UI for current section after player info update")
+        end
+        
+        -- Refresh OSD if it's showing
+        if self.OSD and self.OSD.isVisible and self.RefreshOSDContent then
+            self:RefreshOSDContent()
+            self:Debug("osd", "Refreshed OSD after player info update")
+        end
+    end
+    
+    return true
+end
+
+-- Function to process player-specific information for a section
+function TWRA:ProcessPlayerInfo(sectionData)
+    if not sectionData or type(sectionData) ~= "table" then
+        self:Debug("error", "ProcessPlayerInfo: Invalid section data")
+        return sectionData
+    end
+    
+    -- Initialize section player info if not exists
+    sectionData["Section Player Info"] = sectionData["Section Player Info"] or {}
+    
+    -- Get relevant rows for the current player
+    local relevantRows = self:GetPlayerRelevantRowsForSection(sectionData)
+    
+    -- Convert from map to array format
+    local relevantRowsArray = {}
+    for idx, _ in pairs(relevantRows) do
+        table.insert(relevantRowsArray, idx)
+    end
+    
+    -- Sort the array for consistent order
+    table.sort(relevantRowsArray)
+    
+    -- Store in section data
+    sectionData["Section Player Info"]["Relevant Rows"] = relevantRowsArray
+    
+    self:Debug("data", "Processed player info for section: " .. 
+               (sectionData["Section Name"] or "unnamed") .. 
+               ", found " .. table.getn(relevantRowsArray) .. " relevant rows")
+    
+    return sectionData
+end
+
+-- Function to extract player-relevant rows from a section
+function TWRA:GetPlayerRelevantRowsForSection(sectionData)
+    if not sectionData then
+        self:Debug("error", "GetPlayerRelevantRowsForSection: No section data provided")
+        return {}
+    end
+    
+    local relevantRows = {}
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    playerClass = playerClass and string.upper(playerClass) or nil
+    
+    -- Find player's group number (1-8)
+    local playerGroup = nil
+    for i = 1, GetNumRaidMembers() do
+        local name, _, subgroup = GetRaidRosterInfo(i)
+        if name == playerName then
+            playerGroup = subgroup
+            break
+        end
+    end
+    
+    -- Check if we have pre-calculated relevant rows
+    if sectionData["Section Player Info"] and 
+       sectionData["Section Player Info"]["Relevant Rows"] then
+        -- Use pre-calculated relevant rows if available
+        for _, rowIdx in pairs(sectionData["Section Player Info"]["Relevant Rows"]) do
+            relevantRows[rowIdx] = true
+        end
+        
+        self:Debug("data", "Using pre-calculated relevant rows")
+        return relevantRows
+    end
+    
+    -- No pre-calculated data, we need to determine relevant rows
+    self:Debug("data", "Calculating relevant rows for player: " .. playerName)
+    
+    -- Check if we have rows to process
+    if not sectionData["Section Rows"] then
+        return relevantRows
+    end
+    
+    -- Process each row in the section
+    for idx, rowData in pairs(sectionData["Section Rows"]) do
+        -- Skip special rows (Note, Warning, GUID)
+        if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
+            local isRelevantRow = false
+            
+            -- Check each cell for player name, class, or group
+            for _, cellData in pairs(rowData) do
+                -- Only check string data
+                if type(cellData) == "string" and cellData ~= "" then
+                    -- Direct player name match
+                    if cellData == playerName then
+                        isRelevantRow = true
+                        break
+                    end
+                    
+                    -- Match player class directly
+                    if playerClass and string.upper(cellData) == playerClass then
+                        isRelevantRow = true
+                        break
+                    end
+                    
+                    -- Match player class group (like "Warriors" for a Warrior)
+                    if playerClass and self.CLASS_GROUP_NAMES and 
+                       self.CLASS_GROUP_NAMES[cellData] and 
+                       string.upper(self.CLASS_GROUP_NAMES[cellData]) == playerClass then
+                        isRelevantRow = true
+                        break
+                    end
+                    
+                    -- Match player group number if available
+                    if playerGroup then
+                        local groupPattern = "%f[%a%d]" .. playerGroup .. "%f[^%a%d]"
+                        if string.find(cellData, groupPattern) then
+                            isRelevantRow = true
+                            break
+                        end
+                        
+                        -- Also check for "Group X" format
+                        if string.find(string.lower(cellData), "group%s*" .. playerGroup) then
+                            isRelevantRow = true
+                            break
+                        end
+                    end
+                end
+            end
+            
+            -- Mark row as relevant if any condition matched
+            if isRelevantRow then
+                relevantRows[idx] = true
+                self:Debug("data", "Row " .. idx .. " is relevant to player")
+            end
+        end
+    end
+    
+    return relevantRows
 end

@@ -145,8 +145,30 @@ See the complete list in [Bugs.md](/home/azzco/tmp/TWRA/docs/Bugs.md), but key i
 3. **Boolean Values**: Convert 0/1 to true/false in saved variables
 4. **Error Handling**: Add proper error checking for all user inputs
 5. **Consolidation**: Follow the resolved duplications guide in `Functionmap.md`
+6. **Lua 5.0 Compatibility**: Remember to use `table.getn()` instead of `#` for table length
+7. **Single-Pass Editing**: When modifying files, consolidate all changes into a single edit per file to avoid corruption
+8. **Use Partial Edits**: For large files, use `// ...existing code...` to represent unchanged regions
 
-## Referencing Files
+## Working with Files
+
+### File Editing Best Practices
+
+1. **Single-Pass Editing**: Make all changes to a file in a single, comprehensive edit to avoid corrupting the file with multiple sequential edits.
+2. **Comprehensive Planning**: Before suggesting changes, read and understand the entire file structure.
+3. **Complete Functions**: Always provide complete, syntactically valid functions rather than partial updates.
+4. **Error Prevention**: For complex files, focus on specific sections rather than attempting to modify the entire file at once.
+5. **IMPORTANT**: Never make multiple sequential edits to the same file within a single conversation - always combine all changes into one edit.
+
+### Handling Large Files
+
+For large files:
+1. Use `// ...existing code...` comments to represent unchanged regions
+2. Focus on specific functions that need changes rather than the entire file
+3. Maintain proper indentation and closing brackets for all code blocks
+4. Verify syntax and structure before finalizing changes
+5. When in doubt, use more `// ...existing code...` markers rather than risking an incomplete edit
+
+### Referencing Files
 
 When working with GitHub Copilot Chat, you can:
 1. Use `#codebase` at the beginning of a session to provide overall project context
