@@ -351,7 +351,7 @@ function TWRA:CreateMainFrame()
         return
     end)
 
-    -- After creating all UI elements, load data
+    -- After creating all UI elements, rebuild navigation but don't display content yet
     if TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
         -- Check if we're using the new data format
         local isNewFormat = false
@@ -373,14 +373,14 @@ function TWRA:CreateMainFrame()
             self.usingExampleData = TWRA_SavedVariables.assignments.usingExampleData or
                                     TWRA_SavedVariables.assignments.isExample or false
             
-            -- Restore saved section index or name
+            -- Restore saved section index or name for later use (but don't display yet)
             if TWRA_SavedVariables.assignments.currentSectionName and self.navigation.handlers then
                 local found = false
                 for i, name in ipairs(self.navigation.handlers) do
                     if name == TWRA_SavedVariables.assignments.currentSectionName then
                         self.navigation.currentIndex = i
                         found = true
-                        self:Debug("nav", "Main frame restored section by name: " .. name)
+                        self:Debug("nav", "Main frame stored section by name: " .. name)
                         break
                     end
                 end
@@ -390,7 +390,7 @@ function TWRA:CreateMainFrame()
                     local index = TWRA_SavedVariables.assignments.currentSection
                     if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
                         self.navigation.currentIndex = index
-                        self:Debug("nav", "Main frame restored section by index: " .. index)
+                        self:Debug("nav", "Main frame stored section by index: " .. index)
                     else
                         self.navigation.currentIndex = 1
                         self:Debug("nav", "Main frame using default section index: 1")
@@ -398,7 +398,7 @@ function TWRA:CreateMainFrame()
                 end
             end
         else
-            -- Legacy format handling (unchanged)
+            -- Legacy format handling (unchanged but no content display)
             self.fullData = TWRA_SavedVariables.assignments.data
             
             -- Update navigation handlers
@@ -421,18 +421,61 @@ function TWRA:CreateMainFrame()
             end
         end
         
-        -- Update menu button text
+        -- Update menu button text, but don't load or display content yet
         if self.navigation.handlerText and self.navigation.handlers and 
            self.navigation.currentIndex and self.navigation.handlers[self.navigation.currentIndex] then
             self.navigation.handlerText:SetText(self.navigation.handlers[self.navigation.currentIndex])
         end
-        
-        -- Update display
-        self:DisplayCurrentSection()
     end
 
-    self:Debug("ui", "Main frame created")
+    self:Debug("ui", "Main frame created - content will load when shown")
     return self.mainFrame
+end
+
+-- Add a function to load initial content when the frame is first shown
+function TWRA:LoadInitialContent()
+    self:Debug("ui", "LoadInitialContent called")
+    
+    -- Make sure we have navigation data
+    if not self.navigation or not self.navigation.handlers or table.getn(self.navigation.handlers) == 0 then
+        self:Debug("error", "LoadInitialContent: No navigation handlers available")
+        return false
+    end
+    
+    -- Ensure we have a valid current index
+    if not self.navigation.currentIndex or 
+       self.navigation.currentIndex < 1 or 
+       self.navigation.currentIndex > table.getn(self.navigation.handlers) then
+        self:Debug("ui", "LoadInitialContent: Invalid index, resetting to 1")
+        self.navigation.currentIndex = 1
+    end
+    
+    local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+    if not currentSection then
+        self:Debug("error", "LoadInitialContent: No section found at index " .. self.navigation.currentIndex)
+        return false
+    end
+    
+    self:Debug("ui", "LoadInitialContent: Loading section: " .. currentSection)
+    
+    -- Clear any existing content first to prevent duplication
+    self:ClearRows()
+    self:ClearFooters()
+    
+    -- Update UI elements
+    if self.navigation.handlerText then
+        self.navigation.handlerText:SetText(currentSection)
+    end
+    
+    if self.navigation.menuButton and self.navigation.menuButton.text then
+        self.navigation.menuButton.text:SetText(currentSection)
+    end
+    
+    -- Use FilterAndDisplayHandler to load content (same as navigation would)
+    self:FilterAndDisplayHandler(currentSection)
+    
+    self:Debug("ui", "LoadInitialContent complete")
+    return true
 end
 
 -- Modify ShowMainView to ensure content is displayed properly when switching from options

@@ -779,9 +779,9 @@ This function was duplicated in TWRA.lua and Bindings.lua. The consolidated vers
 This function was duplicated in TWRA.lua and features/AutoTanks.lua. The consolidated version provides consistent error handling and debug output.
 
 ### TWRA:DisplayCurrentSection()
-**Relocated to:** ui/OSD.lua
+**Consolidated to:** TWRA.lua
 
-This function was previously implemented in TWRA.lua but has been moved to ui/OSD.lua as it primarily deals with OSD functionality. The function now serves as a centralized way to update both the OSD display and the main UI elements (menuButton, handlerText) when changing sections. The placement in ui/OSD.lua makes architectural sense since OSD is the component most frequently updated during section changes.
+This function was previously implemented in both TWRA.lua and ui/OSD.lua. It has been consolidated to TWRA.lua with the more complete implementation from OSD.lua. The function serves as a centralized way to update both the OSD display and the main UI elements when changing sections. It includes proper error handling, UI updates for both the main frame and OSD, and supports autonavigation.
 
 ## Recommendations for resolving duplication issues:
 

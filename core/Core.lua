@@ -183,11 +183,14 @@ frame:SetScript("OnEvent", function()
     if event == "PLAYER_ENTERING_WORLD" then
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [event]:|r PLAYER_ENTERING_WORLD triggered")
         
-        -- Create the main frame directly here
+        -- Create the main frame directly here but don't load content yet
         if not TWRA.mainFrame and TWRA.CreateMainFrame then
             TWRA:CreateMainFrame()
-            TWRA.mainFrame:Hide()
+            TWRA.mainFrame:Hide() -- Ensure it's hidden by default
             DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [ui]:|r Main frame created and hidden directly from event handler")
+            
+            -- Set a flag to indicate we need to load content when user manually shows frame
+            TWRA.needsInitialContentLoad = true
         end
         
         -- Initialize OSD system (moved from OnEvent)
@@ -343,7 +346,11 @@ function TWRA:ToggleMainFrame()
                 self.mainFrame:Hide()
             else
                 self.mainFrame:Show()
-                self:Debug("ui", "Frame created and shown")
+                -- Load content if showing the frame
+                if self.LoadInitialContent then
+                    self:LoadInitialContent()
+                end
+                self:Debug("ui", "Frame created and shown with content")
             end
         else
             self:Error("Unable to create main frame")
@@ -355,7 +362,11 @@ function TWRA:ToggleMainFrame()
             self:Debug("ui", "Window hidden")
         else
             self.mainFrame:Show()
-            self:Debug("ui", "Window shown")
+            -- Load content when showing the frame
+            if self.LoadInitialContent then
+                self:LoadInitialContent()
+            end
+            self:Debug("ui", "Window shown with content")
         end
     end
 
