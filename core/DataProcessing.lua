@@ -20,6 +20,95 @@ function TWRA:ProcessLoadedData(data)
     end
 end
 
+-- EnsureCompleteRows - Ensures that all rows have the same number of columns
+-- Adds empty strings at missing indices to prevent nil reference errors
+function TWRA:EnsureCompleteRows(data)
+    if not data then return data end
+    
+    -- For new data format
+    if data.data and type(data.data) == "table" then
+        -- Process each section
+        for sectionIdx, section in pairs(data.data) do
+            -- Skip if not a proper section
+            if type(section) ~= "table" then
+                self:Debug("data", "EnsureCompleteRows: Section " .. tostring(sectionIdx) .. " is not a table")
+                goto continue
+            end
+            
+            -- Process section header first to determine column count
+            local maxColumns = 0
+            if section["Section Header"] and type(section["Section Header"]) == "table" then
+                maxColumns = table.getn(section["Section Header"])
+            end
+            
+            -- Process section rows if they exist
+            if section["Section Rows"] and type(section["Section Rows"]) == "table" then
+                for rowIdx, rowData in ipairs(section["Section Rows"]) do
+                    -- Skip non-table rows
+                    if type(rowData) ~= "table" then
+                        self:Debug("data", "EnsureCompleteRows: Row " .. rowIdx .. " in section " .. 
+                                  tostring(section["Section Name"] or sectionIdx) .. " is not a table")
+                        goto continue_row
+                    end
+                    
+                    -- Special rows like Note, Warning, GUID need exactly 2 columns
+                    if rowData[1] == "Note" or rowData[1] == "Warning" or rowData[1] == "GUID" then
+                        -- Ensure we have at least 2 columns for special rows
+                        if not rowData[1] then rowData[1] = "" end
+                        if not rowData[2] then rowData[2] = "" end
+                        
+                        -- Remove any extra columns beyond 2
+                        for i = 3, table.getn(rowData) do
+                            rowData[i] = nil
+                        end
+                    else
+                        -- Normal rows - make sure they have maxColumns entries
+                        -- Make sure we have at least as many columns as the header
+                        for i = 1, maxColumns do
+                            if not rowData[i] then
+                                rowData[i] = ""
+                            end
+                        end
+                    end
+                    
+                    ::continue_row::
+                end
+            end
+            
+            ::continue::
+        end
+    end
+
+    -- For legacy format
+    if type(data) == "table" and not data.data then
+        -- Find max columns in any row
+        local maxColumns = 0
+        for i = 1, table.getn(data) do
+            local row = data[i]
+            if type(row) == "table" then
+                local rowLen = table.getn(row)
+                if rowLen > maxColumns then
+                    maxColumns = rowLen
+                end
+            end
+        end
+        
+        -- Normalize rows
+        for i = 1, table.getn(data) do
+            local row = data[i]
+            if type(row) == "table" then
+                for j = 1, maxColumns do
+                    if not row[j] then
+                        row[j] = ""
+                    end
+                end
+            end
+        end
+    end
+    
+    return data
+end
+
 -- Enhanced ProcessPlayerInfo with better debugging
 function TWRA:ProcessPlayerInfo()
     self:Debug("data", "Processing player-specific information for sections")

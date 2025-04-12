@@ -127,6 +127,7 @@ Encodes data to Base64 format.
 
 **Used in:**
 - ui/Options.lua (export function)
+- sync/Sync.lua
 
 ### TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
 Decodes Base64 data to its original format.
@@ -147,6 +148,42 @@ Decodes Base64 data to its original format.
 - TWRA.lua (LoadSavedAssignments)
 - ui/Options.lua (import function)
 - sync/SyncHandlers.lua (data synchronization)
+
+### TWRA:EnsureCompleteRows(data)
+Ensures that all rows in the data structure have entries for all columns, filling empty cells with empty strings.
+
+**Arguments:**
+- data: Data structure to process
+
+**Returns:**
+- Processed data structure with complete rows
+
+**Used in:**
+- TWRA:DecodeBase64() (when processing new format data)
+
+### TWRA:TableToLuaString(tbl)
+Converts a table to a Lua code string representation.
+
+**Arguments:**
+- tbl: Table to convert
+
+**Returns:**
+- String containing Lua code that recreates the table
+
+**Used in:**
+- TWRA:TableToBase64()
+
+### TWRA:TableToBase64(tbl)
+Converts a table to a Base64 encoded string (for export).
+
+**Arguments:**
+- tbl: Table to convert
+
+**Returns:**
+- Base64 encoded string representing the table
+
+**Used in:**
+- ui/Options.lua (export function)
 
 ## Example.lua
 ### TWRA:LoadExampleData()

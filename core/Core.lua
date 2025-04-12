@@ -828,6 +828,14 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     if type(data) == "table" and data.data and type(data.data) == "table" then
         isNewFormat = true
         self:Debug("data", "Detected new format structure in SaveAssignments")
+        
+        -- Make one final pass with EnsureCompleteRows to guarantee all indices are filled before saving
+        if self.EnsureCompleteRows then
+            data = self:EnsureCompleteRows(data)
+            self:Debug("data", "Applied EnsureCompleteRows during SaveAssignments for new format")
+        else
+            self:Debug("error", "EnsureCompleteRows function not found during SaveAssignments")
+        end
     end
     
     -- Use provided timestamp or generate new one
@@ -890,9 +898,17 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         return true
     end
     
-    -- Legacy format handling below - unchanged
+    -- Legacy format handling below
     -- Clean the data using our centralized function
     local cleanedData = self:CleanAssignmentData(data, false)
+    
+    -- Make one final pass with EnsureCompleteRows to guarantee all indices are filled
+    if self.EnsureCompleteRows then
+        cleanedData = self:EnsureCompleteRows(cleanedData)
+        self:Debug("data", "Applied EnsureCompleteRows during SaveAssignments for legacy format")
+    else
+        self:Debug("error", "EnsureCompleteRows function not found during SaveAssignments")
+    end
     
     -- Update our full data with the cleaned data
     self.fullData = cleanedData

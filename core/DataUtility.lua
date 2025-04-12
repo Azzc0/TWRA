@@ -3,60 +3,147 @@
 
 TWRA = TWRA or {}
 
+-- Add a function to translate shortened keys to their full forms
+local function TranslateKeyNames(data)
+    if not data or type(data) ~= "table" then return data end
+    
+    local keyMappings = {
+        ["sn"] = "Section Name",
+        ["sh"] = "Section Header",
+        ["sr"] = "Section Rows",
+        ["ri"] = "Relevant Icons",
+        ["fa"] = "Formatted Assignments"
+    }
+    
+    local result = {}
+    for k, v in pairs(data) do
+        local newKey = keyMappings[k] or k
+        
+        if type(v) == "table" then
+            result[newKey] = TranslateKeyNames(v)
+        else
+            result[newKey] = v
+        end
+    end
+    
+    return result
+end
+
+-- Convert special characters in a string
+function TWRA:ConvertSpecialCharacters(str)
+    if not str or type(str) ~= "string" then return str end
+    
+    -- Replace common special character patterns
+    local replacements = {
+        ["?"] = "å",
+        ["?"] = "ä",
+        ["?"] = "ö",
+        ["?"] = "Å",
+        ["?"] = "Ä",
+        ["?"] = "Ö",
+        ["?"] = "ø",
+        ["?"] = "æ",
+        ["?"] = "ũ"
+    }
+    
+    for pattern, replacement in pairs(replacements) do
+        str = string.gsub(str, pattern, replacement)
+    end
+    
+    return str
+end
+
+-- Fix special characters throughout the entire data structure
+function TWRA:FixSpecialCharacters(data)
+    if type(data) ~= "table" then
+        if type(data) == "string" then
+            return self:ConvertSpecialCharacters(data)
+        end
+        return data
+    end
+    
+    local result = {}
+    for k, v in pairs(data) do
+        if type(k) == "string" then
+            k = self:ConvertSpecialCharacters(k)
+        end
+        
+        if type(v) == "table" then
+            result[k] = self:FixSpecialCharacters(v)
+        elseif type(v) == "string" then
+            result[k] = self:ConvertSpecialCharacters(v)
+        else
+            result[k] = v
+        end
+    end
+    
+    return result
+end
+
 -- Check if we're using the new data format
 function TWRA:IsNewDataFormat()
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or not TWRA_SavedVariables.assignments.data then
         return false
     end
     
-    return TWRA_SavedVariables.assignments.version == 2
+    local data = TWRA_SavedVariables.assignments.data
+    if type(data) ~= "table" then return false end
+    
+    -- Check if data is an object with sections rather than an array
+    if data[1] and data[1]["Section Name"] then
+        return true
+    end
+    
+    return false
 end
 
 -- Build navigation from the new data format
 function TWRA:BuildNavigationFromNewFormat()
     self:Debug("nav", "Building navigation from new format data")
     
-    self.navigation = self.navigation or { handlers = {}, currentIndex = 1 }
-    self.navigation.handlers = {}
-    
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or
-       not TWRA_SavedVariables.assignments.data then
-        self:Debug("nav", "No assignment data available")
-        return {}
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or not TWRA_SavedVariables.assignments.data then
+        self:Debug("error", "No data found for rebuilding navigation")
+        return false
     end
     
-    local sections = TWRA_SavedVariables.assignments.data
-    local sectionsAdded = 0
+    local data = TWRA_SavedVariables.assignments.data
+    if not data or type(data) ~= "table" then 
+        self:Debug("error", "Data is not a table or is empty for rebuilding navigation")
+        return false
+    end
     
-    -- Clear debug message to verify what sections are found
-    local sectionNames = ""
+    -- Create or reset navigation object
+    self.navigation = self.navigation or {}
+    self.navigation.sections = {}
+    self.navigation.sectionNames = {}
     
-    -- Add each section name to handlers
-    for idx, section in pairs(sections) do
-        if type(section) == "table" and section["Section Name"] then
-            table.insert(self.navigation.handlers, section["Section Name"])
-            sectionsAdded = sectionsAdded + 1
-            
-            if sectionNames ~= "" then
-                sectionNames = sectionNames .. ", "
-            end
-            sectionNames = sectionNames .. "'" .. section["Section Name"] .. "'"
+    -- Build section information
+    for i, section in pairs(data) do
+        if section and type(section) == "table" and 
+           (section["Section Name"] or section["sn"]) then
+            local sectionName = section["Section Name"] or section["sn"]
+            table.insert(self.navigation.sections, i)
+            table.insert(self.navigation.sectionNames, sectionName)
         end
     end
     
-    -- Set current index to a valid value
-    if sectionsAdded > 0 then
-        self.navigation.currentIndex = math.min(
-            TWRA_SavedVariables.assignments.currentSection or 1,
-            sectionsAdded
-        )
-    else
-        self.navigation.currentIndex = 1
+    -- Set up current index if needed
+    if not self.navigation.currentIndex or self.navigation.currentIndex < 1 or 
+       self.navigation.currentIndex > table.getn(self.navigation.sections) then
+        if table.getn(self.navigation.sections) > 0 then
+            self.navigation.currentIndex = 1
+            self:Debug("nav", "Reset current section to 1")
+        else
+            self.navigation.currentIndex = nil
+            self:Debug("error", "No valid sections found")
+            return false
+        end
     end
     
-    self:Debug("nav", "Built " .. sectionsAdded .. " sections: " .. sectionNames)
+    self:Debug("nav", "Built " .. table.getn(self.navigation.sections) .. " sections from new format")
+    self:Debug("nav", "Section names: " .. table.concat(self.navigation.sectionNames, ", "))
     
-    return self.navigation.handlers
+    return true
 end
 
 -- Get section by index
@@ -70,37 +157,14 @@ end
 
 -- Get the section data for the current section in the new format
 function TWRA:GetCurrentSectionData()
-    -- Make sure we have assignments data and navigation
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or 
-       not TWRA_SavedVariables.assignments.data or
-       not self.navigation or not self.navigation.currentIndex or 
-       not self.navigation.handlers then
-        self:Debug("error", "Missing required data structures for GetCurrentSectionData")
+    if not self:IsNewDataFormat() or not self.navigation or not self.navigation.currentIndex then
         return nil
     end
     
-    -- Get current section name
-    local currentIndex = self.navigation.currentIndex
-    if currentIndex > table.getn(self.navigation.handlers) then
-        self:Debug("error", "Invalid section index: " .. currentIndex)
-        return nil
-    end
+    local data = TWRA_SavedVariables.assignments.data
+    if not data then return nil end
     
-    local sectionName = self.navigation.handlers[currentIndex]
-    if not sectionName then
-        self:Debug("error", "No section name found for index: " .. currentIndex)
-        return nil
-    end
-    
-    -- Find the section in the data
-    for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
-        if type(section) == "table" and section["Section Name"] == sectionName then
-            return section
-        end
-    end
-    
-    self:Debug("error", "Section not found in data: " .. sectionName)
-    return nil
+    return data[self.navigation.currentIndex]
 end
 
 -- Display the current section with the new format
@@ -122,7 +186,7 @@ function TWRA:DisplayCurrentSection()
         end
         
         -- Create the header row
-        local headerData = sectionData["Section Header"]
+        local headerData = sectionData["Section Header"] or sectionData["sh"]
         if self.CreateRow and headerData then
             self:Debug("ui", "Creating header row")
             self:CreateRow(1, headerData, false, true)
@@ -131,7 +195,7 @@ function TWRA:DisplayCurrentSection()
         end
         
         -- Create the data rows
-        local rowsData = sectionData["Section Rows"]
+        local rowsData = sectionData["Section Rows"] or sectionData["sr"]
         if rowsData then
             -- Prepare relevance info
             local relevantRows = {}
@@ -195,7 +259,7 @@ function TWRA:GetRelevantRowsForCurrentSection(sectionData)
     end
     
     -- Scan through all rows to find matches
-    local rowsData = sectionData["Section Rows"]
+    local rowsData = sectionData["Section Rows"] or sectionData["sr"]
     if not rowsData then return {} end
     
     for idx, rowData in pairs(rowsData) do
@@ -314,6 +378,17 @@ function TWRA:DisplayLegacySection()
     end
     
     return true
+end
+
+-- Process imported data to handle shortened keys and special characters
+function TWRA:ProcessImportedData(data)
+    if not data then return data end
+    
+    -- First handle any shortened keys
+    local processedData = TranslateKeyNames(data)
+    
+    -- Return the processed data
+    return processedData
 end
 
 -- Verify and log the new data structure

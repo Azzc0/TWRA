@@ -15,6 +15,49 @@ local b64Table = TWRA.BASE64_TABLE or {
     ['='] = -1
 }
 
+-- Define abbreviation mappings (must match the ones in Google Spreadsheet script)
+TWRA.ABBREVIATION_MAPPINGS = {
+    -- Icon column abbreviations
+    ["1"] = "Star",
+    ["2"] = "Circle",
+    ["3"] = "Diamond",
+    ["4"] = "Triangle",
+    ["5"] = "Moon",
+    ["6"] = "Square",
+    ["7"] = "Cross",
+    ["8"] = "Skull",
+    ["9"] = "GUID",
+    ["!"] = "Warning",
+    ["?"] = "Note",
+    
+    -- Class and group abbreviations
+    ["D"] = "Druids",
+    ["H"] = "Hunters",
+    ["M"] = "Mages",
+    ["Pa"] = "Paladins",
+    ["Pr"] = "Priests",
+    ["R"] = "Rogues",
+    ["S"] = "Shamans",
+    ["W"] = "Warriors",
+    ["Wl"] = "Warlocks",
+    ["G"] = "Group",
+    ["Gr"] = "Groups",
+    
+    -- Header abbreviations
+    ["T"] = "Tank",
+    ["H"] = "Heal", -- Note: H is used for both Hunters and Heal; context determines which
+    ["He"] = "Healer",
+    ["I"] = "Interrupt",
+    ["B"] = "Banish",
+    ["Dc"] = "Decurse",
+    ["Dp"] = "Depoison",
+    ["Ds"] = "Dispell",
+    ["Dd"] = "Dedisease",
+    ["Ri"] = "Ranged Interrupt",
+    ["P"] = "Pull",
+    ["K"] = "Kite"
+}
+
 -- Replace the b64Encode function that has modulo operator issues
 local function b64Encode(ch)
     if not ch then return "A" end
@@ -85,7 +128,237 @@ function TWRA:EncodeBase64(data)
     return table.concat(result)
 end
 
--- Improved Base64 decoding function with better error handling through debug system
+-- Function to expand abbreviations based on static mapping table
+function TWRA:ExpandAbbreviations(data)
+    if not data or type(data) ~= "table" then
+        self:Debug("error", "ExpandAbbreviations: Invalid data structure")
+        return data
+    end
+    
+    if not self.ABBREVIATION_MAPPINGS then
+        self:Debug("error", "ExpandAbbreviations: No abbreviation mappings defined")
+        return data
+    end
+    
+    self:Debug("data", "Expanding abbreviations in imported data")
+    
+    -- Process each section
+    if data.data and type(data.data) == "table" then
+        for sectionIndex, section in pairs(data.data) do
+            -- Skip if not a table
+            if type(section) ~= "table" then
+                self:Debug("data", "Skipping non-table section: " .. tostring(sectionIndex))
+            else
+                -- Process section header abbreviations
+                if section["Section Header"] and type(section["Section Header"]) == "table" then
+                    for i, headerValue in pairs(section["Section Header"]) do
+                        if type(headerValue) == "string" and self.ABBREVIATION_MAPPINGS[headerValue] then
+                            section["Section Header"][i] = self.ABBREVIATION_MAPPINGS[headerValue]
+                            self:Debug("data", "Expanded header abbreviation: " .. headerValue .. " -> " .. self.ABBREVIATION_MAPPINGS[headerValue])
+                        end
+                    end
+                end
+                
+                -- Process section rows
+                if section["Section Rows"] and type(section["Section Rows"]) == "table" then
+                    for rowIndex, row in pairs(section["Section Rows"]) do
+                        if type(row) == "table" then
+                            for colIndex, value in pairs(row) do
+                                -- Try exact match first
+                                if type(value) == "string" and self.ABBREVIATION_MAPPINGS[value] then
+                                    row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
+                                    self:Debug("data", "Expanded row abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                end
+                                -- For icon column (usually index 1), also try special handling
+                                if colIndex == 1 and type(value) == "string" then
+                                    -- Handle numeric icons (1-9) which should become Star, Circle, etc.
+                                    local num = tonumber(value)
+                                    if num and num >= 1 and num <= 9 and self.ABBREVIATION_MAPPINGS[value] then
+                                        row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
+                                        self:Debug("data", "Expanded numeric icon: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                    -- Handle symbol icons (!, ?)
+                                    elseif (value == "!" or value == "?") and self.ABBREVIATION_MAPPINGS[value] then
+                                        row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
+                                        self:Debug("data", "Expanded symbol icon: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- Handle section name if it's abbreviated (unusual but possible)
+                if section["Section Name"] and type(section["Section Name"]) == "string" and
+                   self.ABBREVIATION_MAPPINGS[section["Section Name"]] then
+                    section["Section Name"] = self.ABBREVIATION_MAPPINGS[section["Section Name"]]
+                    self:Debug("data", "Expanded section name: " .. section["Section Name"])
+                end
+            end
+        end
+    else
+        self:Debug("data", "Data doesn't have expected 'data' field structure for abbreviation expansion")
+    end
+    
+    -- Also expand in the short key format
+    if data.data and type(data.data) == "table" then
+        for sectionIndex, section in pairs(data.data) do
+            if type(section) == "table" then
+                -- Process short section header abbreviations
+                if section["sh"] and type(section["sh"]) == "table" then
+                    for i, headerValue in pairs(section["sh"]) do
+                        if type(headerValue) == "string" and self.ABBREVIATION_MAPPINGS[headerValue] then
+                            section["sh"][i] = self.ABBREVIATION_MAPPINGS[headerValue]
+                            self:Debug("data", "Expanded short header abbreviation: " .. headerValue .. " -> " .. self.ABBREVIATION_MAPPINGS[headerValue])
+                        end
+                    end
+                end
+                
+                -- Process short section rows
+                if section["sr"] and type(section["sr"]) == "table" then
+                    for rowIndex, row in pairs(section["sr"]) do
+                        if type(row) == "table" then
+                            for colIndex, value in pairs(row) do
+                                if type(value) == "string" and self.ABBREVIATION_MAPPINGS[value] then
+                                    row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
+                                    self:Debug("data", "Expanded short row abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- Short section name
+                if section["sn"] and type(section["sn"]) == "string" and
+                   self.ABBREVIATION_MAPPINGS[section["sn"]] then
+                    section["sn"] = self.ABBREVIATION_MAPPINGS[section["sn"]]
+                    self:Debug("data", "Expanded short section name: " .. section["sn"])
+                end
+            end
+        end
+    end
+    
+    -- For legacy format: flat array of rows
+    if type(data) == "table" and not data.data then
+        local didExpand = false
+        
+        for rowIndex, row in pairs(data) do
+            if type(row) == "table" then
+                for colIndex, value in pairs(row) do
+                    if type(value) == "string" and self.ABBREVIATION_MAPPINGS[value] then
+                        row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
+                        didExpand = true
+                        self:Debug("data", "Expanded legacy abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                    end
+                end
+            end
+        end
+        
+        if didExpand then
+            self:Debug("data", "Expanded abbreviations in legacy format data")
+        end
+    end
+    
+    return data
+end
+
+-- New function to ensure all rows have entries for all columns
+function TWRA:EnsureCompleteRows(data)
+    if not data then 
+        self:Debug("error", "EnsureCompleteRows: Invalid data structure", true)
+        return data 
+    end
+    
+    self:Debug("data", "Ensuring all rows have entries for all columns")
+    
+    -- Handle the new format structure
+    if data.data and type(data.data) == "table" then
+        -- Process each section
+        for sectionIndex, section in pairs(data.data) do
+            -- Only process table sections (new format)
+            if type(section) == "table" and section["Section Name"] and section["Section Rows"] and section["Section Header"] then
+                local maxColumns = table.getn(section["Section Header"])
+                
+                self:Debug("data", "Processing section '" .. section["Section Name"] .. "', ensuring " .. maxColumns .. " columns per row", false, true)
+                
+                -- Process each row, including special rows
+                for rowIndex, row in pairs(section["Section Rows"]) do
+                    -- Create a new row with sequential indices regardless of row type
+                    local newRow = {}
+                    
+                    -- Determine the max columns to ensure for this row
+                    local rowMaxColumns = maxColumns
+                    -- Special rows like "Note", "Warning", "GUID" potentially have different column needs
+                    if type(row[1]) == "string" and (row[1] == "Note" or row[1] == "Warning" or row[1] == "GUID") then
+                        local specialRowLength = 0
+                        for _ in pairs(row) do
+                            specialRowLength = specialRowLength + 1
+                        end
+                        if specialRowLength > rowMaxColumns then
+                            rowMaxColumns = specialRowLength
+                        end
+                    end
+                    
+                    -- Fill in all column indices from 1 to rowMaxColumns
+                    for colIndex = 1, rowMaxColumns do
+                        -- Handle both nil values and missing indices
+                        if row[colIndex] ~= nil then
+                            newRow[colIndex] = row[colIndex]
+                        else
+                            newRow[colIndex] = ""
+                        end
+                    end
+                    
+                    -- Replace the original sparse row with the complete row
+                    section["Section Rows"][rowIndex] = newRow
+                end
+                
+                self:Debug("data", "Completed filling indices for section '" .. section["Section Name"] .. "'")
+            end
+        end
+    -- Handle the legacy format (flat array of rows)
+    elseif type(data) == "table" then
+        -- Determine the maximum number of columns across all rows
+        local maxColumns = 0
+        for i = 1, table.getn(data) do
+            if data[i] and type(data[i]) == "table" then
+                local rowLength = 0
+                for _ in pairs(data[i]) do
+                    rowLength = rowLength + 1
+                end
+                if rowLength > maxColumns then
+                    maxColumns = rowLength
+                end
+            end
+        end
+        
+        self:Debug("data", "Processing legacy format, ensuring " .. maxColumns .. " columns per row")
+        
+        -- Process each row
+        for rowIndex = 1, table.getn(data) do
+            if data[rowIndex] and type(data[rowIndex]) == "table" then
+                -- Create a new row with sequential indices
+                local newRow = {}
+                
+                -- Fill in all column indices from 1 to maxColumns
+                for colIndex = 1, maxColumns do
+                    -- Handle both nil values and missing indices
+                    if data[rowIndex][colIndex] ~= nil then
+                        newRow[colIndex] = data[rowIndex][colIndex]
+                    else
+                        newRow[colIndex] = ""
+                    end
+                end
+                
+                -- Replace the original sparse row with the complete row
+                data[rowIndex] = newRow
+            end
+        end
+    end
+    
+    return data
+end
+
+-- Improved Base64 decoding function with better UTF-8 handling
 function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     if not base64Str then 
         self:Debug("error", "Decode failed - nil string", true)
@@ -106,7 +379,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return nil
     end
     
-    -- Convert Base64 to binary string
+    -- Convert Base64 to binary string with improved UTF-8 handling
     local luaCode = ""
     local bits = 0
     local bitCount = 0
@@ -126,43 +399,24 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                 
                 -- Extract next byte (shift right)
                 local byte = math.floor(bits / (2^bitCount))
-                -- Keep only the lowest 8 bits by subtracting multiples of 256
-                byte = byte - math.floor(byte / 256) * 256
+                
+                -- Keep only the lowest 8 bits (replace modulo with math.floor approach)
+                byte = byte - (math.floor(byte / 256) * 256)
                 
                 luaCode = luaCode .. string.char(byte)
                 
-                -- Clear the used bits
-                bits = bits - math.floor(bits / (2^bitCount)) * (2^bitCount)
+                -- Remove the consumed bits (replace modulo with math.floor approach)
+                bits = bits - (math.floor(bits / (2^bitCount)) * (2^bitCount))
             end
         end
     end
     
     self:Debug("data", "Decoded string length: " .. string.len(luaCode))
-    self:Debug("data", "String begins with: " .. string.sub(luaCode, 1, 40) .. "...")
-    
-    -- The decoded string may contain Unicode escape sequences like \u00e5
-    -- We need to convert these to actual UTF-8 characters
-    luaCode = string.gsub(luaCode, "\\u(%x%x%x%x)", function(hex)
-        local charCode = tonumber(hex, 16)
-        if charCode then
-            -- Convert Unicode code point to UTF-8 bytes
-            if charCode < 128 then
-                return string.char(charCode)
-            elseif charCode < 2048 then
-                return string.char(
-                    192 + math.floor(charCode / 64),
-                    128 + (charCode - math.floor(charCode / 64) * 64)
-                )
-            else
-                return string.char(
-                    224 + math.floor(charCode / 4096),
-                    128 + math.floor((charCode - math.floor(charCode / 4096) * 4096) / 64),
-                    128 + (charCode - math.floor(charCode / 64) * 64)
-                )
-            end
-        end
-        return "?"  -- Fallback for invalid codes
-    end)
+    local previewText = string.sub(luaCode, 1, 40)
+    if string.len(luaCode) > 40 then
+        previewText = previewText .. "..."
+    end
+    self:Debug("data", "String begins with: " .. previewText)
     
     -- Check if we have the new format (starting with TWRA_ImportString = {)
     if string.find(luaCode, "^TWRA_ImportString%s*=%s*{") then
@@ -172,7 +426,8 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         local env = {}
         
         -- Execute the code in this environment
-        local func, err = loadstring(luaCode)
+        local script = "local TWRA_ImportString; " .. luaCode .. "; return TWRA_ImportString"
+        local func, err = loadstring(script)
         if not func then
             self:Debug("error", "Error parsing new format: " .. (err or "unknown error"), true)
             return nil
@@ -188,23 +443,40 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         end
         
         -- Get the result from environment
-        if env.TWRA_ImportString and type(env.TWRA_ImportString) == "table" then
+        if result and type(result) == "table" then
             self:Debug("data", "Successfully parsed new format structure")
+            
+            -- Make sure to call abbreviation expansion before any other processing
+            self:Debug("data", "Expanding abbreviations in the imported data")
+            result = self:ExpandAbbreviations(result)
+            
+            -- Ensure all rows have entries for all columns
+            result = self:EnsureCompleteRows(result)
+            
+            -- Process the data to handle shortened keys and fix special characters
+            if self.ProcessImportedData then
+                result = self:ProcessImportedData(result)
+            end
+            
+            -- Fix special characters throughout the data
+            if self.FixSpecialCharacters then
+                result = self:FixSpecialCharacters(result)
+            end
             
             -- If this is a sync operation with timestamp, handle it directly
             if syncTimestamp then
                 -- For the new format, we need to assign directly to SavedVariables
                 TWRA_SavedVariables = TWRA_SavedVariables or {}
                 TWRA_SavedVariables.assignments = {
-                    data = env.TWRA_ImportString.data,
+                    data = result.data,
                     timestamp = syncTimestamp,
                     version = 2
                 }
                 self:Debug("data", "Directly saved new format data to SavedVariables with timestamp: " .. syncTimestamp)
-                return env.TWRA_ImportString
+                return result
             end
             
-            return env.TWRA_ImportString
+            return result
         else
             self:Debug("error", "New format parsed but TWRA_ImportString not found", true)
             return nil
@@ -272,9 +544,15 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     -- If we get here, we have a valid table
     self:Debug("data", "Successfully decoded legacy table with " .. table.getn(result) .. " entries")
     
+    -- Expand abbreviations for legacy format
+    self:Debug("data", "Expanding abbreviations in legacy format data")
+    result = self:ExpandAbbreviations(result)
+    
+    -- Ensure all rows have entries for all columns
+    result = self:EnsureCompleteRows(result)
+    
     -- If this is a sync operation with timestamp, handle it directly
     if syncTimestamp then
-        -- Skip section restoration during sync - handled separately
         self:SaveAssignments(result, base64Str, syncTimestamp, noAnnounce or true)
     end
     
