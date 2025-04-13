@@ -365,6 +365,34 @@ function TWRA:ToggleMessageMonitoring(enable)
         (self.SYNC.monitorMessages and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
 end
 
+-- Handle group composition changes
+function TWRA:OnGroupChanged()
+    self:Debug("sync", "Group composition changed")
+    
+    -- Check if we went from solo to group (might want to activate sync)
+    local inGroup = (GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0)
+    
+    -- Always refresh player information when group changes as 
+    -- assignments might be group-dependent
+    if self.RefreshPlayerInfo then
+        self:Debug("data", "Refreshing player info after group composition change")
+        self:RefreshPlayerInfo()
+    else
+        self:Debug("error", "RefreshPlayerInfo function not available")
+    end
+    
+    -- Additional sync-related logic
+    if inGroup and self.SYNC.liveSync and not self.SYNC.isActive then
+        -- We joined a group and sync is enabled but not active, activate it
+        self:Debug("sync", "Joined a group with sync enabled, activating")
+        self:ActivateLiveSync()
+    elseif not inGroup and self.SYNC.isActive then
+        -- We left all groups, could consider deactivating sync
+        -- self:Debug("sync", "Left all groups, could deactivate sync")
+        -- Not auto-deactivating for now, as the user might join another group soon
+    end
+end
+
 -- Debug function to show sync status information
 function TWRA:ShowSyncStatus()
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Sync Status:|r")

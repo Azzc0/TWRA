@@ -30,52 +30,46 @@ function TWRA:EnsureCompleteRows(data)
         -- Process each section
         for sectionIdx, section in pairs(data.data) do
             -- Skip if not a proper section
-            if type(section) ~= "table" then
-                self:Debug("data", "EnsureCompleteRows: Section " .. tostring(sectionIdx) .. " is not a table")
-                goto continue
-            end
-            
-            -- Process section header first to determine column count
-            local maxColumns = 0
-            if section["Section Header"] and type(section["Section Header"]) == "table" then
-                maxColumns = table.getn(section["Section Header"])
-            end
-            
-            -- Process section rows if they exist
-            if section["Section Rows"] and type(section["Section Rows"]) == "table" then
-                for rowIdx, rowData in ipairs(section["Section Rows"]) do
-                    -- Skip non-table rows
-                    if type(rowData) ~= "table" then
-                        self:Debug("data", "EnsureCompleteRows: Row " .. rowIdx .. " in section " .. 
-                                  tostring(section["Section Name"] or sectionIdx) .. " is not a table")
-                        goto continue_row
-                    end
-                    
-                    -- Special rows like Note, Warning, GUID need exactly 2 columns
-                    if rowData[1] == "Note" or rowData[1] == "Warning" or rowData[1] == "GUID" then
-                        -- Ensure we have at least 2 columns for special rows
-                        if not rowData[1] then rowData[1] = "" end
-                        if not rowData[2] then rowData[2] = "" end
-                        
-                        -- Remove any extra columns beyond 2
-                        for i = 3, table.getn(rowData) do
-                            rowData[i] = nil
-                        end
-                    else
-                        -- Normal rows - make sure they have maxColumns entries
-                        -- Make sure we have at least as many columns as the header
-                        for i = 1, maxColumns do
-                            if not rowData[i] then
-                                rowData[i] = ""
-                            end
-                        end
-                    end
-                    
-                    ::continue_row::
+            if type(section) == "table" then
+                -- Process section header first to determine column count
+                local maxColumns = 0
+                if section["Section Header"] and type(section["Section Header"]) == "table" then
+                    maxColumns = table.getn(section["Section Header"])
                 end
+                
+                -- Process section rows if they exist
+                if section["Section Rows"] and type(section["Section Rows"]) == "table" then
+                    for rowIdx, rowData in ipairs(section["Section Rows"]) do
+                        -- Skip non-table rows
+                        if type(rowData) == "table" then
+                            -- Special rows like Note, Warning, GUID need exactly 2 columns
+                            if rowData[1] == "Note" or rowData[1] == "Warning" or rowData[1] == "GUID" then
+                                -- Ensure we have at least 2 columns for special rows
+                                if not rowData[1] then rowData[1] = "" end
+                                if not rowData[2] then rowData[2] = "" end
+                                
+                                -- Remove any extra columns beyond 2
+                                for i = 3, table.getn(rowData) do
+                                    rowData[i] = nil
+                                end
+                            else
+                                -- Normal rows - make sure they have maxColumns entries
+                                -- Make sure we have at least as many columns as the header
+                                for i = 1, maxColumns do
+                                    if not rowData[i] then
+                                        rowData[i] = ""
+                                    end
+                                end
+                            end
+                        else
+                            self:Debug("data", "EnsureCompleteRows: Row " .. rowIdx .. " in section " .. 
+                                      tostring(section["Section Name"] or sectionIdx) .. " is not a table")
+                        end
+                    end
+                end
+            else
+                self:Debug("data", "EnsureCompleteRows: Section " .. tostring(sectionIdx) .. " is not a table")
             end
-            
-            ::continue::
         end
     end
 
@@ -151,6 +145,24 @@ function TWRA:ProcessPlayerInfo()
             section["Section Player Info"] = section["Section Player Info"] or {}
             local playerInfo = section["Section Player Info"]
             
+            -- Find tank role columns
+            playerInfo["Tanks"] = self:FindTankRoleColumns(section)
+            local tanksCount = table.getn(playerInfo["Tanks"])
+            
+            -- Generate list of tank indices for debugging
+            local tanksList = ""
+            for i, tankIndex in ipairs(playerInfo["Tanks"]) do
+                tanksList = tanksList .. tankIndex
+                if i < tanksCount then
+                    tanksList = tanksList .. ", "
+                end
+            end
+            
+            if tanksCount > 0 then
+                self:Debug("data", "Section '" .. sectionName .. "': Found " .. tanksCount .. 
+                          " tank columns: [" .. tanksList .. "]", false, true)
+            end
+            
             -- Find relevant rows
             playerInfo["Relevant Rows"] = self:GetPlayerRelevantRowsForSection(section)
             local relevantCount = table.getn(playerInfo["Relevant Rows"])
@@ -167,13 +179,117 @@ function TWRA:ProcessPlayerInfo()
             self:Debug("data", "Section '" .. sectionName .. "': Found " .. relevantCount .. 
                       " relevant rows: [" .. rowsList .. "]", false, true)
             
+            -- Identify group rows
+            playerInfo["Group Rows"] = self:GetGroupRowsForSection(section)
+            
             -- Generate OSD info
-            playerInfo["OSD Info"] = self:GenerateOSDInfoForSection(section, playerInfo["Relevant Rows"])
+            playerInfo["OSD Assignments"] = self:GenerateOSDInfoForSection(section, playerInfo["Relevant Rows"])
+            
+            -- Generate OSD info for group assignments
+            playerInfo["OSD Group Assignments"] = self:GenerateOSDInfoForSection(section, playerInfo["Group Rows"])
         end
     end
     
     self:Debug("data", "Processed " .. sectionsProcessed .. " sections")
     return true
+end
+
+-- Find tank role columns in section headers
+function TWRA:FindTankRoleColumns(section)
+    local tankColumns = {}
+    
+    -- Skip if no header
+    if not section["Section Header"] then
+        return tankColumns
+    end
+    
+    -- Define known tank role keywords
+    local tankKeywords = {
+        "tank", "offtank", "off-tank", "main tank", "mt", "ot"
+    }
+    
+    -- Check each header column
+    for colIdx, headerText in ipairs(section["Section Header"]) do
+        -- Skip if not a string
+        if type(headerText) == "string" then
+            -- Convert to lowercase for case-insensitive matching
+            local lcHeader = string.lower(headerText)
+            
+            -- Check against tank keywords
+            for _, keyword in ipairs(tankKeywords) do
+                if string.find(lcHeader, keyword) then
+                    table.insert(tankColumns, colIdx)
+                    self:Debug("data", "Found tank column: " .. colIdx .. " (" .. headerText .. ")", false, true)
+                    break
+                end
+            end
+        end
+    end
+    
+    return tankColumns
+end
+
+-- Find rows that contain references to player's group
+function TWRA:GetGroupRowsForSection(section)
+    local groupRows = {}
+    
+    -- Find player's group number (1-8)
+    local playerGroup = nil
+    for i = 1, GetNumRaidMembers() do
+        local name, _, subgroup = GetRaidRosterInfo(i)
+        if name == UnitName("player") then
+            playerGroup = subgroup
+            break
+        end
+    end
+    
+    -- If not in a raid or no group found, return empty list
+    if not playerGroup then
+        return groupRows
+    end
+    
+    -- Skip if no rows
+    if not section["Section Rows"] then
+        return groupRows
+    end
+    
+    -- Check each row for group references
+    for rowIdx, rowData in ipairs(section["Section Rows"]) do
+        -- Skip special rows
+        if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
+            -- Check each cell for group references
+            for _, cellValue in ipairs(rowData) do
+                if type(cellValue) == "string" and cellValue ~= "" then
+                    -- Look for "Group X" format
+                    if string.find(string.lower(cellValue), "group%s*" .. playerGroup) then
+                        table.insert(groupRows, rowIdx)
+                        self:Debug("data", "Found group row " .. rowIdx .. " for group " .. playerGroup, false, true)
+                        break
+                    end
+                    
+                    -- Look for numeric references to the group
+                    if string.find(cellValue, "Group") then
+                        local pos = 1
+                        local str = cellValue
+                        while pos <= string.len(str) do
+                            local digitStart, digitEnd = string.find(str, "%d+", pos)
+                            if not digitStart then break end
+                            
+                            local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
+                            if groupNum and groupNum == playerGroup then
+                                table.insert(groupRows, rowIdx)
+                                self:Debug("data", "Found group row " .. rowIdx .. " for group " .. playerGroup, false, true)
+                                break
+                            end
+                            pos = digitEnd + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return groupRows
 end
 
 -- Updated GetPlayerRelevantRowsForSection to show first match reason
@@ -378,32 +494,12 @@ end
 function TWRA:UpdatePlayerInfo()
     self:Debug("data", "Updating player info for all sections")
     
-    -- Check if we have data to work with
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or
-       not TWRA_SavedVariables.assignments.data then
-        self:Debug("error", "UpdatePlayerInfo: No assignment data available")
-        return false
-    end
+    -- Process all sections
+    self:ProcessPlayerInfo()
     
-    -- Check data format
-    local isNewFormat = TWRA_SavedVariables.assignments.version and TWRA_SavedVariables.assignments.version >= 2
+    -- Update OSD if needed
+    self:UpdateOSDWithPlayerInfo()
     
-    if not isNewFormat then
-        self:Debug("data", "UpdatePlayerInfo: Not using new data format, skipping")
-        return false
-    end
-    
-    -- Process each section
-    local sectionsUpdated = 0
-    for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
-        if type(section) == "table" and section["Section Name"] then
-            -- Process player info for this section
-            TWRA_SavedVariables.assignments.data[idx] = self:ProcessPlayerInfo(section)
-            sectionsUpdated = sectionsUpdated + 1
-        end
-    end
-    
-    self:Debug("data", "Updated player info for " .. sectionsUpdated .. " sections")
     return true
 end
 
@@ -465,136 +561,4 @@ function TWRA:RefreshPlayerInfo()
     end
     
     return true
-end
-
--- Function to process player-specific information for a section
-function TWRA:ProcessPlayerInfo(sectionData)
-    if not sectionData or type(sectionData) ~= "table" then
-        self:Debug("error", "ProcessPlayerInfo: Invalid section data")
-        return sectionData
-    end
-    
-    -- Initialize section player info if not exists
-    sectionData["Section Player Info"] = sectionData["Section Player Info"] or {}
-    
-    -- Get relevant rows for the current player
-    local relevantRows = self:GetPlayerRelevantRowsForSection(sectionData)
-    
-    -- Convert from map to array format
-    local relevantRowsArray = {}
-    for idx, _ in pairs(relevantRows) do
-        table.insert(relevantRowsArray, idx)
-    end
-    
-    -- Sort the array for consistent order
-    table.sort(relevantRowsArray)
-    
-    -- Store in section data
-    sectionData["Section Player Info"]["Relevant Rows"] = relevantRowsArray
-    
-    self:Debug("data", "Processed player info for section: " .. 
-               (sectionData["Section Name"] or "unnamed") .. 
-               ", found " .. table.getn(relevantRowsArray) .. " relevant rows")
-    
-    return sectionData
-end
-
--- Function to extract player-relevant rows from a section
-function TWRA:GetPlayerRelevantRowsForSection(sectionData)
-    if not sectionData then
-        self:Debug("error", "GetPlayerRelevantRowsForSection: No section data provided")
-        return {}
-    end
-    
-    local relevantRows = {}
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    playerClass = playerClass and string.upper(playerClass) or nil
-    
-    -- Find player's group number (1-8)
-    local playerGroup = nil
-    for i = 1, GetNumRaidMembers() do
-        local name, _, subgroup = GetRaidRosterInfo(i)
-        if name == playerName then
-            playerGroup = subgroup
-            break
-        end
-    end
-    
-    -- Check if we have pre-calculated relevant rows
-    if sectionData["Section Player Info"] and 
-       sectionData["Section Player Info"]["Relevant Rows"] then
-        -- Use pre-calculated relevant rows if available
-        for _, rowIdx in pairs(sectionData["Section Player Info"]["Relevant Rows"]) do
-            relevantRows[rowIdx] = true
-        end
-        
-        self:Debug("data", "Using pre-calculated relevant rows")
-        return relevantRows
-    end
-    
-    -- No pre-calculated data, we need to determine relevant rows
-    self:Debug("data", "Calculating relevant rows for player: " .. playerName)
-    
-    -- Check if we have rows to process
-    if not sectionData["Section Rows"] then
-        return relevantRows
-    end
-    
-    -- Process each row in the section
-    for idx, rowData in pairs(sectionData["Section Rows"]) do
-        -- Skip special rows (Note, Warning, GUID)
-        if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
-            local isRelevantRow = false
-            
-            -- Check each cell for player name, class, or group
-            for _, cellData in pairs(rowData) do
-                -- Only check string data
-                if type(cellData) == "string" and cellData ~= "" then
-                    -- Direct player name match
-                    if cellData == playerName then
-                        isRelevantRow = true
-                        break
-                    end
-                    
-                    -- Match player class directly
-                    if playerClass and string.upper(cellData) == playerClass then
-                        isRelevantRow = true
-                        break
-                    end
-                    
-                    -- Match player class group (like "Warriors" for a Warrior)
-                    if playerClass and self.CLASS_GROUP_NAMES and 
-                       self.CLASS_GROUP_NAMES[cellData] and 
-                       string.upper(self.CLASS_GROUP_NAMES[cellData]) == playerClass then
-                        isRelevantRow = true
-                        break
-                    end
-                    
-                    -- Match player group number if available
-                    if playerGroup then
-                        local groupPattern = "%f[%a%d]" .. playerGroup .. "%f[^%a%d]"
-                        if string.find(cellData, groupPattern) then
-                            isRelevantRow = true
-                            break
-                        end
-                        
-                        -- Also check for "Group X" format
-                        if string.find(string.lower(cellData), "group%s*" .. playerGroup) then
-                            isRelevantRow = true
-                            break
-                        end
-                    end
-                end
-            end
-            
-            -- Mark row as relevant if any condition matched
-            if isRelevantRow then
-                relevantRows[idx] = true
-                self:Debug("data", "Row " .. idx .. " is relevant to player")
-            end
-        end
-    end
-    
-    return relevantRows
 end

@@ -29,9 +29,7 @@ function TWRA:OnLoad()
     -- Convert any existing numeric values to booleans
     if TWRA_SavedVariables.options.autoNavigate ~= nil and 
        type(TWRA_SavedVariables.options.autoNavigate) ~= "boolean" then
-        TWRA_SavedVariables.options.autoNavigate = 
-            (TWRA_SavedVariables.options.autoNavigate == 1 or 
-             TWRA_SavedVariables.options.autoNavigate == true)
+        TWRA_SavedVariables.options.autoNavigate = (TWRA_SavedVariables.options.autoNavigate == 1) 
     end
     
     -- Initialize AUTONAVIGATE with consistent value

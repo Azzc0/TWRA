@@ -32,7 +32,7 @@ TWRA.ABBREVIATION_MAPPINGS = {
     
     -- Class and group abbreviations
     ["D"] = "Druids",
-    ["H"] = "Hunters",
+    ["Hu"] = "Hunters",
     ["M"] = "Mages",
     ["Pa"] = "Paladins",
     ["Pr"] = "Priests",
@@ -42,10 +42,18 @@ TWRA.ABBREVIATION_MAPPINGS = {
     ["Wl"] = "Warlocks",
     ["G"] = "Group",
     ["Gr"] = "Groups",
-    
+    ["G1"] = "Group 1",
+    ["G2"] = "Group 2",
+    ["G3"] = "Group 3",
+    ["G4"] = "Group 4",
+    ["G5"] = "Group 5",
+    ["G6"] = "Group 6",
+    ["G7"] = "Group 7",
+    ["G8"] = "Group 8",
+
     -- Header abbreviations
     ["T"] = "Tank",
-    ["H"] = "Heal", -- Note: H is used for both Hunters and Heal; context determines which
+    ["H"] = "Heal",
     ["He"] = "Healer",
     ["I"] = "Interrupt",
     ["B"] = "Banish",
@@ -458,6 +466,18 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     result = self:FixSpecialCharacters(result)
                 end
                 
+                -- Process player-relevant information in the imported data
+                if self.ProcessPlayerInfo then
+                    self:Debug("data", "Processing player-relevant information for imported data")
+                    -- For sync operations, process player info immediately after data is saved
+                    if syncTimestamp then
+                        self:ProcessPlayerInfo()
+                        self:Debug("data", "Processed player-relevant information after sync import")
+                    end
+                    -- For regular imports, we'll refresh player info which will also update UI
+                    -- This happens outside the protected call to ensure it runs even if there are issues
+                end
+                
                 -- If this is a sync operation with timestamp, handle it directly
                 if syncTimestamp then
                     -- We need to assign directly to SavedVariables
@@ -468,6 +488,12 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                         version = 2
                     }
                     self:Debug("data", "Directly saved data to SavedVariables with timestamp: " .. syncTimestamp)
+                    
+                    -- Process player info after data is saved
+                    if self.ProcessPlayerInfo then
+                        self:ProcessPlayerInfo()
+                        self:Debug("data", "Processed player-relevant information after sync import")
+                    end
                 end
                 
                 return result

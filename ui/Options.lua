@@ -956,6 +956,12 @@ function TWRA:CreateOptionsInMainFrame()
         -- Success message
         self:Debug("data", "Assignment data imported successfully")
         
+        -- Process player-relevant information for this newly imported data
+        if self.RefreshPlayerInfo then
+            self:Debug("data", "Processing player-relevant information for imported data")
+            self:RefreshPlayerInfo()
+        end
+        
         -- Switch to main view
         if self.ShowMainView then
             self:ShowMainView()

@@ -21,6 +21,20 @@ TWRA is a raid assignment addon for Turtle WoW (WoW 1.12) that allows raid leade
   x = y - (math.floor(y / z) * z)
   ```
 - **No `#` for table length**: Use `table.getn(tbl)` instead
+- **No `goto` or labels**: Lua 5.0 doesn't support `goto` statements or labels (`::label::`)
+  ```lua
+  -- Instead of:
+  if condition then goto continue end
+  -- do stuff
+  ::continue::
+  
+  -- Use:
+  if not condition then
+    -- do stuff
+  end
+  
+  -- Or restructure with if/else blocks
+  ```
 - **Avoid `_G` references**: Maintain compatibility with older Lua
 
 ### SuperWoW Integration
