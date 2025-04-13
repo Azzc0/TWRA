@@ -36,12 +36,6 @@ function TWRA:UpdateTanks()
         return
     end
     
-    -- Check if we have data
-    if not self.fullData or table.getn(self.fullData) == 0 then
-        self:Debug("error", "No data to update tanks from")
-        return
-    end
-    
     -- Get current section from navigation
     local currentSection = nil
     if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
@@ -55,71 +49,123 @@ function TWRA:UpdateTanks()
     
     self:Debug("tank", "Processing tanks for section " .. currentSection)
     
-    -- Find header row for column names
-    local headerRow = nil
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
-            headerRow = self.fullData[i]
-            break
-        end
-    end
-    
-    if not headerRow then
-        self:Debug("error", "Invalid data format - header row not found")
-        return
-    end
-    
-    -- Find tank columns for current section
-    local tankColumns = {}
-    for k = 4, table.getn(headerRow) do
-        if headerRow[k] == "Tank" then
-            self:Debug("tank", "Found tank column at index " .. k)
-            table.insert(tankColumns, k)
-        end
-    end
-    
-    if table.getn(tankColumns) == 0 then
-        self:Debug("error", "No tank columns found in section " .. currentSection)
-        return
-    end
-    
-    -- First pass: collect unique tanks in order
+    -- Handle based on data format
     local uniqueTanks = {}
-    for _, columnIndex in ipairs(tankColumns) do
-        for i = 1, table.getn(self.fullData) do
-            local row = self.fullData[i]
-            if row[1] == currentSection and 
-               row[2] ~= "Icon" and 
-               row[2] ~= "Note" and 
-               row[2] ~= "Warning" then
-                if row[columnIndex] and row[columnIndex] ~= "" then
-                    local tankName = row[columnIndex]
-                    local alreadyAdded = false
-                    
-                    -- Check if tank is already in our list
-                    for _, existingTank in ipairs(uniqueTanks) do
-                        if existingTank == tankName then
-                            alreadyAdded = true
-                            break
+    
+    -- Check if we're using the new data format
+    if self:IsNewDataFormat() then
+        -- Get current section data
+        local sectionData = self:GetCurrentSectionData()
+        if not sectionData then
+            self:Debug("error", "No section data found for " .. currentSection)
+            return
+        end
+        
+        -- Get tank columns from Section Metadata
+        local metadata = sectionData["Section Metadata"] or {}
+        local tankColumns = metadata["Tank Columns"] or {}
+        
+        if table.getn(tankColumns) == 0 then
+            self:Debug("error", "No tank columns found in section " .. currentSection)
+            return
+        end
+        
+        -- Process rows to find unique tanks
+        if sectionData["Section Rows"] then
+            for _, rowData in ipairs(sectionData["Section Rows"]) do
+                -- Skip special rows
+                if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
+                    -- Check each tank column for tanks
+                    for _, tankCol in ipairs(tankColumns) do
+                        if tankCol <= table.getn(rowData) and rowData[tankCol] and rowData[tankCol] ~= "" then
+                            local tankName = rowData[tankCol]
+                            local alreadyAdded = false
+                            
+                            -- Check if tank is already in our list
+                            for _, existingTank in ipairs(uniqueTanks) do
+                                if existingTank == tankName then
+                                    alreadyAdded = true
+                                    break
+                                end
+                            end
+                            
+                            -- Add tank if unique and we haven't hit the limit
+                            if not alreadyAdded and table.getn(uniqueTanks) < 10 then
+                                table.insert(uniqueTanks, tankName)
+                            end
                         end
                     end
-                    
-                    -- Add tank if unique and we haven't hit the limit
-                    if not alreadyAdded and table.getn(uniqueTanks) < 10 then
-                        table.insert(uniqueTanks, tankName)
-                    end
-                end 
+                end
+            end
+        end
+    else
+        -- Legacy format using fullData
+        -- Check if we have data
+        if not self.fullData or table.getn(self.fullData) == 0 then
+            self:Debug("error", "No data to update tanks from")
+            return
+        end
+        
+        -- Find header row for column names
+        local headerRow = nil
+        for i = 1, table.getn(self.fullData) do
+            if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
+                headerRow = self.fullData[i]
+                break
+            end
+        end
+        
+        if not headerRow then
+            self:Debug("error", "Invalid data format - header row not found")
+            return
+        end
+        
+        -- Find tank columns for current section
+        local tankColumns = {}
+        for k = 4, table.getn(headerRow) do
+            if headerRow[k] == "Tank" then
+                self:Debug("tank", "Found tank column at index " .. k)
+                table.insert(tankColumns, k)
+            end
+        end
+        
+        if table.getn(tankColumns) == 0 then
+            self:Debug("error", "No tank columns found in section " .. currentSection)
+            return
+        end
+        
+        -- First pass: collect unique tanks in order
+        for _, columnIndex in ipairs(tankColumns) do
+            for i = 1, table.getn(self.fullData) do
+                local row = self.fullData[i]
+                if row[1] == currentSection and 
+                   row[2] ~= "Icon" and 
+                   row[2] ~= "Note" and 
+                   row[2] ~= "Warning" then
+                    if row[columnIndex] and row[columnIndex] ~= "" then
+                        local tankName = row[columnIndex]
+                        local alreadyAdded = false
+                        
+                        -- Check if tank is already in our list
+                        for _, existingTank in ipairs(uniqueTanks) do
+                            if existingTank == tankName then
+                                alreadyAdded = true
+                                break
+                            end
+                        end
+                        
+                        -- Add tank if unique and we haven't hit the limit
+                        if not alreadyAdded and table.getn(uniqueTanks) < 10 then
+                            table.insert(uniqueTanks, tankName)
+                        end
+                    end 
+                end
             end
         end
     end
     
     -- Clear existing tanks first
-    -- for i = 1, 10 do
-    --     oRA.maintanktable[i] = nil
-    -- end
-    -- if GetNumRaidMembers() > 0 then
-        SendAddonMessage("CTRA", "MT CLEAR", "RAID")
-    -- end
+    SendAddonMessage("CTRA", "MT CLEAR", "RAID")
     
     -- Second pass: assign tanks in order
     self:Debug("tank", "Setting " .. table.getn(uniqueTanks) .. " tanks")
