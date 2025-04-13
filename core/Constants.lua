@@ -155,8 +155,8 @@ TWRA.ICONS = {
     ["Diamond"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.5, 0.75, 0, 0.25},
     ["Circle"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0.25, 0.5, 0, 0.25},
     ["Star"] = {"Interface\\TargetingFrame\\UI-RaidTargetingIcons", 0, 0.25, 0, 0.25},
-    ["Warning"] = {"Interface\\GossipFrame\\AvailableQuestIcon", 0, 1, 0, 1}, -- Updated to AvailableQuestIcon
-    ["Note"] = {"Interface\\GossipFrame\\ActiveQuestIcon", 0, 1, 0, 1},       -- Updated to ActiveQuestIcon
+    ["Warning"] = {"Interface\\GossipFrame\\AvailableQuestIcon", 0, 1, 0, 1},
+    ["Note"] = {"Interface\\GossipFrame\\ActiveQuestIcon", 0, 1, 0, 1},
     ["GUID"] = {"Interface\\Icons\\INV_Misc_Note_01", 0, 1, 0, 1},
     ["Missing"] = {"Interface\\Buttons\\UI-GroupLoot-Pass-Up", 0, 1, 0, 1},
 }
