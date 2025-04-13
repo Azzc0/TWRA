@@ -150,41 +150,17 @@ function TWRA:ProcessStaticPlayerInfo()
             local metadata = section["Section Metadata"]
             local playerInfo = section["Section Player Info"]
             
-            -- Store section name in metadata
-            metadata["Name"] = { sectionName }
+            -- CRITICAL FIX: Preserve existing metadata instead of reinitializing
+            -- Store section name in metadata if not already present
+            metadata["Name"] = metadata["Name"] or { sectionName }
             
-            -- Find and process special rows (Note, Warning, GUID)
-            metadata["Note"] = {}
-            metadata["Warning"] = {}
-            metadata["GUID"] = {}
-            
-            -- Track indices of rows to remove (special rows)
-            local rowsToRemove = {}
-            
-            if section["Section Rows"] then
-                for rowIndex, rowData in ipairs(section["Section Rows"]) do
-                    if rowData[1] == "Note" and rowData[2] then
-                        table.insert(metadata["Note"], rowData[2])
-                        table.insert(rowsToRemove, rowIndex)
-                    elseif rowData[1] == "Warning" and rowData[2] then
-                        table.insert(metadata["Warning"], rowData[2])
-                        table.insert(rowsToRemove, rowIndex)
-                    elseif rowData[1] == "GUID" and rowData[2] then
-                        table.insert(metadata["GUID"], rowData[2])
-                        table.insert(rowsToRemove, rowIndex)
-                    end
-                end
-                
-                -- Remove special rows in reverse order to maintain correct indices
-                table.sort(rowsToRemove, function(a, b) return a > b end)
-                for _, rowIndex in ipairs(rowsToRemove) do
-                    table.remove(section["Section Rows"], rowIndex)
-                    self:Debug("data", "Removed special row at index " .. rowIndex .. " from section " .. sectionName)
-                end
-            end
+            -- Initialize metadata arrays ONLY if they don't already exist
+            metadata["Note"] = metadata["Note"] or {}
+            metadata["Warning"] = metadata["Warning"] or {}
+            metadata["GUID"] = metadata["GUID"] or {}
             
             -- Find tank role columns - store in metadata using new name "Tank Columns"
-            metadata["Tank Columns"] = self:FindTankRoleColumns(section)
+            metadata["Tank Columns"] = metadata["Tank Columns"] or self:FindTankRoleColumns(section)
             local tanksCount = table.getn(metadata["Tank Columns"])
             
             -- Generate list of tank indices for debugging
@@ -200,6 +176,12 @@ function TWRA:ProcessStaticPlayerInfo()
                 self:Debug("data", "Section '" .. sectionName .. "': Found " .. tanksCount .. 
                           " tank columns: [" .. tanksList .. "]", false, true)
             end
+            
+            -- Log metadata counts
+            self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
+                table.getn(metadata["Note"]) .. " notes, " ..
+                table.getn(metadata["Warning"]) .. " warnings, " ..
+                table.getn(metadata["GUID"]) .. " GUIDs")
             
             -- Find relevant rows by player name or class
             playerInfo["Relevant Rows"] = self:GetPlayerRelevantRowsForSection(section)
@@ -798,4 +780,100 @@ function TWRA:RefreshPlayerInfo()
     end
     
     return true
+end
+
+-- ProcessImportedData - Process shortened keys and performs any adjustments needed after Base64 decoding
+function TWRA:ProcessImportedData(data)
+    if not data or type(data) ~= "table" then
+        self:Debug("error", "ProcessImportedData: Invalid data structure")
+        return data
+    end
+    
+    -- For the new structure format (with data.data)
+    if data.data and type(data.data) == "table" then
+        self:Debug("data", "Processing imported data with new format structure")
+        
+        -- Process each section
+        for sectionIdx, section in pairs(data.data) do
+            -- Skip if not a table or doesn't have required keys
+            if type(section) == "table" then
+                -- If using short key format, convert to full names
+                if section["sn"] and not section["Section Name"] then
+                    section["Section Name"] = section["sn"]
+                    section["sn"] = nil
+                    self:Debug("data", "Converted short key 'sn' to 'Section Name'")
+                end
+                
+                if section["sh"] and not section["Section Header"] then
+                    section["Section Header"] = section["sh"]
+                    section["sh"] = nil
+                    self:Debug("data", "Converted short key 'sh' to 'Section Header'")
+                end
+                
+                if section["sr"] and not section["Section Rows"] then
+                    section["Section Rows"] = section["sr"]
+                    section["sr"] = nil
+                    self:Debug("data", "Converted short key 'sr' to 'Section Rows'")
+                end
+                
+                -- Initialize Section Metadata if not present
+                section["Section Metadata"] = section["Section Metadata"] or {}
+                
+                -- IMPORTANT: Process special rows (Note, Warning, GUID) and store in metadata
+                if section["Section Rows"] and type(section["Section Rows"]) == "table" then
+                    local metadata = section["Section Metadata"]
+                    
+                    -- Initialize metadata arrays
+                    metadata["Note"] = metadata["Note"] or {}
+                    metadata["Warning"] = metadata["Warning"] or {}
+                    metadata["GUID"] = metadata["GUID"] or {}
+                    
+                    -- Store section name in metadata
+                    metadata["Name"] = metadata["Name"] or { section["Section Name"] or "" }
+                    
+                    -- Track indices of rows to remove
+                    local rowsToRemove = {}
+                    local sectionName = section["Section Name"] or tostring(sectionIdx)
+                    
+                    -- Process each row looking for special rows
+                    for rowIdx, rowData in ipairs(section["Section Rows"]) do
+                        if type(rowData) == "table" then
+                            -- Check for special rows
+                            if rowData[1] == "Note" and rowData[2] then
+                                table.insert(metadata["Note"], rowData[2])
+                                table.insert(rowsToRemove, rowIdx)
+                                self:Debug("data", "Found Note in section " .. sectionName .. ": " .. rowData[2])
+                            elseif rowData[1] == "Warning" and rowData[2] then
+                                table.insert(metadata["Warning"], rowData[2])
+                                table.insert(rowsToRemove, rowIdx)
+                                self:Debug("data", "Found Warning in section " .. sectionName .. ": " .. rowData[2])
+                            elseif rowData[1] == "GUID" and rowData[2] then
+                                table.insert(metadata["GUID"], rowData[2])
+                                table.insert(rowsToRemove, rowIdx)
+                                self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. rowData[2])
+                            end
+                        end
+                    end
+                    
+                    -- Remove special rows in reverse order to maintain correct indices
+                    table.sort(rowsToRemove, function(a, b) return a > b end)
+                    for _, rowIdx in ipairs(rowsToRemove) do
+                        table.remove(section["Section Rows"], rowIdx)
+                        self:Debug("data", "Removed special row at index " .. rowIdx .. " from section " .. sectionName)
+                    end
+                    
+                    -- Log the number of special rows found
+                    self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
+                              table.getn(metadata["Note"]) .. " notes, " ..
+                              table.getn(metadata["Warning"]) .. " warnings, " ..
+                              table.getn(metadata["GUID"]) .. " GUIDs")
+                end
+            end
+        end
+    elseif type(data) == "table" then
+        -- For legacy format, just return unchanged
+        self:Debug("data", "Processing imported data with legacy format structure")
+    end
+    
+    return data
 end

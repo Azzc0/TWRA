@@ -449,9 +449,112 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     return nil
                 end
                 
-                -- Make sure to call abbreviation expansion before any other processing
+                -- First, expand abbreviations
                 self:Debug("data", "Expanding abbreviations in the imported data")
                 result = self:ExpandAbbreviations(result)
+                
+                -- CRITICAL: Process special rows directly here, capturing metadata now
+                -- This approach directly processes the special rows without using a separate helper function
+                self:Debug("data", "Directly processing special rows after abbreviation expansion")
+                
+                -- Process each section
+                for sectionIdx, section in pairs(result.data) do
+                    -- Skip if not a table or doesn't have rows
+                    if type(section) == "table" and section["Section Rows"] then
+                        -- Initialize Section Metadata if not present
+                        section["Section Metadata"] = section["Section Metadata"] or {}
+                        local metadata = section["Section Metadata"]
+                        
+                        -- Store section name in metadata
+                        metadata["Name"] = { section["Section Name"] or "" }
+                        
+                        -- Initialize metadata arrays
+                        metadata["Note"] = metadata["Note"] or {}
+                        metadata["Warning"] = metadata["Warning"] or {}
+                        metadata["GUID"] = metadata["GUID"] or {}
+                        
+                        -- Track indices of rows to remove later
+                        local rowsToRemove = {}
+                        local sectionName = section["Section Name"] or tostring(sectionIdx)
+                        
+                        -- Process each row looking for special rows
+                        for rowIdx, rowData in ipairs(section["Section Rows"]) do
+                            if type(rowData) == "table" then
+                                -- After abbreviation expansion, we should only have "Note", "Warning", "GUID"
+                                if rowData[1] == "Note" and rowData[2] then
+                                    table.insert(metadata["Note"], rowData[2])
+                                    table.insert(rowsToRemove, rowIdx)
+                                    self:Debug("data", "Found Note in section " .. sectionName .. ": " .. rowData[2])
+                                elseif rowData[1] == "Warning" and rowData[2] then
+                                    table.insert(metadata["Warning"], rowData[2])
+                                    table.insert(rowsToRemove, rowIdx)
+                                    self:Debug("data", "Found Warning in section " .. sectionName .. ": " .. rowData[2])
+                                elseif rowData[1] == "GUID" and rowData[2] then
+                                    table.insert(metadata["GUID"], rowData[2])
+                                    table.insert(rowsToRemove, rowIdx)
+                                    self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. rowData[2])
+                                end
+                            end
+                        end
+                        
+                        -- Store the rows to remove in the section itself
+                        -- This ensures they won't be lost during processing
+                        section["_specialRowIndices"] = rowsToRemove
+                        
+                        self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
+                                  table.getn(metadata["Note"]) .. " notes, " ..
+                                  table.getn(metadata["Warning"]) .. " warnings, " ..
+                                  table.getn(metadata["GUID"]) .. " GUIDs")
+                    end
+                end
+                
+                -- Add a deep copy function to preserve metadata
+                local function deepCopy(original)
+                    local copy
+                    if type(original) == "table" then
+                        copy = {}
+                        for key, value in pairs(original) do
+                            copy[key] = deepCopy(value)
+                        end
+                    else
+                        copy = original
+                    end
+                    return copy
+                end
+                
+                -- Store a backup of the metadata that we can use to restore later if needed
+                local metadataBackup = {}
+                for sectionIdx, section in pairs(result.data) do
+                    if type(section) == "table" and section["Section Name"] and section["Section Metadata"] then
+                        local sectionName = section["Section Name"]
+                        metadataBackup[sectionName] = deepCopy(section["Section Metadata"])
+                        self:Debug("data", "Backed up metadata for section '" .. sectionName .. "'")
+                    end
+                end
+                
+                -- Add a hook to restore metadata after any processing
+                result._restoreMetadata = function()
+                    self:Debug("data", "Restoring metadata from backup")
+                    for sectionIdx, section in pairs(result.data) do
+                        if type(section) == "table" and section["Section Name"] then
+                            local sectionName = section["Section Name"]
+                            if metadataBackup[sectionName] then
+                                -- Initialize Section Metadata if not present
+                                section["Section Metadata"] = section["Section Metadata"] or {}
+                                
+                                -- Restore the metadata fields we care about
+                                section["Section Metadata"]["Note"] = metadataBackup[sectionName]["Note"]
+                                section["Section Metadata"]["Warning"] = metadataBackup[sectionName]["Warning"]
+                                section["Section Metadata"]["GUID"] = metadataBackup[sectionName]["GUID"]
+                                
+                                self:Debug("data", "Restored backup metadata for section '" .. sectionName .. "': " ..
+                                          table.getn(section["Section Metadata"]["Note"] or {}) .. " notes, " ..
+                                          table.getn(section["Section Metadata"]["Warning"] or {}) .. " warnings, " ..
+                                          table.getn(section["Section Metadata"]["GUID"] or {}) .. " GUIDs")
+                            end
+                        end
+                    end
+                end
                 
                 -- Ensure all rows have entries for all columns
                 result = self:EnsureCompleteRows(result)
@@ -493,6 +596,27 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     -- Restore previous data if we were just checking
                     if not syncTimestamp and tempData then
                         TWRA_SavedVariables.assignments.data = tempData
+                    end
+                end
+                
+                -- NOW, after all processing is complete, remove the special rows
+                self:Debug("data", "Removing special rows after all processing")
+                for sectionIdx, section in pairs(result.data) do
+                    if type(section) == "table" and section["Section Rows"] and section["_specialRowIndices"] then
+                        local sectionName = section["Section Name"] or tostring(sectionIdx)
+                        local rowsToRemove = section["_specialRowIndices"]
+                        
+                        -- Sort indices in descending order to maintain correct indices when removing
+                        table.sort(rowsToRemove, function(a, b) return a > b end)
+                        
+                        -- Remove the special rows
+                        for _, rowIdx in ipairs(rowsToRemove) do
+                            table.remove(section["Section Rows"], rowIdx)
+                            self:Debug("data", "Removed special row at index " .. rowIdx .. " from section " .. sectionName)
+                        end
+                        
+                        -- Clean up the temporary indices list
+                        section["_specialRowIndices"] = nil
                     end
                 end
                 

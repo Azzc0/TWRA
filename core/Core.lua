@@ -834,6 +834,60 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         else
             self:Debug("error", "EnsureCompleteRows function not found during SaveAssignments")
         end
+        
+        -- NEW: Process special rows (Notes, Warnings, GUIDs) and move them to metadata
+        if self.CaptureSpecialRows then
+            data = self:CaptureSpecialRows(data)
+            self:Debug("data", "Applied CaptureSpecialRows to extract special rows as metadata")
+        end
+        
+        -- CRITICAL ADDITION: Preserve Section Metadata from existing sections
+        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+           TWRA_SavedVariables.assignments.data and type(TWRA_SavedVariables.assignments.data) == "table" then
+            self:Debug("data", "Preserving metadata from existing sections")
+            
+            for newSectionIdx, newSection in pairs(data.data) do
+                if type(newSection) == "table" and newSection["Section Name"] then
+                    local sectionName = newSection["Section Name"]
+                    
+                    -- Look for matching section in existing data
+                    for _, oldSection in pairs(TWRA_SavedVariables.assignments.data) do
+                        if type(oldSection) == "table" and oldSection["Section Name"] == sectionName then
+                            -- Transfer section metadata if it exists
+                            if oldSection["Section Metadata"] and type(oldSection["Section Metadata"]) == "table" then
+                                newSection["Section Metadata"] = newSection["Section Metadata"] or {}
+                                
+                                -- Copy metadata arrays if they exist
+                                for key, array in pairs(oldSection["Section Metadata"]) do
+                                    if type(array) == "table" and (key == "Note" or key == "Warning" or key == "GUID") then
+                                        newSection["Section Metadata"][key] = newSection["Section Metadata"][key] or {}
+                                        
+                                        -- Copy array values if they don't already exist
+                                        for _, value in ipairs(array) do
+                                            local exists = false
+                                            for _, newValue in ipairs(newSection["Section Metadata"][key] or {}) do
+                                                if newValue == value then
+                                                    exists = true
+                                                    break
+                                                end
+                                            end
+                                            
+                                            if not exists then
+                                                table.insert(newSection["Section Metadata"][key], value)
+                                                self:Debug("data", "Preserved " .. key .. " for section " .. sectionName .. ": " .. value)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            
+                            -- We found the matching section, no need to continue searching
+                            break
+                        end
+                    end
+                end
+            end
+        end
     end
     
     -- Use provided timestamp or generate new one

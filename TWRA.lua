@@ -329,123 +329,83 @@ end
 
 -- Enhanced LoadSavedAssignments to update OSD after loading
 function TWRA:LoadSavedAssignments()
-    local saved = TWRA_SavedVariables.assignments
-    
-    -- Case 1: No saved data exists
-    if not saved or not saved.data then 
-        return self:LoadExampleData()
+    -- Check if we have saved assignments
+    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
+        self:Debug("data", "No saved assignments found")
+        -- Load example data if needed
+        if self.LoadExampleData then
+            self:LoadExampleData()
+        end
+        return false
     end
     
-    -- Check if we're using the new data format
-    local isNewFormat = false
-    if type(saved.data) == "table" then
-        for idx, section in pairs(saved.data) do
-            if type(section) == "table" and section["Section Name"] then
-                isNewFormat = true
-                self:Debug("data", "Detected new data format in saved data")
-                break
-            end
-        end
+    -- Check if the assignments structure is complete
+    if not TWRA_SavedVariables.assignments.data then
+        self:Debug("error", "Assignment data structure incomplete")
+        return false
     end
     
-    -- Properly restore section position
-    local restoreSection = nil
-    
-    if isNewFormat then
-        -- New data format handling
-        -- No need to set fullData - the new format is accessed differently
-        self:Debug("data", "Loading data using new format structure")
-        
-        -- Rebuild navigation using the new data format
-        self:RebuildNavigation()
-        
-        -- Set example data flag properly
-        self.usingExampleData = saved.usingExampleData or saved.isExample or false
-        
-        -- Save the section we need to display
-        if saved.currentSectionName and self.navigation.handlers then
-            for i, name in ipairs(self.navigation.handlers) do
-                if name == saved.currentSectionName then
-                    self.navigation.currentIndex = i
-                    restoreSection = name
-                    self:Debug("nav", "Restored section by name: " .. name)
-                    break
-                end
-            end
-        end
-        
-        -- If section wasn't restored by name, try by index
-        if not restoreSection then
-            local index = saved.currentSection or 1
-            if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
-                self.navigation.currentIndex = index
-                restoreSection = self.navigation.handlers[index]
-                self:Debug("nav", "Restored section by index: " .. index)
-            else
-                self.navigation.currentIndex = 1
-                restoreSection = self.navigation.handlers[1]
-                self:Debug("nav", "Using default section index: 1")
-            end
-        end
+    -- Use our ClearData function to properly preserve metadata
+    if self.ClearData then
+        self:ClearData()
     else
-        -- Legacy format handling
-        -- Load and clean the saved data
-        self.fullData = self:CleanAssignmentData(saved.data, false)
-        
-        -- Rebuild navigation
+        -- Fallback if ClearData function doesn't exist
+        self:Debug("data", "Clearing current data (fallback method)")
+        self.fullData = nil
+        if self.navigation then
+            self.navigation.handlers = {}
+        end
+    end
+    
+    -- Detect data format version
+    local version = TWRA_SavedVariables.assignments.version or 1
+    self:Debug("data", "Loading saved assignments (format version " .. version .. ")")
+    
+    -- Handle new format (version 2+)
+    if version >= 2 then
+        self:Debug("data", "Loading new format data")
+        return self:BuildNavigationFromNewFormat()
+    end
+    
+    -- Handle old format (version 1)
+    -- Copy the saved data to our active data
+    self.fullData = TWRA_SavedVariables.assignments.data
+    
+    -- Update our flag for example data
+    self.usingExampleData = TWRA_SavedVariables.assignments.isExample or false
+    
+    -- Restore saved section if available
+    if TWRA_SavedVariables.assignments.currentSection then
+        -- First rebuild navigation
         self:RebuildNavigation()
         
-        -- Set example data flag properly
-        self.usingExampleData = saved.usingExampleData or saved.isExample or false
+        -- Then set current section from saved value with bounds check
+        if self.navigation then
+            local savedIndex = TWRA_SavedVariables.assignments.currentSection
+            if savedIndex >= 1 and savedIndex <= table.getn(self.navigation.handlers) then
+                self.navigation.currentIndex = savedIndex
+                self:Debug("data", "Restored saved section index: " .. savedIndex)
+            else
+                self.navigation.currentIndex = 1
+                self:Debug("data", "Invalid saved section index, reset to 1")
+            end
+        end
         
-        -- Save the section we need to display
-        if saved.currentSectionName and self.navigation.handlers then
-            for i, name in ipairs(self.navigation.handlers) do
-                if name == saved.currentSectionName then
-                    self.navigation.currentIndex = i
-                    restoreSection = name
-                    self:Debug("nav", "Restored section by name: " .. name)
+        local sectionName = TWRA_SavedVariables.assignments.currentSectionName
+        if sectionName and self.navigation and self.navigation.handlers then
+            for idx, name in ipairs(self.navigation.handlers) do
+                if name == sectionName then
+                    self.navigation.currentIndex = idx
+                    self:Debug("data", "Restored section by name: " .. sectionName .. " (index: " .. idx .. ")")
                     break
                 end
             end
         end
-        
-        -- If section wasn't restored by name, try by index
-        if not restoreSection then
-            local index = saved.currentSection or 1
-            if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
-                self.navigation.currentIndex = index
-                restoreSection = self.navigation.handlers[index]
-                self:Debug("nav", "Restored section by index: " .. index)
-            else
-                self.navigation.currentIndex = 1
-                restoreSection = self.navigation.handlers[1]
-                self:Debug("nav", "Using default section index: 1")
-            end
-        end
     end
     
-    -- If main frame is already visible, update content immediately
-    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" and restoreSection then
-        self:Debug("ui", "Main frame already visible - updating content to section: " .. restoreSection)
-        self:FilterAndDisplayHandler(restoreSection)
-    end
+    -- Process player-relevant information
+    self:ProcessPlayerRelevantInfo()
     
-    -- Update OSD with current section after loading (important for UI reload)
-    if self.navigation and self.navigation.currentIndex and 
-       self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
-        
-        local currentIndex = self.navigation.currentIndex
-        local sectionName = self.navigation.handlers[currentIndex]
-        local totalSections = table.getn(self.navigation.handlers)
-        
-        -- Update OSD content without showing it
-        if self.UpdateOSDContent then
-            self:UpdateOSDContent(sectionName, currentIndex, totalSections)
-        end
-    end
-    
-    self:Debug("data", "Loaded assignments (example mode: " .. (self.usingExampleData and "ON" or "OFF") .. ", new format: " .. (isNewFormat and "YES" or "NO") .. ")")
     return true
 end
 
@@ -1375,4 +1335,43 @@ function TWRA:DisplayCurrentSection()
     self.currentSectionName = sectionName
     
     return true
+end
+
+-- Process imported data
+function TWRA:ProcessImportedData(stringData)
+    -- Use our ClearData function to properly preserve metadata
+    if self.ClearData then
+        self:ClearData()
+    else
+        -- Fallback if ClearData function doesn't exist
+        self:Debug("data", "Clearing current data (fallback method)")
+        self.fullData = nil
+        if self.navigation then
+            self.navigation.handlers = {}
+        end
+    end
+    
+    -- Parse the string data into table form
+    local parsed = self:ParseImportString(stringData)
+    if not parsed then
+        self:Debug("error", "Failed to parse import string")
+        return nil
+    end
+    
+    -- Set the imported data as our current data
+    self.fullData = parsed
+    
+    -- Update flag for example data
+    local isExampleData = self:IsExampleData(parsed)
+    self.usingExampleData = isExampleData
+    
+    -- Rebuild navigation with new section names
+    self:RebuildNavigation()
+    
+    -- Process relevance information for the player
+    self:ProcessPlayerRelevantInfo()
+    
+    self:Debug("data", "Import data processed successfully")
+    
+    return parsed
 end

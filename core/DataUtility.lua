@@ -380,6 +380,138 @@ function TWRA:DisplayLegacySection()
     return true
 end
 
+-- Clear data while preserving section metadata
+function TWRA:ClearData()
+    self:Debug("data", "Clearing current data")
+    
+    -- Check if we have metadata to preserve
+    local metadataToPreserve = {}
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+       TWRA_SavedVariables.assignments.data and type(TWRA_SavedVariables.assignments.data) == "table" then
+        
+        -- Extract metadata from each section
+        for sectionIdx, section in pairs(TWRA_SavedVariables.assignments.data) do
+            if type(section) == "table" and section["Section Name"] and section["Section Metadata"] then
+                local sectionName = section["Section Name"]
+                metadataToPreserve[sectionName] = {
+                    Note = {},
+                    Warning = {},
+                    GUID = {}
+                }
+                
+                -- Copy metadata arrays 
+                if type(section["Section Metadata"]) == "table" then
+                    -- Copy Notes
+                    if type(section["Section Metadata"]["Note"]) == "table" then
+                        for _, note in ipairs(section["Section Metadata"]["Note"]) do
+                            table.insert(metadataToPreserve[sectionName].Note, note)
+                        end
+                        self:Debug("data", "Preserved " .. table.getn(section["Section Metadata"]["Note"]) .. 
+                                  " notes for section " .. sectionName)
+                    end
+                    
+                    -- Copy Warnings
+                    if type(section["Section Metadata"]["Warning"]) == "table" then
+                        for _, warning in ipairs(section["Section Metadata"]["Warning"]) do
+                            table.insert(metadataToPreserve[sectionName].Warning, warning)
+                        end
+                        self:Debug("data", "Preserved " .. table.getn(section["Section Metadata"]["Warning"]) .. 
+                                  " warnings for section " .. sectionName)
+                    end
+                    
+                    -- Copy GUIDs
+                    if type(section["Section Metadata"]["GUID"]) == "table" then
+                        for _, guid in ipairs(section["Section Metadata"]["GUID"]) do
+                            table.insert(metadataToPreserve[sectionName].GUID, guid)
+                        end
+                        self:Debug("data", "Preserved " .. table.getn(section["Section Metadata"]["GUID"]) .. 
+                                  " GUIDs for section " .. sectionName)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Clear the full data and reset navigation
+    self.fullData = nil
+    
+    if self.navigation then
+        self.navigation.handlers = {}
+        self.navigation.currentIndex = 1
+    end
+    
+    -- Create a hook to restore metadata after the next save
+    if next(metadataToPreserve) ~= nil then
+        self.pendingMetadataRestore = metadataToPreserve
+        self:Debug("data", "Set up metadata restoration hook for next save operation")
+        
+        -- Create a function that will be called after SaveAssignments to restore metadata
+        self.RestorePendingMetadata = function()
+            if not self.pendingMetadataRestore then
+                return
+            end
+            
+            if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+               TWRA_SavedVariables.assignments.data and type(TWRA_SavedVariables.assignments.data) == "table" then
+                
+                -- Find each section by name and restore its metadata
+                for sectionIdx, section in pairs(TWRA_SavedVariables.assignments.data) do
+                    if type(section) == "table" and section["Section Name"] then
+                        local sectionName = section["Section Name"]
+                        
+                        -- If we have metadata for this section name, restore it
+                        if self.pendingMetadataRestore[sectionName] then
+                            section["Section Metadata"] = section["Section Metadata"] or {}
+                            section["Section Metadata"]["Note"] = section["Section Metadata"]["Note"] or {}
+                            section["Section Metadata"]["Warning"] = section["Section Metadata"]["Warning"] or {}
+                            section["Section Metadata"]["GUID"] = section["Section Metadata"]["GUID"] or {}
+                            
+                            -- Restore notes
+                            for _, note in ipairs(self.pendingMetadataRestore[sectionName].Note) do
+                                table.insert(section["Section Metadata"]["Note"], note)
+                            end
+                            
+                            -- Restore warnings
+                            for _, warning in ipairs(self.pendingMetadataRestore[sectionName].Warning) do
+                                table.insert(section["Section Metadata"]["Warning"], warning)
+                            end
+                            
+                            -- Restore GUIDs
+                            for _, guid in ipairs(self.pendingMetadataRestore[sectionName].GUID) do
+                                table.insert(section["Section Metadata"]["GUID"], guid)
+                            end
+                            
+                            self:Debug("data", "Restored metadata for section '" .. sectionName .. "': " ..
+                                      table.getn(self.pendingMetadataRestore[sectionName].Note) .. " notes, " ..
+                                      table.getn(self.pendingMetadataRestore[sectionName].Warning) .. " warnings, " ..
+                                      table.getn(self.pendingMetadataRestore[sectionName].GUID) .. " GUIDs")
+                        end
+                    end
+                end
+            end
+            
+            -- Clear the pending metadata
+            self.pendingMetadataRestore = nil
+        end
+        
+        -- Set up a post-save hook
+        local originalSaveAssignments = self.SaveAssignments
+        self.SaveAssignments = function(self, data, sourceString, originalTimestamp, noAnnounce)
+            local result = originalSaveAssignments(self, data, sourceString, originalTimestamp, noAnnounce)
+            
+            -- Restore metadata after saving
+            if self.RestorePendingMetadata then
+                self:RestorePendingMetadata()
+            end
+            
+            return result
+        end
+    end
+    
+    self:Debug("data", "Data cleared successfully")
+    return true
+end
+
 -- Process imported data to handle shortened keys and special characters
 function TWRA:ProcessImportedData(data)
     if not data then return data end
@@ -438,6 +570,165 @@ function TWRA:VerifyNewDataStructure()
     end
     
     return true
+end
+
+-- Function to add a special row directly to section metadata
+function TWRA:AddSpecialRowToMetadata(sectionName, rowType, content)
+    if not sectionName or not rowType or not content then
+        self:Debug("error", "Missing required parameters for AddSpecialRowToMetadata")
+        return false
+    end
+    
+    -- Validate rowType is valid
+    if rowType ~= "Note" and rowType ~= "Warning" and rowType ~= "GUID" then
+        self:Debug("error", "Invalid special row type: " .. rowType)
+        return false
+    end
+    
+    -- Ensure saved variables exist
+    TWRA_SavedVariables = TWRA_SavedVariables or {}
+    TWRA_SavedVariables.assignments = TWRA_SavedVariables.assignments or {}
+    TWRA_SavedVariables.assignments.data = TWRA_SavedVariables.assignments.data or {}
+    
+    -- Find the section by name
+    local sectionFound = false
+    for sectionIdx, section in pairs(TWRA_SavedVariables.assignments.data) do
+        if type(section) == "table" and section["Section Name"] == sectionName then
+            -- Ensure Section Metadata structure exists
+            section["Section Metadata"] = section["Section Metadata"] or {}
+            section["Section Metadata"][rowType] = section["Section Metadata"][rowType] or {}
+            
+            -- Add the content to the appropriate metadata array
+            table.insert(section["Section Metadata"][rowType], content)
+            
+            self:Debug("data", "Added " .. rowType .. " to section '" .. sectionName .. "': " .. content)
+            sectionFound = true
+            break
+        end
+    end
+    
+    if not sectionFound then
+        self:Debug("error", "Section '" .. sectionName .. "' not found for adding " .. rowType)
+        return false
+    end
+    
+    return true
+end
+
+-- CaptureSpecialRows: Process and move special rows (Notes, Warnings, GUIDs) to section metadata
+function TWRA:CaptureSpecialRows(data)
+    if not data or not data.data or type(data.data) ~= "table" then
+        self:Debug("error", "Invalid data structure in CaptureSpecialRows")
+        return data
+    end
+    
+    self:Debug("data", "Processing special rows to move them to section metadata")
+    
+    -- Track metadata restoration hook
+    self.pendingMetadataRestore = {}
+    
+    -- Process each section
+    for sectionIdx, section in pairs(data.data) do
+        if type(section) == "table" and section["Section Rows"] and type(section["Section Rows"]) == "table" then
+            local sectionName = section["Section Name"] or tostring(sectionIdx)
+            
+            -- Initialize Section Metadata if not present
+            section["Section Metadata"] = section["Section Metadata"] or {}
+            local metadata = section["Section Metadata"]
+            
+            -- Initialize metadata arrays
+            metadata["Note"] = metadata["Note"] or {}
+            metadata["Warning"] = metadata["Warning"] or {}
+            metadata["GUID"] = metadata["GUID"] or {}
+            
+            -- Track indices of special rows to remove later
+            local specialRowIndices = {}
+            
+            -- Scan through rows to find special rows
+            for rowIdx, row in ipairs(section["Section Rows"]) do
+                if type(row) == "table" and row[1] then
+                    -- After abbreviation expansion, we'll have "Note", "Warning", "GUID" 
+                    if row[1] == "Note" and row[2] then
+                        -- Add to metadata if not already there
+                        local exists = false
+                        for _, existingNote in ipairs(metadata["Note"]) do
+                            if existingNote == row[2] then
+                                exists = true
+                                break
+                            end
+                        end
+                        
+                        if not exists then
+                            table.insert(metadata["Note"], row[2])
+                            self:Debug("data", "Found Note in section " .. sectionName .. ": " .. row[2])
+                        end
+                        
+                        -- Mark for removal from rows
+                        table.insert(specialRowIndices, rowIdx)
+                        
+                    elseif row[1] == "Warning" and row[2] then
+                        -- Add to metadata if not already there
+                        local exists = false
+                        for _, existingWarning in ipairs(metadata["Warning"]) do
+                            if existingWarning == row[2] then
+                                exists = true
+                                break
+                            end
+                        end
+                        
+                        if not exists then
+                            table.insert(metadata["Warning"], row[2])
+                            self:Debug("data", "Found Warning in section " .. sectionName .. ": " .. row[2])
+                        end
+                        
+                        -- Mark for removal from rows
+                        table.insert(specialRowIndices, rowIdx)
+                        
+                    elseif row[1] == "GUID" and row[2] then
+                        -- Add to metadata if not already there
+                        local exists = false
+                        for _, existingGUID in ipairs(metadata["GUID"]) do
+                            if existingGUID == row[2] then
+                                exists = true
+                                break
+                            end
+                        end
+                        
+                        if not exists then
+                            table.insert(metadata["GUID"], row[2])
+                            self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. row[2])
+                        end
+                        
+                        -- Mark for removal from rows
+                        table.insert(specialRowIndices, rowIdx)
+                    end
+                end
+            end
+            
+            -- Remember the metadata for this section
+            self.pendingMetadataRestore[sectionName] = {
+                notes = table.getn(metadata["Note"]),
+                warnings = table.getn(metadata["Warning"]),
+                guids = table.getn(metadata["GUID"])
+            }
+            
+            -- Remove special rows from section rows (from highest index to lowest)
+            table.sort(specialRowIndices, function(a,b) return a > b end)
+            for _, idx in ipairs(specialRowIndices) do
+                table.remove(section["Section Rows"], idx)
+            end
+            
+            self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
+                       table.getn(metadata["Note"]) .. " notes, " ..
+                       table.getn(metadata["Warning"]) .. " warnings, " ..
+                       table.getn(metadata["GUID"]) .. " GUIDs")
+        end
+    end
+    
+    -- Set up hook to ensure metadata is restored when data is cleared
+    self:Debug("data", "Set up metadata restoration hook for next save operation")
+    
+    return data
 end
 
 -- Initialize diagnostics when this file loads

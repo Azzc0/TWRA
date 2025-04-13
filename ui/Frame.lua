@@ -606,15 +606,13 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
         return
     end
     
-    -- Process rows, skipping special rows in new format
+    -- Process rows from Section Rows
+    -- No need to filter out special rows since they've already been removed
     if sectionData["Section Rows"] then
         for i, rowData in ipairs(sectionData["Section Rows"]) do
-            -- Skip special rows (Note, Warning, GUID rows)
-            if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
-                -- Insert the row into our filtered data
-                table.insert(filteredData, rowData)
-                self:Debug("ui", "Added row with icon: " .. tostring(rowData[1]) .. ", target: " .. tostring(rowData[2]))
-            end
+            -- Add the row to our filtered data
+            table.insert(filteredData, rowData)
+            self:Debug("ui", "Added row with icon: " .. tostring(rowData[1]) .. ", target: " .. tostring(rowData[2]))
         end
     else
         self:Debug("error", "No rows found in section data")
@@ -648,41 +646,41 @@ function TWRA:CreateFootersNewFormat(currentHandler, sectionData)
         return 
     end
     
-    -- Find Notes and Warnings in the section data
+    -- Get notes and warnings directly from Section Metadata
     local notes = {}
     local warnings = {}
     
-    -- Process special rows from Section Rows with better debugging
-    if sectionData["Section Rows"] then
-        self:Debug("ui", "Scanning " .. table.getn(sectionData["Section Rows"]) .. " rows for notes/warnings")
+    -- Access metadata for notes and warnings
+    if sectionData["Section Metadata"] then
+        local metadata = sectionData["Section Metadata"]
         
-        for i, rowData in ipairs(sectionData["Section Rows"]) do
-            -- More detailed debugging
-            self:Debug("ui", "Row " .. i .. " check: [1]=" .. tostring(rowData[1]) .. 
-                       ", [2]=" .. tostring(rowData[2] or "nil"))
-            
-            -- Note rows have "Note" in first column and text in second column
-            if rowData[1] == "Note" then
-                if rowData[2] and rowData[2] ~= "" then
+        -- Process notes from metadata
+        if metadata["Note"] then
+            for _, noteText in ipairs(metadata["Note"]) do
+                if noteText and noteText ~= "" then
                     table.insert(notes, {
-                        text = rowData[2],  -- Text is in column 2
+                        text = noteText,
                         icon = "Note"
                     })
-                    self:Debug("ui", "Found note: " .. rowData[2])
+                    self:Debug("ui", "Found note in metadata: " .. noteText)
                 end
-            -- Warning rows have "Warning" in first column and text in second column
-            elseif rowData[1] == "Warning" then
-                if rowData[2] and rowData[2] ~= "" then
+            end
+        end
+        
+        -- Process warnings from metadata
+        if metadata["Warning"] then
+            for _, warningText in ipairs(metadata["Warning"]) do
+                if warningText and warningText ~= "" then
                     table.insert(warnings, {
-                        text = rowData[2],  -- Text is in column 2
+                        text = warningText,
                         icon = "Warning"
                     })
-                    self:Debug("ui", "Found warning: " .. rowData[2])
+                    self:Debug("ui", "Found warning in metadata: " .. warningText)
                 end
             end
         end
     else
-        self:Debug("ui", "No Section Rows found for footers")
+        self:Debug("ui", "No Section Metadata found for footers")
     end
     
     -- Debug the counts we found
