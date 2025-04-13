@@ -1282,16 +1282,41 @@ function TWRA:ApplyRowHighlights(sectionData, displayData)
         return
     end
     
-    -- Check if we have relevant rows in section player info
-    if not sectionData["Section Player Info"] or not sectionData["Section Player Info"]["Relevant Rows"] then
+    -- Check if we have player info in section
+    if not sectionData["Section Player Info"] then
         self:Debug("ui", "ApplyRowHighlights: No player info available")
         return
     end
     
-    -- Get the relevant rows we need to highlight
-    local relevantRows = sectionData["Section Player Info"]["Relevant Rows"]
-    if not relevantRows or table.getn(relevantRows) == 0 then
-        self:Debug("ui", "ApplyRowHighlights: No relevant rows to highlight")
+    -- Get both relevant rows (name/class based) and relevant group rows (group based)
+    local relevantRows = sectionData["Section Player Info"]["Relevant Rows"] or {}
+    local relevantGroupRows = sectionData["Section Player Info"]["Relevant Group Rows"] or {}
+    
+    -- Create a combined set of unique row indices to highlight
+    local rowsToHighlight = {}
+    local rowsAdded = {}
+    
+    -- First add regular relevant rows
+    for _, rowIndex in ipairs(relevantRows) do
+        if not rowsAdded[rowIndex] then
+            table.insert(rowsToHighlight, rowIndex)
+            rowsAdded[rowIndex] = true
+            self:Debug("ui", "Adding name/class relevant row " .. rowIndex .. " to highlight list")
+        end
+    end
+    
+    -- Then add group relevant rows, but only if not already added
+    for _, rowIndex in ipairs(relevantGroupRows) do
+        if not rowsAdded[rowIndex] then
+            table.insert(rowsToHighlight, rowIndex)
+            rowsAdded[rowIndex] = true
+            self:Debug("ui", "Adding group relevant row " .. rowIndex .. " to highlight list")
+        end
+    end
+    
+    -- If no rows to highlight, we're done
+    if table.getn(rowsToHighlight) == 0 then
+        self:Debug("ui", "ApplyRowHighlights: No rows to highlight")
         return
     end
     
@@ -1324,10 +1349,10 @@ function TWRA:ApplyRowHighlights(sectionData, displayData)
     end
     self:Debug("ui", debugMapping)
     
-    -- Apply highlights to the relevant rows
+    -- Apply highlights to the unique set of relevant rows
     local highlightCount = 0
     
-    for _, sectionRowIdx in ipairs(relevantRows) do
+    for _, sectionRowIdx in ipairs(rowsToHighlight) do
         local displayRowIdx = sectionToDisplayMap[sectionRowIdx]
         
         if displayRowIdx then

@@ -559,7 +559,7 @@ Processes loaded data including scanning for GUIDs.
 - core/Core.lua (after loading data)
 
 ### TWRA:ProcessPlayerInfo()
-Processes player-specific information for all sections.
+Processes player-specific information for all sections, handling both static and dynamic information.
 
 **Arguments:**
 - None
@@ -571,8 +571,45 @@ Processes player-specific information for all sections.
 - TWRA:UpdatePlayerInfo()
 - TWRA:ProcessLoadedData()
 
+### TWRA:ProcessStaticPlayerInfo()
+Processes player information that doesn't change when group composition changes (name and class-based matches).
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:ProcessPlayerInfo()
+
+### TWRA:ProcessDynamicPlayerInfo()
+Processes player information that changes when group composition changes (group-based matches).
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Used in:**
+- TWRA:ProcessPlayerInfo()
+- TWRA:RefreshPlayerInfo()
+
+### TWRA:GetAllGroupRowsForSection(section)
+Gets all rows in a section that contain any group references.
+
+**Arguments:**
+- section: Section data to analyze
+
+**Returns:**
+- Array of row indices containing group references
+
+**Used in:**
+- TWRA:ProcessDynamicPlayerInfo()
+
 ### TWRA:GetPlayerRelevantRowsForSection(section)
-Identifies rows in a section that are relevant to the current player.
+Identifies rows in a section that are relevant to the current player by name or class.
 
 **Arguments:**
 - section: Section data to analyze
@@ -581,8 +618,33 @@ Identifies rows in a section that are relevant to the current player.
 - Array of row indices relevant to the player
 
 **Used in:**
-- TWRA:ProcessPlayerInfo()
+- TWRA:ProcessStaticPlayerInfo()
 - ui/OSDContent.lua
+
+### TWRA:GetGroupRowsForSection(section)
+Identifies rows in a section that are relevant to the player's current group.
+
+**Arguments:**
+- section: Section data to analyze
+
+**Returns:**
+- Array of row indices relevant to the player's group
+
+**Used in:**
+- TWRA:ProcessDynamicPlayerInfo()
+
+### TWRA:FindTankRoleColumns(section)
+Identifies columns in a section header that represent tank roles.
+
+**Arguments:**
+- section: Section data to analyze
+
+**Returns:**
+- Array of column indices representing tank roles
+
+**Used in:**
+- TWRA:ProcessStaticPlayerInfo()
+- TWRA:GenerateOSDInfoForSection()
 
 ### TWRA:UpdatePlayerInfo()
 Updates player information for all sections in the data.
@@ -598,7 +660,7 @@ Updates player information for all sections in the data.
 - TWRA.lua (after data changes)
 
 ### TWRA:RefreshPlayerInfo()
-Refreshes player information when data or group composition changes.
+Refreshes player information when data or group composition changes, focusing on only updating dynamic information.
 
 **Arguments:**
 - None
@@ -610,18 +672,20 @@ Refreshes player information when data or group composition changes.
 - TWRA.lua (group composition changes)
 - features/AutoTanks.lua (tank assignments)
 
-### TWRA:GenerateOSDInfoForSection(section, relevantRows)
-Creates a compact representation of player's assignments for OSD display.
+### TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignments)
+Creates a compact representation of player's assignments for OSD display, using nested arrays for each assignment.
 
 **Arguments:**
 - section: Section data
 - relevantRows: Array of row indices relevant to the player
+- isGroupAssignments: Boolean indicating if these are group-based assignments
 
 **Returns:**
-- Array of formatted assignment data for OSD
+- Array of formatted assignment data for OSD, with each entry being an array of role, icon, target, and tank names
 
 **Used in:**
-- TWRA:ProcessPlayerInfo()
+- TWRA:ProcessStaticPlayerInfo()
+- TWRA:ProcessDynamicPlayerInfo()
 - ui/OSDContent.lua
 
 ### TWRA:IsCellRelevantToPlayer(cellValue)
@@ -636,6 +700,30 @@ Helper function to determine if a cell contains information relevant to the curr
 **Used in:**
 - TWRA:GenerateOSDInfoForSection()
 - TWRA:GetPlayerRelevantRowsForSection()
+
+### TWRA:IsCellContainingPlayerNameOrClass(cellValue)
+Helper function to check if a cell contains the player's name or class group.
+
+**Arguments:**
+- cellValue: Cell content to check
+
+**Returns:**
+- Boolean indicating if the cell contains player's name or class
+
+**Used in:**
+- TWRA:GenerateOSDInfoForSection()
+
+### TWRA:IsCellContainingPlayerGroup(cellValue)
+Helper function to check if a cell contains the player's current group.
+
+**Arguments:**
+- cellValue: Cell content to check
+
+**Returns:**
+- Boolean indicating if the cell contains player's group
+
+**Used in:**
+- TWRA:GenerateOSDInfoForSection()
 
 ### TWRA:UpdateOSDWithPlayerInfo()
 Updates the OSD with new player information.
@@ -764,6 +852,19 @@ Filters and displays a specific section.
 
 **Used in:**
 - TWRA.lua (NavigateToSection)
+
+### TWRA:ApplyRowHighlights(sectionData, displayData)
+Applies row highlights based on section data to rows in displayData, handling both name/class matches and group matches.
+
+**Arguments:**
+- sectionData: The section data containing player relevance information
+- displayData: The displayed data to highlight
+
+**Returns:**
+- None
+
+**Used in:**
+- TWRA:FilterAndDisplayHandler()
 
 ## ui/OSD.lua
 ### TWRA:InitOSD()

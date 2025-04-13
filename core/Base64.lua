@@ -466,16 +466,34 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     result = self:FixSpecialCharacters(result)
                 end
                 
-                -- Process player-relevant information in the imported data
+                -- UNIFIED APPROACH FOR ALL IMPORTS:
+                -- Process player-relevant information in the imported data (both UI and sync imports)
+                -- First put the data temporarily in SavedVariables so ProcessPlayerInfo can work with it
+                local tempData = nil
                 if self.ProcessPlayerInfo then
                     self:Debug("data", "Processing player-relevant information for imported data")
-                    -- For sync operations, process player info immediately after data is saved
-                    if syncTimestamp then
-                        self:ProcessPlayerInfo()
-                        self:Debug("data", "Processed player-relevant information after sync import")
+                    
+                    -- Store current assignments if they exist (we'll restore them after)
+                    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+                        tempData = TWRA_SavedVariables.assignments.data
                     end
-                    -- For regular imports, we'll refresh player info which will also update UI
-                    -- This happens outside the protected call to ensure it runs even if there are issues
+                    
+                    -- Temporarily set the data so ProcessPlayerInfo can work with it
+                    TWRA_SavedVariables = TWRA_SavedVariables or {}
+                    TWRA_SavedVariables.assignments = TWRA_SavedVariables.assignments or {}
+                    TWRA_SavedVariables.assignments.data = result.data
+                    
+                    -- Process static player information - adds section["Tanks"], section["Section Group Rows"], etc.
+                    self:ProcessPlayerInfo()
+                    self:Debug("data", "Static player information processed")
+                    
+                    -- Get the processed data back from SavedVariables
+                    result.data = TWRA_SavedVariables.assignments.data
+                    
+                    -- Restore previous data if we were just checking
+                    if not syncTimestamp and tempData then
+                        TWRA_SavedVariables.assignments.data = tempData
+                    end
                 end
                 
                 -- If this is a sync operation with timestamp, handle it directly
@@ -483,16 +501,16 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     -- We need to assign directly to SavedVariables
                     TWRA_SavedVariables = TWRA_SavedVariables or {}
                     TWRA_SavedVariables.assignments = {
-                        data = result.data,
+                        data = result.data, -- This now has the processed player info
                         timestamp = syncTimestamp,
                         version = 2
                     }
                     self:Debug("data", "Directly saved data to SavedVariables with timestamp: " .. syncTimestamp)
                     
-                    -- Process player info after data is saved
-                    if self.ProcessPlayerInfo then
-                        self:ProcessPlayerInfo()
-                        self:Debug("data", "Processed player-relevant information after sync import")
+                    -- Also update dynamic player information after sync imports
+                    if self.RefreshPlayerInfo then
+                        self:RefreshPlayerInfo()
+                        self:Debug("data", "Processed dynamic player information after sync import")
                     end
                 end
                 
