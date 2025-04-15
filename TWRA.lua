@@ -47,33 +47,18 @@ function TWRA:NavigateToSection(index, source)
         end
     end
     
-    -- Determine if we should show OSD
-    local shouldShowOSD = false
-    if self.OSD and self.OSD.enabled and self.OSD.showOnNavigation then
-        -- Don't show OSD if main frame is shown and in main view
-        if not (self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main") then
-            shouldShowOSD = true
-        end
+    -- Get the current section name for events
+    local sectionName = self.navigation.handlers[index]
+    local totalSections = maxIndex
+    
+    -- Trigger the section change event for any listeners (like OSD)
+    if self.TriggerEvent then
+        self:Debug("nav", "Triggering SECTION_CHANGED event")
+        self:TriggerEvent("SECTION_CHANGED", index, sectionName, totalSections, source)
     end
     
-    self:Debug("nav", "shouldShowOSD=" .. tostring(shouldShowOSD) .. 
-              " (mainFrame:" .. tostring(self.mainFrame) .. 
-              ", isShown:" .. (self.mainFrame and self.mainFrame:IsShown() and "1" or "0") .. 
-              ", currentView:" .. self.currentView .. ")")
-    
-    -- Update OSD if enabled
-    if shouldShowOSD then
-        if self.UpdateOSDContent and self.ShowOSD then
-            local currentSectionName = self.navigation.handlers[index]
-            local totalSections = table.getn(self.navigation.handlers)
-            self:UpdateOSDContent(currentSectionName, index, totalSections)
-            self:ShowOSD()
-        else
-            self:Debug("osd", "OSD functions not available")
-        end
-    else
-        self:Debug("osd", "OSD skipped - not enabled or not set to show on navigation")
-    end
+    -- NOTE: OSD show/hide logic moved to event system
+    -- OSD module will listen for SECTION_CHANGED events and show itself when appropriate
     
     -- Broadcast section change if not coming from sync
     if source ~= "fromSync" and source ~= "reload" then

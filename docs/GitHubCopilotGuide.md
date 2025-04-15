@@ -5,7 +5,7 @@ This document serves as a comprehensive reference for GitHub Copilot when workin
 ## Project Overview
 
 TWRA is a raid assignment addon for Turtle WoW (WoW 1.12) that allows raid leaders to:
-- Import/export raid assignments from spreadsheets
+- Import raid assignments from spreadsheets
 - Display assignments in-game
 - Navigate between different encounter sections
 - Sync assignments between raid members
@@ -36,6 +36,20 @@ TWRA is a raid assignment addon for Turtle WoW (WoW 1.12) that allows raid leade
   -- Or restructure with if/else blocks
   ```
 - **Avoid `_G` references**: Maintain compatibility with older Lua
+- **Limitations with `unpack`**: In Lua 5.0, `unpack` doesn't work with ellipsis (`...`) operator the same way as in newer Lua versions
+  ```lua
+  -- Instead of:
+  texture:SetTexCoord(unpack(coords))
+  
+  -- Use:
+  texture:SetTexCoord(coords[1], coords[2], coords[3], coords[4], coords[5], coords[6], coords[7], coords[8])
+  
+  -- Or create a helper function:
+  function UnpackTexCoord(coords)
+    return coords[1], coords[2], coords[3], coords[4], coords[5] or 0, coords[6] or 0, coords[7] or 0, coords[8] or 0
+  end
+  texture:SetTexCoord(UnpackTexCoord(coords))
+  ```
 
 ### SuperWoW Integration
 - Features accessed through `SUPERWOW_VERSION` global variable check

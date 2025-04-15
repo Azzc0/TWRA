@@ -314,16 +314,16 @@ function TWRA:CreateMainFrame()
                 normalTex:SetVertexColor(1, 0.82, 0, 0.4)
             end
             
-            -- Click handler for dropdown menu items
+            -- Click handler for dropdown menu items - UPDATED TO USE EventSystem
             button:SetScript("OnClick", function()
-                -- Update text immediately
+                -- Update text immediately for responsive UI
                 menuText:SetText(handler)
                 
                 -- Find the correct index for this handler
                 for idx = 1, table.getn(self.navigation.handlers) do
                     if self.navigation.handlers[idx] == handler then
-                        -- Use the centralized NavigateToSection function that handles syncing
-                        self:NavigateToSection(idx)
+                        -- Use the centralized NavigateToSection function with user source
+                        self:NavigateToSection(idx, "user")
                         break
                     end
                 end
@@ -569,7 +569,87 @@ local function getUniqueHandlers(data)
     return handlers
 end
 
--- Replace FilterAndDisplayHandler to work with the new format
+-- Replace NavigateHandler to use event system
+function TWRA:NavigateHandler(delta)
+    -- Safety checks
+    if not self.navigation or not self.navigation.handlers then
+        self:Debug("error", "NavigateHandler: No navigation or handlers")
+        return
+    end
+    
+    if not self.navigation.currentIndex then
+        self.navigation.currentIndex = 1
+    end
+    
+    -- Calculate the new index with bounds checking
+    local newIndex = self.navigation.currentIndex + delta
+    local maxIndex = table.getn(self.navigation.handlers)
+    
+    -- Wrap around navigation
+    if newIndex < 1 then
+        newIndex = maxIndex
+    elseif newIndex > maxIndex then
+        newIndex = 1
+    end
+    
+    -- Use NavigateToSection for consistent event dispatching
+    self:NavigateToSection(newIndex)
+end
+
+-- Add NavigateToSection function to switch sections and trigger events
+function TWRA:NavigateToSection(index, source)
+    self:Debug("nav", "NavigateToSection called with index " .. index .. " from " .. (source or "unknown"))
+    
+    -- Safety checks
+    if not self.navigation or not self.navigation.handlers then
+        self:Debug("error", "NavigateToSection: No navigation or handlers")
+        return
+    end
+    
+    -- Validate index
+    local maxIndex = table.getn(self.navigation.handlers)
+    if index < 1 or index > maxIndex then
+        self:Debug("error", "NavigateToSection: Invalid index " .. index .. ", resetting to 1")
+        index = 1
+    end
+    
+    -- Store old index for comparison
+    local oldIndex = self.navigation.currentIndex
+    
+    -- Update current index
+    self.navigation.currentIndex = index
+    
+    -- Get section name
+    local sectionName = self.navigation.handlers[index]
+    
+    -- Update UI text
+    if self.navigation.handlerText then
+        self.navigation.handlerText:SetText(sectionName)
+    end
+    
+    -- Save current section to saved variables
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+        TWRA_SavedVariables.assignments.currentSection = index
+        TWRA_SavedVariables.assignments.currentSectionName = sectionName
+    end
+    
+    -- Trigger the event before updating display
+    if self.TriggerEvent then
+        self:Debug("nav", "Triggering SECTION_CHANGED event")
+        self:TriggerEvent("SECTION_CHANGED", index, sectionName, maxIndex, source)
+    else
+        self:Debug("error", "TriggerEvent function not available")
+    end
+    
+    -- Update display with the new section
+    self:FilterAndDisplayHandler(sectionName)
+    
+    self:Debug("nav", "Navigation complete: Section " .. index .. " (" .. sectionName .. ")")
+    
+    return true
+end
+
+-- Replace FilterAndDisplayHandler to use event system
 function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Debug entry
     self:Debug("ui", "FilterAndDisplayHandler called for section: " .. (currentHandler or "nil"))
@@ -631,6 +711,11 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     
     -- Create footers for this section (notes and warnings)
     self:CreateFootersNewFormat(currentHandler, sectionData)
+    
+    -- Trigger an event when display is complete
+    if self.TriggerEvent then
+        self:TriggerEvent("SECTION_DISPLAYED", currentHandler, sectionData)
+    end
     
     self:Debug("ui", "DisplayCurrentSection complete - displayed " .. table.getn(filteredData) .. " rows")
 end

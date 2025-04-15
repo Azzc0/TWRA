@@ -1,468 +1,247 @@
 # TWRA On-Screen Display (OSD) Rework Plan
 
 ## Overview
-This document outlines the plan for reworking the TWRA On-Screen Display (OSD) system. The OSD has two primary functions:
 
-1. Display relevant assignments from the saved variables
-2. Show progress during data transmission/reception
+This document outlines the plan for reworking the TWRA On-Screen Display (OSD) system. The OSD has two primary functions:
+- Display relevant assignments from the saved variables
+- Show progress during data transmission/reception, returning to assignment display when complete
+
+## Current OSD Options
+
+The OSD system already has several options that should be utilized in the rewrite:
+
+```lua
+TWRA.OSD = {
+    isVisible = false,      -- Current visibility state
+    autoHideTimer = nil,    -- Timer for auto-hiding
+    duration = 2,           -- Duration in seconds before auto-hide (user configurable)
+    scale = 1.0,            -- Scale factor for the OSD (user configurable)
+    locked = false,         -- Whether frame position is locked (user configurable)
+    enabled = true,         -- Whether OSD is enabled at all (user configurable)
+    showOnNavigation = true, -- Show OSD when navigating sections (user configurable)
+    point = "CENTER",       -- Frame position anchor point (saved between sessions)
+    xOffset = 0,            -- X position offset (saved between sessions)
+    yOffset = 100           -- Y position offset (saved between sessions)
+}
+```
+
+These options are already being saved and loaded from the saved variables, so the new implementation should continue to use them.
 
 ## Data Structure
+
 The OSD will use data from the following sources in the saved variables:
+
 ```lua
-assignments.data.section["Section Metadata"].["Name"]
-assignments.data.section["Section Metadata"].["Warning"]
-assignments.data.section["Section Player Info"].["OSD Assignments"]
-assignments.data.section["Section Player Info"].["OSD Group Assignments"]
+assignments.data.section["Section Metadata"].["Name"] -- Section title
+assignments.data.section["Section Metadata"].["Warning"] -- Section Warnings
+assignments.data.section["Section Player Info"].["OSD Assignments"] -- Player-specific OSD Rows
+assignments.data.section["Section Player Info"].["OSD Group Assignments"] -- Group-based OSD rows
 ```
 
 OSD row data follows this pattern:
+
 ```lua
+["OSD Assignments"] = {
+	[1] = {                  -- First osd row
+		[1] = "Grab debuff", -- Role
+		[2] = "",            -- Icon associated with target
+		[3] = "",            -- Target
+		[4] = "",            -- This and subsequent indices are tanks
+	},
+},
 ["OSD Group Assignments"] = {
-    [1] = {
-        [1] = "Grab debuff", -- Role
-        [2] = "",            -- Icon associated with target
-        [3] = "",            -- Target for the current row
-        [4] = "",            -- This and subsequent indices are tanks in the row
-    },
+	[1] = {                  -- First osd row
+		[1] = "Grab debuff", -- Role
+		[2] = "",            -- Icon associated with target
+		[3] = "",            -- Target
+		[4] = "",            -- This and subsequent indices are tanks
+	},
 },
 ```
 
-## Primary Function - Assignment Display
-The OSD will display:
-- Section Title
-- OSD Rows (OSD Assignments & OSD Group Assignments)
-- Warning footer
-
 ### Display Format
+
 Each row will be formatted based on role type:
 
 1. **Tank Role:**
    - `[roleIcon] Role - [raidIcon] Target w/ [classIcon] Tank1 & [classIcon] Tank2`
-
 2. **Healer Role:**
-   - `[roleIcon] Role - [classIcon] Tank1 & [classIcon] Tank2 tanking [raidIcon] Target`
-
+   - `[roleIcon] Role - [raidIcon] Target healing [classIcon] Tank1 & [classIcon] Tank2`
 3. **Other Roles:**
    - `[roleIcon] Role - [raidIcon] Target tanked by [classIcon] Tank1 & [classIcon] Tank2`
 
 ### Icon Usage
+
 - Role icons from `TWRA.ROLE_ICONS` (use `TWRA.ROLE_MAPPINGS` to determine icon, default to "misc")
 - Raid icons from `TWRA.ICONS` (only display if exact match found)
-- Class icons from class coordinates in `TWRA.CLASS_COORDS` using this texture Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES if missing use TWRA.ICONS.Missing
-- Class colored text for player names. Red for missing and grey for offline.
+- Class icons from class coordinates in `TWRA.CLASS_COORDS` using texture "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
+- Class colored text for player names - red for missing and grey for offline
+
+## Primary Function - Assignment Display
+
+The OSD will display:
+- Section Title (top)
+- OSD Rows (OSD Assignments & OSD Group Assignments)
+- Warning footer (if any)
 
 ## Secondary Function - Progress Display
+
 During data reception, the OSD will show:
-- "Receiving data" message
+- "Receiving data" message as header
 - Progress bar with percentage text overlay
-- "Receiving from X" message
+- "Receiving from X" message (if sender is known)
+
+The same OSD frame will be used, but with different content elements showing/hidden based on mode.
 
 ## Visibility Management
+
 The OSD will follow these visibility rules:
 
 1. **Auto-show on Navigation:**
-   - The OSD will appear when navigating to a new section
-   - It will remain visible for a configurable duration ("Display Duration" setting)
-   - The OSD does not show if the main TWRA frame is open, except when the options view is open
+   - Show when navigating to a new section (if `showOnNavigation` is true)
+   - Hide after `duration` seconds (configurable in options)
+   - Don't show if main TWRA frame is visible (except when options panel is open)
 
 2. **Manual Toggle Mode:**
-   - If activated via `ToggleOSD()`, the OSD will remain visible until manually toggled off
-   - In this mode, the OSD will stay open even during navigation events
-   - This overrides the auto-hide timer until explicitly toggled off
+   - If manually toggled via `ToggleOSD()`, stay visible until manually closed
+   - Set `manuallyToggled` flag to override auto-hide timer
+   - Clear flag when toggled off
 
-3. **Conditional Display:**
-   - Will not display if explicitly disabled in options
-   - Provides a user-controlled option to show/hide during navigation
+3. **Minimap Hover:**
+   - Show when hovering over minimap button
+   - Hide when mouse leaves minimap button (unless manually toggled)
+   - Keep track of previous state with `hoveredFromMinimap` flag
 
-4. **Minimap Interaction:**
-   - When the user hovers over the TWRA minimap icon, the OSD will show automatically
-   - When the mouse leaves the minimap icon, the OSD will hide again
-   - This feature provides quick access to assignments without requiring clicks
-
-5. **Group Change Detection:**
-   - The OSD will display when the player's group changes AND the player has new assignments
-   - If a player changes to a group with no assignments (assignments were removed), the OSD will not show
-   - This prevents showing an empty OSD when assignments are no longer relevant
+4. **Group Change Awareness:**
+   - LOWER PRIORITY FEATURE
+   - When group composition changes, assignments may change
+   - Wait a short period after group change (let DataProcessing update)
+   - Compare new assignments with stored previous assignments
+   - Show OSD only if assignments have actually changed
 
 ## UI Implementation
+
 - Maintain tooltip styling for the frame
-- Remove background on OSD row elements
-- Reuse UI elements rather than recreating them
+- Implement UI element pools for efficient reuse
 - Prepare for maximum 10 rows and 10 footer items
-
-### UI Element Layout
-Each row in the OSD will be structured as follows:
-
-1. **Row Container**:
-   - Spans the full width of the OSD frame
-   - Height adjusted based on content
-   - Positioned sequentially from top to bottom
-
-2. **Element Positioning Within Row**:
-   - Elements flow horizontally from left to right
-   - Each element (text or icon) anchors to the previous element
-   - Text elements handled as separate FontStrings to support proper formatting
-   
-3. **Element Structure**:
-   - Role Icon (leftmost)
-   - Role Text FontString (anchored to Role Icon)
-   - Target Icon (if applicable, anchored to Role Text)
-   - Target Text FontString (anchored to Target Icon or Role Text)
-   - Tank Class Icons (anchored to previous elements)
-   - Various connecting text pieces ("with", "tanked by", etc.) as separate FontStrings
-   
-4. **Text Handling**:
-   - Font strings will be created to contain segments of text
-   - If text needs an icon in the middle, the text will be split into multiple FontStrings
-   - Class names will be colored using their class colors
-   - Missing/offline players will use red/grey colors respectively
-
-5. **Width Handling**:
-   - Row will have minimum width (equal to frame width)
-   - If content exceeds width, it will:
-     - Not wrap (single line per assignment)
-     - Truncate with ellipsis (...) if necessary
-   - Option to expand frame width if needed for important information
-
-6. **Height Calculation**:
-   - Each row has fixed height
-   - Frame height calculated as: Header + (Row Height × Number of Rows) + Warnings + Padding
-
-### Footer Elements
-Footer elements (particularly warnings) will have specific styling:
-
-1. **Warning Design**:
-   - Slight red background tint for visibility (rgba(0.3, 0.1, 0.1, 0.3))
-   - Warning icon (`TWRA.ICONS.Warning`) positioned at the left side
-   - Warning text following the icon in light red color
-   - Each warning on its own line with consistent height (18px)
-
-2. **Maximum Content Expectations**:
-   - Player names: maximum of 12 characters
-   - Target/boss names: assume maximum length similar to "Grand Widow Faerlina"
-   - Roles: variable length but not excessively long (sourced from spreadsheet headers)
-   - Longest expected row content: 
-     `[healIcon] Main Tank Healer - [classIcon]Tank1 & [classIcon]Tank2 & [classIcon]Tank3 tanking [raidIcon] Grand Widow Faerlina`
-
-3. **Width Handling**:
-   - Minimum width to accommodate expected content (400px recommended)
-   - Option to expand if content requires it
-   - Truncate with ellipsis for extremely long content
-
-### Row Creation Process
-1. **Layout Algorithm**:
-   ```
-   For each assignment:
-     - Create/reuse row container
-     - Create/reuse role icon texture
-     - Position icon at left side of row
-     - Create/reuse role text font string
-     - Create text for "Role - " anchored to role icon
-     - If target has raid icon:
-       - Create/reuse target icon texture anchored to role text
-       - Create/reuse target text font string anchored to target icon
-     - Else:
-       - Create/reuse target text font string anchored to role text
-     - Depending on role type (tank, healer, other):
-       - Create appropriate connector text ("with", "tanking", "tanked by")
-       - For each tank:
-         - Create/reuse class icon texture
-         - Apply class color to tank name
-         - Position anchored to previous element
-   ```
-
-2. **Element Reuse Strategy**:
-   - Maintain pools of textures and font strings
-   - Show/hide as needed rather than creating/destroying
-   - Reset positions and content for each update
+- Allow OSD to be movable when unlocked, save position between sessions
 
 ### Element Pools
+
 We'll implement UI element pools for efficient reuse:
 
-1. **Element Types**:
-   - Row frames (containers for each assignment row)
-   - Role icons (textures for role icons)
-   - Target icons (textures for raid target icons)
-   - Class icons (textures for tank class icons)
-   - Text segments (font strings for various text components)
+```lua
+TWRA.OSD.pools = {
+    rows = {},            -- Row frames
+    roleIcons = {},       -- Role icon textures
+    targetIcons = {},     -- Target icon textures
+    classIcons = {},      -- Class icon textures
+    textSegments = {},    -- Text font strings
+    warnings = {},        -- Warning frames
+    notes = {}            -- Note frames
+}
+```
 
-2. **Pool Structure**:
-   ```lua
-   TWRA.OSD.pools = {
-       rows = {},            -- Row frames
-       roleIcons = {},       -- Role icon textures
-       targetIcons = {},     -- Target icon textures
-       classIcons = {},      -- Class icon textures
-       textSegments = {},    -- Text font strings
-       warnings = {},        -- Warning frames
-       notes = {}            -- Note frames
-   }
-   ```
+### Warning Styling
 
-3. **Element Acquisition**:
-   ```lua
-   -- Function to get or create a UI element from a pool
-   function TWRA:GetPooledElement(poolName, parent, createFunc)
-       local pool = self.OSD.pools[poolName]
-       
-       -- Find an unused element in the pool
-       for i, element in ipairs(pool) do
-           if not element.inUse then
-               element.inUse = true
-               element:Show()
-               return element
-           end
-       end
-       
-       -- No unused elements, create new one
-       local newElement = createFunc(parent)
-       newElement.inUse = true
-       table.insert(pool, newElement)
-       
-       return newElement
-   end
-   ```
+Warnings will have specific styling:
+- Light red background tint (rgba(0.3, 0.1, 0.1, 0.3))
+- Warning icon (`TWRA.ICONS.Warning`) on the left
+- Red-tinted text
+- Each warning on separate line
 
-4. **Pool Reset**:
-   ```lua
-   -- Function to reset all pools after use
-   function TWRA:ResetElementPools()
-       for poolName, pool in pairs(self.OSD.pools) do
-           for _, element in ipairs(pool) do
-               element.inUse = false
-               element:Hide()
-           end
-       end
-   end
-   ```
+## Implementation Priorities
 
-## Implementation Steps
+1. **Core Frame Structure** (Phase 1)
+   - Create main OSD frame
+   - Implement element pools system
+   - Basic show/hide functionality
+   - Support for moving and positioning
 
-1. **Frame Creation and Management (OSD.lua)**
-   - Handle frame creation and positioning
-   - Manage visibility and auto-hiding
-   - Support switching between assignment and progress display modes
+2. **Assignment Display** (Phase 2)
+   - Process and display assignments with proper formatting
+   - Handle role-specific formatting
+   - Implement warnings display
+   - Add dynamic height calculation
 
-2. **UI Element Management**
-   - Create a pool of reusable UI elements
-   - Initialize elements on first use
-   - Show/hide elements as needed
+3. **Progress Display** (Phase 3)
+   - Create progress bar element
+   - Implement status text display
+   - Connect to sync system
 
-3. **Content Display Logic**
-   - Process assignment data for display
-   - Format rows based on role type
-   - Update warning footer
+4. **Enhanced Visibility Controls** (Phase 4)
+   - Implement OnUpdate for timer handling
+   - Add minimap button integration
+   - Connect to navigation events
 
-4. **Progress Display**
-   - Create progress bar with percentage text
-   - Update progress based on chunk reception
+5. **Group Change Awareness** (Phase 5 - Lower Priority)
+   - Create assignment storage/comparison system
+   - Connect to group change events
+   - Add delayed check and comparison logic
 
-5. **Transition Management**
-   - Ensure smooth transitions between different OSD states
-   - Handle resizing based on content
+## Implementation Approach
 
-6. **Minimap Button Integration**
-   - Modify existing `OnEnter` handler to show OSD automatically
-   ```lua
-   miniButton:SetScript("OnEnter", function()
-       -- Show tooltip
-       GameTooltip:SetOwner(miniButton, "ANCHOR_LEFT")
-       GameTooltip:AddLine("TWRA - Raid Assignments")
-       GameTooltip:AddLine("Left-click: Toggle assignments window", 1, 1, 1)
-       GameTooltip:AddLine("Right-click: Toggle assignments OSD", 1, 1, 1)
-       GameTooltip:Show()
-       
-       -- Show OSD without auto-hide timer
-       -- Store previous visibility state to restore on mouse leave
-       this.previousOSDState = TWRA.OSD and TWRA.OSD.isVisible
-       
-       -- Only show if not already showing from manual toggle
-       if TWRA.ShowOSD and (not TWRA.OSD or not TWRA.OSD.manuallyToggled) then
-           TWRA:ShowOSDPermanent()
-           TWRA.OSD.hoveredFromMinimap = true
-       end
-   end)
-   ```
-   
-   - Modify `OnLeave` handler to hide OSD if it was shown by hover
-   ```lua
-   miniButton:SetScript("OnLeave", function()
-       GameTooltip:Hide()
-       
-       -- Only hide if we showed it on hover and not manually toggled
-       if TWRA.HideOSD and TWRA.OSD and TWRA.OSD.hoveredFromMinimap and not TWRA.OSD.manuallyToggled then
-           TWRA:HideOSD()
-           TWRA.OSD.hoveredFromMinimap = false
-       end
-       
-       -- Restore previous state if needed
-       if this.previousOSDState ~= nil then
-           if this.previousOSDState and not TWRA.OSD.isVisible then
-               TWRA:ShowOSDPermanent()
-           end
-           this.previousOSDState = nil
-       end
-   end)
-   ```
+### Phase 1: Core Frame Structure
 
-7. **Group Change Detection**
-   - Create a function to track player's current assignments
-   ```lua
-   function TWRA:StoreCurrentAssignments()
-       self.previousAssignments = {
-           personal = {},
-           group = {}
-       }
-       
-       -- Check if we have the needed data
-       if not self.assignments or not self.assignments.playerAssignments then
-           return
-       end
-       
-       -- Store current personal assignments
-       for i, assignment in ipairs(self.assignments.playerAssignments) do
-           table.insert(self.previousAssignments.personal, {
-               role = assignment.role,
-               target = assignment.target,
-               icon = assignment.icon,
-               tanks = assignment.tanks or {}
-           })
-       end
-       
-       -- Store current group assignments
-       if self.assignments.groupAssignments then
-           for i, assignment in ipairs(self.assignments.groupAssignments) do
-               table.insert(self.previousAssignments.group, {
-                   role = assignment.role,
-                   target = assignment.target,
-                   icon = assignment.icon,
-                   tanks = assignment.tanks or {}
-               })
-           end
-       end
-   end
-   ```
-   
-   - Modify `OnGroupChanged` function to compare assignments and show OSD
-   ```lua
-   function TWRA:OnGroupChanged()
-       -- First store the current group number
-       local oldGroup = self.playerGroup or 0
-       local newGroup = 0
-       
-       -- Get player's current raid group
-       if GetNumRaidMembers() > 0 then
-           for i = 1, GetNumRaidMembers() do
-               local name, _, subgroup = GetRaidRosterInfo(i)
-               if name == UnitName("player") then
-                   newGroup = subgroup
-                   break
-               end
-           end
-       end
-       
-       -- Store new group
-       self.playerGroup = newGroup
-       
-       -- If group didn't change, no need to continue
-       if oldGroup == newGroup then
-           return
-       end
-       
-       -- Process current assignments for the new group
-       self:BuildPlayerAssignments()
-       
-       -- Check if there are new assignments
-       local hasNewAssignments = false
-       if self.assignments and self.assignments.playerAssignments and 
-          table.getn(self.assignments.playerAssignments) > 0 then
-           if not self.previousAssignments or 
-              not self.previousAssignments.personal or 
-              table.getn(self.previousAssignments.personal) == 0 then
-               -- No previous assignments but we have some now
-               hasNewAssignments = true
-           else
-               -- Compare with previous assignments to see if they're different
-               hasNewAssignments = not self:AreAssignmentsEqual(
-                   self.assignments.playerAssignments,
-                   self.previousAssignments.personal
-               )
-           end
-       end
-       
-       -- Only show OSD if we have new assignments
-       if hasNewAssignments then
-           -- Show the OSD with assignments
-           self:ShowOSD(self.OSD.duration)
-       end
-       
-       -- Store current assignments for next comparison
-       self:StoreCurrentAssignments()
-   end
-   ```
-   
-   - Add helper function to compare assignments
-   ```lua
-   function TWRA:AreAssignmentsEqual(assignments1, assignments2)
-       if not assignments1 or not assignments2 then
-           return false
-       end
-       
-       if table.getn(assignments1) ~= table.getn(assignments2) then
-           return false
-       end
-       
-       -- Simple comparison - just check if role and target are the same
-       for i, assignment1 in ipairs(assignments1) do
-           local found = false
-           for _, assignment2 in ipairs(assignments2) do
-               if assignment1.role == assignment2.role and
-                  assignment1.target == assignment2.target then
-                   found = true
-                   break
-               end
-           end
-           if not found then
-               return false
-           end
-       end
-       
-       return true
-   end
-   ```
+1. Create the base OSD frame with proper styling
+2. Implement pooled element system for UI components
+3. Add show/hide/toggle functions with duration timer
+4. Make frame movable/positionable when unlocked
 
-8. **OSD Toggle Function Update**
-   - Modify `ToggleOSD` to track manual toggle state
-   ```lua
-   function TWRA:ToggleOSD()
-       -- Make sure OSD is initialized
-       if not self.OSD then
-           self:InitOSD()
-       end
-       
-       if self.OSD.isVisible then
-           self:HideOSD()
-           self.OSD.manuallyToggled = false
-       else
-           self:ShowOSDPermanent()
-           self.OSD.manuallyToggled = true
-           self.OSD.hoveredFromMinimap = false  -- Reset hover state
-       end
-       
-       return self.OSD.isVisible
-   end
-   ```
+### Phase 2: Assignment Display
 
-## Migration Notes
-- `OSDContent.lua` will be deprecated
-- Data will be generated by `DataProcessing.lua` functions during import
-- OSD will update on group changes
+1. Add content processing from assignments data
+2. Generate appropriate formatting for each role type
+3. Create warning display with styling
+4. Implement dynamic sizing based on content
 
-## Implementation Order
-1. Create the core OSD frame structure with reusable elements
-2. Implement the assignment display with role-based formatting
-3. Add progress display mode
-4. Update visibility management with auto-hide timer
-5. Add minimap hover functionality
-6. Implement group change detection
-7. Test with various assignments and scenarios
+### Phase 3: Progress Display
+
+1. Create progress bar and text elements
+2. Add handlers for sync progress updates
+3. Implement mode switching between assignments/progress
+4. Connect to data synchronization system
+
+### Phase 4: Enhanced Visibility
+
+1. Add OnUpdate handler for auto-hide timer
+2. Implement minimap button hover functionality
+3. Connect to navigation events for auto-show
+4. Handle manual toggle state persistence
+
+### Phase 5: Group Change Awareness (Lower Priority)
+
+1. Create system to store current assignments
+2. Add delayed check after group composition changes
+3. Compare assignments to determine if display is needed
+4. Show OSD only when relevant assignments change
+
+## Technical Notes
+
+1. **Element Reuse:**
+   - Create helper functions for getting pooled elements
+   - Reset all pools when changing display mode
+   - Only create new elements when necessary
+
+2. **OnUpdate Handler:**
+   - Use for smooth auto-hide timer countdown
+   - Reset timer when new content is displayed
+   - Skip timer checks when manually toggled
+
+3. **Group Change Detection:**
+   - Don't track specific group numbers - not necessary
+   - Let DataProcessing handle updating the assignments first
+   - Focus on comparing assignment content rather than group membership
+   - Keep implementation simple - this is a nice-to-have feature
+
+4. **Existing Options Integration:**
+   - Use the existing OSD options already being saved/loaded
+   - Respect user configuration for enabled/disabled state
+   - Honor scale, position, and duration settings
+
+5. **Data Source:**
+   - DataProcessing module already handles populating OSD assignments
+   - No need to reimplement this logic, just consume the data
+
+
+

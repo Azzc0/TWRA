@@ -9,6 +9,7 @@
 core\Debug.lua
 core\Constants.lua
 core\Utils.lua
+core\Events.lua
 core\Base64.lua
 core\ImportDiagnostic.lua
 Example.lua
@@ -22,7 +23,6 @@ ui\UIUtils.lua
 ui\Frame.lua
 ui\OSD.lua
 ui\OSDContent.lua
-ui\OSDNewFormat.lua
 ui\Options.lua
 
 # Feature modules
