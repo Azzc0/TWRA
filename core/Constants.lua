@@ -144,6 +144,13 @@ TWRA.CLASS_COORDS = {
     ["DRUID"] = {0.75, 1, 0, 0.25}
 }
 
+-- Add a constant for the class icon texture path
+TWRA.TEXTURES = TWRA.TEXTURES or {
+    CLASS_ICONS = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES",
+    ROLE_ICONS = "Interface\\Icons\\", -- Base path for role icons
+    TARGET_ICONS = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
+}
+
 -- Target marker icon data
 TWRA.ICONS = {
     -- Format: name = {texture, x1, x2, y1, y2}

@@ -38,7 +38,8 @@ function TWRA:InitOptions()
         duration = 2,
         locked = false,
         enabled = true,
-        showOnNavigation = true
+        showOnNavigation = true,
+        anchorPoint = "TOPLEFT"
     }
     
     for key, defaultValue in pairs(osdDefaults) do
@@ -387,11 +388,43 @@ function TWRA:CreateOptionsInMainFrame()
     getglobal(scaleSlider:GetName() .. "Low"):SetText("Small")
     getglobal(scaleSlider:GetName() .. "High"):SetText("Large")
     
+    -- Anchor Point dropdown
+    local anchorDropdown = CreateFrame("Frame", "TWRA_AnchorDropdown", middleColumn, "UIDropDownMenuTemplate")
+    anchorDropdown:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", -15, -20)
+    local anchorLabel = middleColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    anchorLabel:SetPoint("BOTTOMLEFT", anchorDropdown, "TOPLEFT", 20, 5)
+    anchorLabel:SetText("OSD Scaling Anchor Point:")
+    table.insert(self.optionsElements, anchorDropdown)
+    table.insert(self.optionsElements, anchorLabel)
+    
+    -- Initialize the dropdown
+    UIDropDownMenu_SetWidth(anchorDropdown, 150)
+    UIDropDownMenu_SetText(anchorDropdown, TWRA_SavedVariables.options.osd.anchorPoint or "TOPLEFT")
+    
+    -- Dropdown initialization function
+    UIDropDownMenu_Initialize(anchorDropdown, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        local anchorPoints = {"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT", "CENTER"}
+        
+        for _, point in pairs(anchorPoints) do
+            info = UIDropDownMenu_CreateInfo()
+            info.text = point
+            info.value = point
+            info.func = function(self)
+                TWRA_SavedVariables.options.osd.anchorPoint = self.value
+                UIDropDownMenu_SetText(anchorDropdown, self.value)
+                CloseDropDownMenus()
+            end
+            info.checked = (TWRA_SavedVariables.options.osd.anchorPoint == point)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
     -- OSD action buttons
     local testOSDBtn = CreateFrame("Button", nil, middleColumn, "UIPanelButtonTemplate")
     testOSDBtn:SetWidth(80)
     testOSDBtn:SetHeight(22)
-    testOSDBtn:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -15)
+    testOSDBtn:SetPoint("TOPLEFT", anchorDropdown, "BOTTOMLEFT", 0, -15)
     testOSDBtn:SetText("Test")
     table.insert(self.optionsElements, testOSDBtn)
     
@@ -567,6 +600,9 @@ function TWRA:CreateOptionsInMainFrame()
     end
     scaleSlider:SetValue(osdScale)
     getglobal(scaleSlider:GetName() .. "Text"):SetText("Scale: " .. osdScale)
+    
+    -- Anchor Point dropdown
+    UIDropDownMenu_SetText(anchorDropdown, options.osd.anchorPoint or "TOPLEFT")
     
     -- ====================== WIRE UP BEHAVIORS ======================
     
@@ -855,6 +891,25 @@ function TWRA:CreateOptionsInMainFrame()
         end
     end)
     
+    -- Anchor Point dropdown behavior
+    UIDropDownMenu_Initialize(anchorDropdown, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        local anchorPoints = {"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT", "CENTER"}
+        
+        for _, point in pairs(anchorPoints) do
+            info = UIDropDownMenu_CreateInfo()
+            info.text = point
+            info.value = point
+            info.func = function(self)
+                TWRA_SavedVariables.options.osd.anchorPoint = self.value
+                UIDropDownMenu_SetText(anchorDropdown, self.value)
+                CloseDropDownMenus()
+            end
+            info.checked = (TWRA_SavedVariables.options.osd.anchorPoint == point)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
     -- Test OSD button behavior
     testOSDBtn:SetScript("OnClick", function()
         if self.TestOSD then
@@ -1060,7 +1115,8 @@ function TWRA:InitializeSavedOptions()
         duration = 2,
         locked = false,
         enabled = true,
-        showOnNavigation = true
+        showOnNavigation = true,
+        anchorPoint = "TOPLEFT"
     }
     
     for key, value in pairs(osdDefaults) do

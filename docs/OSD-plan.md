@@ -77,171 +77,147 @@ Each row will be formatted based on role type:
 - Class icons from class coordinates in `TWRA.CLASS_COORDS` using texture "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
 - Class colored text for player names - red for missing and grey for offline
 
-## Primary Function - Assignment Display
+## Revised Implementation Approach: Smallest Possible Steps
 
-The OSD will display:
-- Section Title (top)
-- OSD Rows (OSD Assignments & OSD Group Assignments)
-- Warning footer (if any)
+To ensure stability and proper functionality, we'll break down the implementation into much smaller steps than originally planned, focusing on visual appearance first before adding complex logic.
 
-## Secondary Function - Progress Display
+### Phase 0: Visual Prototyping and Testing
 
-During data reception, the OSD will show:
-- "Receiving data" message as header
-- Progress bar with percentage text overlay
-- "Receiving from X" message (if sender is known)
+1. **Create Static Visual Prototype** (No actual data connection)
+   - Create basic OSD frame with proper styling and appearance
+   - Implement static header showing a fixed title
+   - Add 2-3 hardcoded sample rows with different formatting
+   - Add sample warning with proper styling
+   - Test positioning, scaling, and backdrop appearance
+   - Make frame movable and test position saving
+   - Validate visual appearance matches expectations
+   - The frame needs to house three containers
+        - Header
+        - Content
+        - Footer
 
-The same OSD frame will be used, but with different content elements showing/hidden based on mode.
+2. **Basic Controls Testing**
+   - Add show/hide toggle functionality
+   - Test manual movement and position saving
+   - Implement lock/unlock toggle with visual feedback
+   - Test basic scale adjustment
+   - Verify all UI controls behave as expected visually
 
-## Visibility Management
+This phase is crucial to establish the correct visual appearance without adding complexities of data integration or events.
 
-The OSD will follow these visibility rules:
+### Phase 1: Core Frame Structure with Minimal Logic
 
-1. **Auto-show on Navigation:**
-   - Show when navigating to a new section (if `showOnNavigation` is true)
-   - Hide after `duration` seconds (configurable in options)
-   - Don't show if main TWRA frame is visible (except when options panel is open)
+1. **Basic Frame Setup**
+   - Create the main OSD frame with proper styling
+   - Implement show/hide functions with duration timer
+   - Make frame movable/positionable when unlocked
+   - Add settings persistance for position and appearance
 
-2. **Manual Toggle Mode:**
-   - If manually toggled via `ToggleOSD()`, stay visible until manually closed
-   - Set `manuallyToggled` flag to override auto-hide timer
-   - Clear flag when toggled off
+2. **UI Element Pool Foundation**
+   - Create basic element pools structure
+   - Implement helper functions for pooled elements
+   - Test element creation, release, and reuse
 
-3. **Minimap Hover:**
-   - Show when hovering over minimap button
-   - Hide when mouse leaves minimap button (unless manually toggled)
-   - Keep track of previous state with `hoveredFromMinimap` flag
+This phase focuses on having a working frame that can be shown/hidden and positioned correctly, with no connection to real data yet.
 
-4. **Group Change Awareness:**
-   - LOWER PRIORITY FEATURE
-   - When group composition changes, assignments may change
-   - Wait a short period after group change (let DataProcessing update)
-   - Compare new assignments with stored previous assignments
-   - Show OSD only if assignments have actually changed
+### Phase 2: Simple Content Display
 
-## UI Implementation
+1. **Minimal Content Display**
+   - Add header text display for section title
+   - Create basic row layout with simple text
+   - Implement manual content update function
+   - Test content updates through console commands
 
-- Maintain tooltip styling for the frame
-- Implement UI element pools for efficient reuse
-- Prepare for maximum 10 rows and 10 footer items
-- Allow OSD to be movable when unlocked, save position between sessions
+2. **Element Styling**
+   - Implement text color handling
+   - Add background and border styling
+   - Basic icon display without complex logic
 
-### Element Pools
+Focus on getting elements to display correctly with manual testing before connecting to real data sources.
 
-We'll implement UI element pools for efficient reuse:
+### Phase 3: Assignment Display Integration
 
-```lua
-TWRA.OSD.pools = {
-    rows = {},            -- Row frames
-    roleIcons = {},       -- Role icon textures
-    targetIcons = {},     -- Target icon textures
-    classIcons = {},      -- Class icon textures
-    textSegments = {},    -- Text font strings
-    warnings = {},        -- Warning frames
-    notes = {}            -- Note frames
-}
-```
+1. **Real Data Connection**
+   - Process section data for display
+   - Generate appropriate row formatting 
+   - Connect to current section data
+   - Test with various assignment types
 
-### Warning Styling
+2. **Dynamic Content Handling**
+   - Add dynamic sizing based on content
+   - Implement warning display with styling
+   - Handle empty or missing data cases
 
-Warnings will have specific styling:
-- Light red background tint (rgba(0.3, 0.1, 0.1, 0.3))
-- Warning icon (`TWRA.ICONS.Warning`) on the left
-- Red-tinted text
-- Each warning on separate line
+This phase connects the visual elements to actual data but still without automatic events.
 
-## Implementation Priorities
+### Phase 4: Progress Display Implementation
 
-1. **Core Frame Structure** (Phase 1)
-   - Create main OSD frame
-   - Implement element pools system
-   - Basic show/hide functionality
-   - Support for moving and positioning
+1. **Progress UI Elements**
+   - Create progress bar and text elements
+   - Implement visual mode switching
+   - Test progress display with test values
 
-2. **Assignment Display** (Phase 2)
-   - Process and display assignments with proper formatting
-   - Handle role-specific formatting
-   - Implement warnings display
-   - Add dynamic height calculation
+2. **Progress Display Styling**
+   - Style progress bar appearance
+   - Add placeholder text elements
+   - Ensure visual consistency with assignment display
 
-3. **Progress Display** (Phase 3)
-   - Create progress bar element
-   - Implement status text display
-   - Connect to sync system
+This phase focuses solely on the progress display visuals before connecting to actual sync events.
 
-4. **Enhanced Visibility Controls** (Phase 4)
-   - Implement OnUpdate for timer handling
-   - Add minimap button integration
+### Phase 5: Event System Integration
+
+1. **Basic Event Hooks**
    - Connect to navigation events
+   - Implement auto-show/hide based on navigation
+   - Add basic timer for auto-hiding
 
-5. **Group Change Awareness** (Phase 5 - Lower Priority)
-   - Create assignment storage/comparison system
-   - Connect to group change events
-   - Add delayed check and comparison logic
+2. **Advanced Event Integration**
+   - Connect to sync progress events
+   - Add minimap button integration
+   - Implement visibility rules and conditions
 
-## Implementation Approach
+This final phase connects the working visual elements to the event system.
 
-### Phase 1: Core Frame Structure
+## Testing Strategy
 
-1. Create the base OSD frame with proper styling
-2. Implement pooled element system for UI components
-3. Add show/hide/toggle functions with duration timer
-4. Make frame movable/positionable when unlocked
+Each phase will include specific testing strategies:
 
-### Phase 2: Assignment Display
+1. **Visual Testing**
+   - Use screenshots to compare intended vs. actual appearance
+   - Test at different UI scales and resolutions
+   - Verify all elements display correctly
 
-1. Add content processing from assignments data
-2. Generate appropriate formatting for each role type
-3. Create warning display with styling
-4. Implement dynamic sizing based on content
+2. **Functional Testing**
+   - Create specific test commands to trigger each feature
+   - Verify options work correctly
+   - Test edge cases for each phase
 
-### Phase 3: Progress Display
-
-1. Create progress bar and text elements
-2. Add handlers for sync progress updates
-3. Implement mode switching between assignments/progress
-4. Connect to data synchronization system
-
-### Phase 4: Enhanced Visibility
-
-1. Add OnUpdate handler for auto-hide timer
-2. Implement minimap button hover functionality
-3. Connect to navigation events for auto-show
-4. Handle manual toggle state persistence
-
-### Phase 5: Group Change Awareness (Lower Priority)
-
-1. Create system to store current assignments
-2. Add delayed check after group composition changes
-3. Compare assignments to determine if display is needed
-4. Show OSD only when relevant assignments change
+3. **Integration Testing**
+   - Ensure new OSD doesn't interfere with existing functionality
+   - Validate event handling works correctly
+   - Check performance impact
 
 ## Technical Notes
 
-1. **Element Reuse:**
-   - Create helper functions for getting pooled elements
-   - Reset all pools when changing display mode
-   - Only create new elements when necessary
+1. **Testing Commands:**
+   - Create slash commands for testing each phase
+   - For example: `/run TWRA:TestOSDVisual()` to show visual prototype
+   - Use specific commands to test individual features
 
-2. **OnUpdate Handler:**
-   - Use for smooth auto-hide timer countdown
-   - Reset timer when new content is displayed
-   - Skip timer checks when manually toggled
+2. **Isolated Development:**
+   - Test each component in isolation before integration
+   - Create separate test functions for each feature
+   - Document test procedures for each phase
 
-3. **Group Change Detection:**
-   - Don't track specific group numbers - not necessary
-   - Let DataProcessing handle updating the assignments first
-   - Focus on comparing assignment content rather than group membership
-   - Keep implementation simple - this is a nice-to-have feature
+3. **Constant Visual Validation:**
+   - Check visual appearance frequently during development
+   - Ensure all elements follow WoW UI styling
+   - Pay special attention to text readability
 
-4. **Existing Options Integration:**
-   - Use the existing OSD options already being saved/loaded
-   - Respect user configuration for enabled/disabled state
-   - Honor scale, position, and duration settings
-
-5. **Data Source:**
-   - DataProcessing module already handles populating OSD assignments
-   - No need to reimplement this logic, just consume the data
+4. **Integration Planning:**
+   - Plan each integration step carefully
+   - Create verification steps for each integration
+   - Document fallback options if issues occur
 
 
 
