@@ -22,7 +22,8 @@ function TWRA:InitOSD()
         showOnNavigation = true, -- Show OSD when navigating sections (user configurable)
         point = "CENTER",       -- Frame position anchor point (saved between sessions)
         xOffset = 0,            -- X position offset (saved between sessions)
-        yOffset = 100           -- Y position offset (saved between sessions)
+        yOffset = 100,          -- Y position offset (saved between sessions),
+        displayMode = "assignments" -- Current display mode: "assignments" or "progress"
     }
 
     -- Load saved settings if available
@@ -36,6 +37,7 @@ function TWRA:InitOSD()
         self.OSD.enabled = (savedOSD.enabled ~= false) -- Default to true if nil
         self.OSD.showOnNavigation = (savedOSD.showOnNavigation ~= false) -- Default to true if nil
         self.OSD.duration = savedOSD.duration or self.OSD.duration
+        self.OSD.displayMode = savedOSD.displayMode or self.OSD.displayMode
     end
 
     -- Define class colors if they don't exist (for standalone testing)
@@ -145,6 +147,7 @@ function TWRA:GetOSDFrame()
     titleText:SetHeight(25)
     titleText:SetJustifyH("CENTER")
     titleText:SetText("Razorgore the Untamed")
+    titleText:SetTextColor(1, 1, 1) -- Set title text to white
     frame.titleText = titleText
 
     -- Create content container (for assignment rows)
@@ -167,7 +170,18 @@ function TWRA:GetOSDFrame()
     -- Add sample warnings to footer
     self:CreateSampleWarnings(footerContainer)
 
-    -- Calculate total height
+    -- Create progress bar container (positioned directly under header for progress mode)
+    local progressBarContainer = CreateFrame("Frame", nil, frame)
+    progressBarContainer:SetPoint("TOPLEFT", headerContainer, "BOTTOMLEFT", 10, -10)
+    progressBarContainer:SetPoint("TOPRIGHT", headerContainer, "BOTTOMRIGHT", -10, -10)
+    progressBarContainer:SetHeight(25)
+    frame.progressBarContainer = progressBarContainer
+
+    -- Add progress bar
+    self:CreateProgressBar(progressBarContainer)
+    progressBarContainer:Hide() -- Initially hidden
+
+    -- Calculate total height for default display mode
     local totalHeight = headerContainer:GetHeight() + 
                        contentContainer:GetHeight() + 
                        footerContainer:GetHeight() + 
@@ -563,6 +577,9 @@ function TWRA:CreateSampleContent(contentContainer)
         
         parentFrame:SetWidth(neededWidth)
         self:Debug("osd", "Set OSD width to " .. neededWidth .. " pixels (content width: " .. maxContentWidth .. ")")
+        
+        -- Store the calculated max content width for later reuse when switching modes
+        self.OSD.maxContentWidth = neededWidth
     end
     
     contentContainer:SetHeight(yOffset)
@@ -698,6 +715,74 @@ function TWRA:CreateSampleWarnings(footerContainer)
     testString:Hide()
 end
 
+-- Create progress bar for Phase 0
+function TWRA:CreateProgressBar(progressBarContainer)
+    -- Create progress bar background
+    local progressBarBg = progressBarContainer:CreateTexture(nil, "BACKGROUND")
+    progressBarBg:SetTexture(0.1, 0.1, 0.1, 0.8) -- Darker background with higher opacity
+    progressBarBg:SetAllPoints()
+
+    -- Create progress bar fill
+    local progressBarFill = progressBarContainer:CreateTexture(nil, "ARTWORK")
+    -- Use the StatusBar texture for a smoother look
+    progressBarFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    progressBarFill:SetTexCoord(0, 1, 0, 0.25) -- Use just the blue portion of the texture
+    progressBarFill:SetVertexColor(0.0, 0.6, 1.0, 0.8) -- Brighter blue for better visibility
+    progressBarFill:SetPoint("LEFT", progressBarContainer, "LEFT", 0, 0)
+    progressBarFill:SetHeight(progressBarContainer:GetHeight())
+    progressBarFill:SetWidth(0) -- Start at 0% progress
+    progressBarContainer.progressBarFill = progressBarFill
+
+    -- Add a subtle glow effect on top of the bar
+    local progressBarGlow = progressBarContainer:CreateTexture(nil, "OVERLAY")
+    progressBarGlow:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
+    progressBarGlow:SetBlendMode("ADD")
+    progressBarGlow:SetWidth(16)
+    progressBarGlow:SetHeight(progressBarContainer:GetHeight() * 2)
+    progressBarGlow:SetPoint("CENTER", progressBarFill, "RIGHT", 0, 0)
+    progressBarContainer.progressBarGlow = progressBarGlow
+    
+    -- Create a border frame - using 9-slice approach for proper border scaling
+    local borderFrame = CreateFrame("Frame", nil, progressBarContainer)
+    borderFrame:SetFrameStrata("MEDIUM")
+    -- Reduce gap by 5px on all sides (from ±5px to 0px)
+    borderFrame:SetPoint("TOPLEFT", progressBarContainer, "TOPLEFT", 0, 0) 
+    borderFrame:SetPoint("BOTTOMRIGHT", progressBarContainer, "BOTTOMRIGHT", 0, 0)
+    
+    -- Create a proper 9-slice border that scales well
+    local edgeSize = 12
+    borderFrame:SetBackdrop({
+        bgFile = nil,
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", -- Using a border that's designed to tile/scale
+        tile = true,
+        tileSize = 16,
+        edgeSize = edgeSize,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    borderFrame:SetBackdropBorderColor(0.6, 0.6, 0.6, 1.0) -- Slightly silver border
+    progressBarContainer.borderFrame = borderFrame
+    
+    -- Create progress text
+    local progressText = progressBarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    progressText:SetPoint("CENTER", progressBarContainer, "CENTER", 0, 0)
+    progressText:SetText("0% (0/0)")
+    progressText:SetTextColor(1, 1, 1) -- White text
+    progressBarContainer.progressText = progressText
+    
+    -- Create source text below the progress bar
+    local sourceText = progressBarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sourceText:SetPoint("TOP", progressBarContainer, "BOTTOM", 0, -5)
+    sourceText:SetPoint("LEFT", progressBarContainer, "LEFT", 5, 0)
+    sourceText:SetPoint("RIGHT", progressBarContainer, "RIGHT", -5, 0)
+    sourceText:SetText("Getting data from unknown")
+    sourceText:SetHeight(20)
+    sourceText:SetTextColor(1, 1, 1) -- White text
+    progressBarContainer.sourceText = sourceText
+    
+    -- Initially hide the progress bar container
+    progressBarContainer:Hide()
+end
+
 -- Show OSD permanently (no auto-hide)
 function TWRA:ShowOSDPermanent()
     -- Skip if OSD is disabled
@@ -807,6 +892,283 @@ function TWRA:ToggleOSD()
     return self.OSD.isVisible
 end
 
+-- Switch OSD to progress display mode
+function TWRA:SwitchToProgressMode(sourcePlayer)
+    if not self.OSDFrame then
+        return false
+    end
+    
+    -- Update OSD display mode
+    self.OSD.displayMode = "progress"
+    
+    -- Update title text
+    self.OSDFrame.titleText:SetText("Receiving Data")
+    
+    -- Hide the content container (assignments)
+    self.OSDFrame.contentContainer:Hide()
+    
+    -- Hide the warning footer if it exists
+    if self.OSDFrame.footerContainer then
+        self.OSDFrame.footerContainer:Hide()
+    end
+    
+    -- Show and position progress container
+    local progressContainer = self.OSDFrame.progressBarContainer
+    
+    -- Set the width of progress container to exactly match the frame width (minus padding)
+    local progressWidth = 380 -- 400px frame width - 10px padding on each side
+    
+    -- Position the progress bar directly under the header with proper padding
+    progressContainer:ClearAllPoints()
+    progressContainer:SetPoint("TOPLEFT", self.OSDFrame.headerContainer, "BOTTOMLEFT", 10, -10)
+    progressContainer:SetPoint("TOPRIGHT", self.OSDFrame.headerContainer, "BOTTOMRIGHT", -10, -10)
+    progressContainer:SetHeight(25)
+    progressContainer:Show()
+    
+    -- Reset progress to 0
+    self:UpdateProgressBar(0, 0, 0)
+    
+    -- Create or update source text
+    if not progressContainer.sourceText then
+        progressContainer.sourceText = progressContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        progressContainer.sourceText:SetPoint("TOP", progressContainer, "BOTTOM", 0, -5)
+        progressContainer.sourceText:SetPoint("LEFT", progressContainer, "LEFT", 0, 0)
+        progressContainer.sourceText:SetPoint("RIGHT", progressContainer, "RIGHT", 0, 0)
+        progressContainer.sourceText:SetText("Getting data from " .. (sourcePlayer or "unknown"))
+        progressContainer.sourceText:SetHeight(20)
+    else
+        progressContainer.sourceText:SetText("Getting data from " .. (sourcePlayer or "unknown"))
+    end
+    
+    -- Calculate new reduced height for frame
+    local totalHeight = self.OSDFrame.headerContainer:GetHeight() + 
+                       progressContainer:GetHeight() +
+                       20 + -- sourceText height
+                       20   -- total padding
+    
+    -- Always use a fixed width of 400px for the progress display
+    local frameWidth = 400
+                       
+    -- Adjust frame size
+    self.OSDFrame:SetHeight(totalHeight)
+    self.OSDFrame:SetWidth(frameWidth)
+    
+    -- Store the progress width for later use in UpdateProgressBar
+    self.OSD.progressWidth = progressWidth
+    
+    return true
+end
+
+-- Switch OSD to assignment display mode
+function TWRA:SwitchToAssignmentMode(sectionName)
+    if not self.OSDFrame then
+        return false
+    end
+    
+    -- Update OSD display mode
+    self.OSD.displayMode = "assignments"
+    
+    -- Update title text
+    if sectionName then
+        self.OSDFrame.titleText:SetText(sectionName)
+    end
+    
+    -- Show the content container (assignments)
+    self.OSDFrame.contentContainer:Show()
+    
+    -- Show the warning footer if it exists
+    if self.OSDFrame.footerContainer then
+        self.OSDFrame.footerContainer:Show()
+    end
+    
+    -- Hide progress container
+    if self.OSDFrame.progressBarContainer then
+        self.OSDFrame.progressBarContainer:Hide()
+    end
+    
+    -- Recalculate the proper frame height based on content
+    local headerHeight = self.OSDFrame.headerContainer:GetHeight()
+    local contentHeight = self.OSDFrame.contentContainer:GetHeight()
+    local footerHeight = self.OSDFrame.footerContainer:GetHeight()
+    
+    -- Calculate total height with padding
+    local totalHeight = headerHeight + contentHeight + footerHeight + 15  -- 15px total padding (5px between each container)
+    
+    -- Use the stored maximum content width to ensure consistent sizing
+    local frameWidth = self.OSD.maxContentWidth
+    
+    -- Ensure we have a reasonable width if for some reason maxContentWidth is not set
+    if not frameWidth or frameWidth < 400 then
+        frameWidth = 400
+    end
+    
+    -- Apply the calculated dimensions
+    self.OSDFrame:SetHeight(totalHeight)
+    self.OSDFrame:SetWidth(frameWidth)
+    
+    -- Log the resize for debugging
+    self:Debug("osd", "Restored assignment view dimensions: " .. frameWidth .. "x" .. totalHeight)
+    
+    return true
+end
+
+-- Update progress bar with new values
+function TWRA:UpdateProgressBar(progress, current, total)
+    if not self.OSDFrame or not self.OSDFrame.progressBarContainer then
+        return false
+    end
+    
+    local progressContainer = self.OSDFrame.progressBarContainer
+    
+    -- Calculate percentage for display
+    local percent = 0
+    if total > 0 then
+        percent = math.floor((current / total) * 100)
+    end
+    
+    -- Update progress text
+    if progressContainer.progressText then
+        progressContainer.progressText:SetText(percent .. "% (" .. current .. "/" .. total .. ")")
+    end
+    
+    -- Use a fixed container width of 380px for all calculations (400px frame - 20px padding)
+    local containerWidth = 380
+    
+    -- Update progress bar fill
+    if progressContainer.progressBarFill then
+        -- When at 100%, fill exactly to container width, otherwise use percentage
+        if percent >= 100 then
+            progressContainer.progressBarFill:SetWidth(containerWidth)
+        else
+            progressContainer.progressBarFill:SetWidth(containerWidth * (percent / 100))
+        end
+        
+        -- Position the glow at the end of the fill
+        if progressContainer.progressBarGlow then
+            progressContainer.progressBarGlow:SetPoint("CENTER", progressContainer.progressBarFill, "RIGHT", 0, 0)
+        end
+    end
+    
+    return true
+end
+
+-- Test function to simulate receiving data with progress updates
+function TWRA:TestDataOSD(duration, chunks)
+    -- Make sure OSD is initialized
+    if not self.OSD then
+        self:InitOSD()
+    end
+    
+    -- Default values if not specified
+    duration = duration or 5
+    chunks = chunks or 10
+    
+    -- Show OSD and switch to progress mode
+    self:ShowOSDPermanent()
+    self:SwitchToProgressMode("Azzco")
+    
+    -- Cancel any existing progress timer
+    if self.OSD.progressTimer then
+        self:CancelTimer(self.OSD.progressTimer)
+        self.OSD.progressTimer = nil
+    end
+    
+    -- Initialize progress tracking variables
+    self.OSD.startTime = GetTime()
+    self.OSD.duration = duration
+    self.OSD.totalChunks = chunks
+    self.OSD.lastProcessedChunk = 0
+    
+    -- Display initial progress (0%)
+    self:UpdateProgressBar(0, 0, chunks)
+    
+    -- Create a frame for OnUpdate handling to avoid timer issues
+    if not self.OSD.progressFrame then
+        self.OSD.progressFrame = CreateFrame("Frame")
+    end
+    
+    -- Set up the OnUpdate script
+    self.OSD.progressFrame:SetScript("OnUpdate", function()
+        -- Calculate elapsed time
+        local elapsed = GetTime() - self.OSD.startTime
+        
+        -- Calculate what chunk we should be on based on elapsed time
+        local chunkProgress = elapsed / self.OSD.duration * self.OSD.totalChunks
+        local currentChunk = math.min(math.floor(chunkProgress) + 1, self.OSD.totalChunks)
+        
+        -- Only process if we've moved to a new chunk
+        if currentChunk > self.OSD.lastProcessedChunk then
+            -- Debug output
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Processing chunk " .. currentChunk .. "/" .. self.OSD.totalChunks)
+            
+            -- Update progress display
+            self:UpdateProgressBar(currentChunk / self.OSD.totalChunks, currentChunk, self.OSD.totalChunks)
+            
+            -- Update last processed chunk
+            self.OSD.lastProcessedChunk = currentChunk
+            
+            -- If this is the last chunk, schedule cleanup
+            if currentChunk >= self.OSD.totalChunks then
+                -- Stop updates
+                self.OSD.progressFrame:SetScript("OnUpdate", nil)
+                
+                -- Schedule transition back to assignment mode
+                self:ScheduleTimer(function()
+                    if self.OSD.isVisible then
+                        self:SwitchToAssignmentMode("Razorgore the Untamed")
+                        
+                        -- Auto-hide after a delay
+                        self:ScheduleTimer(function()
+                            if self.OSD.isVisible then
+                                self:HideOSD()
+                            end
+                        end, 2)
+                    end
+                end, 1.0)
+            end
+        end
+    end)
+    
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Testing data transfer simulation with " .. chunks .. " chunks over " .. duration .. " seconds")
+    return true
+end
+
+-- Test function to show specific progress bar state without animation
+function TWRA:TestDataOSDChunks(chunks, maxChunks)
+    -- Make sure OSD is initialized
+    if not self.OSD then
+        self:InitOSD()
+    end
+    
+    -- Default values if not specified
+    chunks = chunks or 0
+    maxChunks = maxChunks or 10
+    
+    -- Ensure we don't exceed maximum chunks
+    chunks = math.min(chunks, maxChunks)
+    
+    -- Show OSD and switch to progress mode
+    self:ShowOSDPermanent()
+    self:SwitchToProgressMode("Azzco")
+    
+    -- Cancel any existing progress timer/update
+    if self.OSD.progressTimer then
+        self:CancelTimer(self.OSD.progressTimer)
+        self.OSD.progressTimer = nil
+    end
+    
+    if self.OSD.progressFrame then
+        self.OSD.progressFrame:SetScript("OnUpdate", nil)
+    end
+    
+    -- Update progress display with the specified chunks
+    self:UpdateProgressBar(chunks / maxChunks, chunks, maxChunks)
+    
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Showing progress bar at " .. chunks .. "/" .. maxChunks .. 
+                                  " (" .. math.floor((chunks / maxChunks) * 100) .. "%)")
+    return true
+end
+
 -- Test function to show the visual prototype
 function TWRA:TestOSDVisual()
     -- Make sure OSD is initialized
@@ -830,6 +1192,21 @@ SlashCmdList["TWRAOSD"] = function(msg)
         TWRA:HideOSD()
     elseif msg == "toggle" then
         TWRA:ToggleOSD()
+    elseif string.find(msg, "^data%s+%d+%s+%d+$") then
+        -- Animated progress test with duration and chunks
+        local duration, chunks = string.match(msg, "data%s+(%d+)%s+(%d+)")
+        if duration and chunks then
+            TWRA:TestDataOSD(tonumber(duration), tonumber(chunks))
+        end
+    elseif string.find(msg, "^chunks%s+%d+%s+%d+$") then
+        -- Static progress display with current and max chunks
+        local chunks, maxChunks = string.match(msg, "chunks%s+(%d+)%s+(%d+)")
+        if chunks and maxChunks then
+            TWRA:TestDataOSDChunks(tonumber(chunks), tonumber(maxChunks))
+        end
+    elseif string.find(msg, "^data") then
+        -- Use default values if no parameters specified
+        TWRA:TestDataOSD()
     end
 end
 
