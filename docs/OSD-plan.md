@@ -97,18 +97,18 @@ To ensure stability and proper functionality, we'll break down the implementatio
         - Footer
 
 2. **Basic Controls Testing**
-   - Add show/hide toggle functionality
-   - Test manual movement and position saving
-   - Implement lock/unlock toggle with visual feedback
-   - Test basic scale adjustment
-   - Verify all UI controls behave as expected visually
+   - [ ] Add show/hide toggle functionality
+   - [ ] Test manual movement and position saving
+   - [ ] Implement lock/unlock toggle with visual feedback
+   - [ ] Test basic scale adjustment
+   - [ ] Verify all UI controls behave as expected visually
 
 This phase is crucial to establish the correct visual appearance without adding complexities of data integration or events.
 
 ### Phase 1: Core Frame Structure with Minimal Logic
 
 1. **Basic Frame Setup**
-   - Create the main OSD frame with proper styling
+   - [ ] Create the main OSD frame with proper styling
    - Implement show/hide functions with duration timer
    - Make frame movable/positionable when unlocked
    - Add settings persistance for position and appearance

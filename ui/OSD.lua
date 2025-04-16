@@ -70,6 +70,36 @@ function TWRA:InitOSD()
         }
     end
 
+    -- Register for events
+    if self.RegisterEvent then
+        self:Debug("osd", "Registering OSD event handlers")
+        
+        -- Register for section navigation events
+        self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
+            self:Debug("osd", "SECTION_CHANGED event received: " .. sectionName)
+            if self.ShouldShowOSD and self:ShouldShowOSD() then
+                -- Update content with real data from the current section
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+                -- Show the OSD
+                self:ShowOSD()
+            end
+        end, "OSD")
+        
+        -- Register for group roster updates
+        self:RegisterEvent("GROUP_ROSTER_UPDATED", function()
+            self:Debug("osd", "GROUP_ROSTER_UPDATED event received")
+            -- Only update OSD if it's already visible
+            if self.OSD and self.OSD.isVisible then
+                if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+                    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                    local currentIndex = self.navigation.currentIndex
+                    local totalSections = table.getn(self.navigation.handlers)
+                    self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+                end
+            end
+        end, "OSD")
+    end
+
     -- Mark as initialized
     self.OSD.initialized = true
     self:Debug("osd", "OSD system initialized")
@@ -493,7 +523,7 @@ function TWRA:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, pla
         if t < table.getn(tanks) then
             local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
-            ampText:SetText("& ")
+            ampText:SetText("&")
             ampText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
             
             -- Add ampersand width to total
@@ -588,7 +618,7 @@ function TWRA:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, tar
                 if t < table.getn(tanks) then
                     local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
                     ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
-                    ampText:SetText("& ")
+                    ampText:SetText("&")
                     ampText:SetTextColor(0.82, 0.82, 0.82)
                     
                     rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
@@ -611,9 +641,9 @@ end
 function TWRA:CreateSampleWarnings(footerContainer)
     -- Sample warnings to display
     local warnings = {
-        "Watch for egg explosion! This is a very long warning that demonstrates how warnings appear in the OSD.",
-        "Interrupt Fireball! The raid will wipe if you fail to do this properly.",
-        "Tanks need to rotate when stacks reach 5. Call for taunt in Discord."
+        -- "Watch for egg explosion! This is a very long warning that demonstrates how warnings appear in the OSD.",
+        -- "Interrupt Fireball! The raid will wipe if you fail to do this properly.",
+        -- "Tanks need to rotate when stacks reach 5. Call for taunt in Discord."
     }
     
     -- Height of each warning row and spacing
@@ -774,6 +804,376 @@ function TWRA:CreateProgressBar(progressBarContainer)
     
     -- Initially hide the progress bar container
     progressBarContainer:Hide()
+end
+
+-- Create content using real data from the current section
+function TWRA:CreateContent(contentContainer)
+    self:Debug("osd", "Creating OSD content from real data")
+    
+    -- Store collections for reuse
+    contentContainer.rowFrames = {}
+    contentContainer.roleIcons = {}
+    contentContainer.roleFontStrings = {}
+    contentContainer.targetIcons = {}
+    contentContainer.targetFontStrings = {}
+    contentContainer.tanksFontStrings = {}
+    
+    -- Get current section data
+    local currentSection = nil
+    local currentSectionData = nil
+    
+    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+        currentSection = self.navigation.handlers[self.navigation.currentIndex]
+        
+        -- Find section data
+        if currentSection and TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+           TWRA_SavedVariables.assignments.data then
+            for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+                if section["Section Name"] == currentSection then
+                    currentSectionData = section
+                    break
+                end
+            end
+        end
+    end
+    
+    -- If no section data found, use sample content
+    if not currentSectionData then
+        self:Debug("osd", "No section data found, using sample content")
+        return self:CreateSampleContent(contentContainer)
+    end
+    
+    -- Get player info
+    local playerInfo = currentSectionData["Section Player Info"]
+    if not playerInfo then
+        self:Debug("osd", "No player info found in section, using sample content")
+        return self:CreateSampleContent(contentContainer)
+    end
+    
+    -- Collect assignments from section data
+    local osdAssignments = playerInfo["OSD Assignments"] or {}
+    local osdGroupAssignments = playerInfo["OSD Group Assignments"] or {}
+    
+    -- Combine individual and group assignments
+    local allAssignments = {}
+    for _, assignment in ipairs(osdAssignments) do
+        table.insert(allAssignments, assignment)
+    end
+    for _, assignment in ipairs(osdGroupAssignments) do
+        table.insert(allAssignments, assignment)
+    end
+    
+    -- If no assignments, use sample content
+    if table.getn(allAssignments) == 0 then
+        self:Debug("osd", "No assignments found in section data, using sample content")
+        return self:CreateSampleContent(contentContainer)
+    end
+    
+    -- Get player status for all players (in raid and online status)
+    local playerData = {}
+    local playerStatus = {}
+    
+    -- Loop through raid members to get class and status info
+    for i = 1, GetNumRaidMembers() do
+        local name, _, _, _, class, _, _, online = GetRaidRosterInfo(i)
+        if name then
+            playerData[name] = class
+            playerStatus[name] = {inRaid = true, online = online}
+        end
+    end
+    
+    -- Loop through party members if not in a raid
+    if GetNumRaidMembers() == 0 then
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            local _, class = UnitClass("party"..i)
+            if name then
+                playerData[name] = class
+                playerStatus[name] = {inRaid = true, online = UnitIsConnected("party"..i)}
+            end
+        end
+        
+        -- Add player's own info
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        playerData[playerName] = playerClass
+        playerStatus[playerName] = {inRaid = true, online = true}
+    end
+    
+    local yOffset = 0
+    local rowHeight = 20 -- Increased row height to accommodate class icons
+    
+    -- Calculate the maximum content width needed
+    local maxContentWidth = 400 -- Minimum width
+    
+    for i, assignment in ipairs(allAssignments) do
+        -- Extract data from assignment
+        local role = assignment[1]
+        local icon = assignment[2]
+        local target = assignment[3]
+        local tanks = {}
+        
+        -- Collect tanks (indices 4 and beyond)
+        for j = 4, table.getn(assignment) do
+            table.insert(tanks, assignment[j])
+        end
+        
+        -- Determine role type for different display formats
+        local roleType = "other"
+        if role == "Tank" then
+            roleType = "tank"
+        elseif role == "Heal" then
+            roleType = "healer"
+        end
+        
+        -- Create row frame
+        local rowFrame = CreateFrame("Frame", nil, contentContainer)
+        rowFrame:SetPoint("TOPLEFT", contentContainer, "TOPLEFT", 5, -yOffset)
+        rowFrame:SetPoint("TOPRIGHT", contentContainer, "TOPRIGHT", -5, -yOffset)
+        rowFrame:SetHeight(rowHeight)
+        contentContainer.rowFrames[i] = rowFrame
+        
+        -- Create role icon and role text
+        local roleIcon, roleFontString = self:CreateRowBaseElements(rowFrame, role)
+        contentContainer.roleIcons[i] = roleIcon
+        contentContainer.roleFontStrings[i] = roleFontString
+        
+        local rowWidth = 0
+        -- Different layout based on role type
+        if roleType == "healer" then
+            rowWidth = self:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, playerData, playerStatus)
+        else
+            rowWidth = self:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
+        end
+        
+        -- Check if this row is wider than our current max
+        if rowWidth > maxContentWidth then
+            maxContentWidth = rowWidth
+            self:Debug("osd", "New max width from row #" .. i .. ": " .. rowWidth)
+        end
+        
+        yOffset = yOffset + rowHeight + 2
+    end
+    
+    local parentFrame = contentContainer:GetParent()
+    if parentFrame then
+        local currentWidth = parentFrame:GetWidth()
+        local neededWidth = maxContentWidth
+        
+        neededWidth = math.max(neededWidth, 400)
+        
+        parentFrame:SetWidth(neededWidth)
+        self:Debug("osd", "Set OSD width to " .. neededWidth .. " pixels (content width: " .. maxContentWidth .. ")")
+        
+        -- Store the calculated max content width for later reuse when switching modes
+        self.OSD.maxContentWidth = neededWidth
+    end
+    
+    contentContainer:SetHeight(yOffset)
+    
+    self:Debug("osd", "Created real content with " .. table.getn(allAssignments) .. " assignments")
+end
+
+-- Create warnings using real data from the current section
+function TWRA:CreateWarnings(footerContainer)
+    self:Debug("osd", "Creating warnings from real data")
+    
+    -- Clear existing warnings first
+    footerContainer:SetHeight(0)
+    local children = {footerContainer:GetChildren()}
+    for _, child in ipairs(children) do
+        child:Hide()
+    end
+    
+    -- Clear existing textures
+    local textures = {footerContainer:GetRegions()}
+    for _, texture in ipairs(textures) do
+        texture:Hide()
+    end
+    
+    -- Get current section data
+    local currentSection = nil
+    local currentSectionData = nil
+    
+    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+        currentSection = self.navigation.handlers[self.navigation.currentIndex]
+        
+        -- Find section data
+        if currentSection and TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+           TWRA_SavedVariables.assignments.data then
+            for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+                if section["Section Name"] == currentSection then
+                    currentSectionData = section
+                    break
+                end
+            end
+        end
+    end
+    
+    -- If no section data found, use sample warnings
+    if not currentSectionData then
+        self:Debug("osd", "No section data found, using sample warnings")
+        return self:CreateSampleWarnings(footerContainer)
+    end
+    
+    -- Get metadata
+    local metadata = currentSectionData["Section Metadata"]
+    if not metadata then
+        self:Debug("osd", "No metadata found in section, using sample warnings")
+        return self:CreateSampleWarnings(footerContainer)
+    end
+    
+    -- Get warnings
+    local warnings = metadata["Warning"] or {}
+    
+    -- If no warnings, just return with empty footer
+    if table.getn(warnings) == 0 then
+        self:Debug("osd", "No warnings found in section metadata")
+        return true
+    end
+    
+    -- Height of each warning row and spacing
+    local warningRowHeight = 20
+    local rowSpacing = 1 -- 1px spacing between warning rows
+    local totalWarningHeight = 0
+    
+    -- Create a test font string to calculate text widths accurately
+    local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    testString:Hide() -- Keep it invisible
+    
+    -- Calculate fixed parameters for text fitting once
+    local parentFrame = footerContainer:GetParent()
+    local containerWidth = parentFrame:GetWidth() or 400
+    local iconWidth = 16
+    local leftPadding = 5
+    local iconTextGap = 5
+    local rightPadding = 5
+    local availableWidth = containerWidth - iconWidth - leftPadding - iconTextGap - rightPadding
+    
+    -- Helper function to create a single warning row
+    local function createWarningRow(warningText, yOffset)
+        -- Create background
+        local warningBg = footerContainer:CreateTexture(nil, "BACKGROUND")
+        warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Red background
+        warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
+        warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
+        warningBg:SetHeight(warningRowHeight)
+        
+        -- Create warning icon
+        local warningIcon = footerContainer:CreateTexture(nil, "OVERLAY")
+        local iconInfo = {"Interface\\GossipFrame\\AvailableQuestIcon", 0, 1, 0, 1}
+        warningIcon:SetTexture(iconInfo[1])
+        warningIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+        warningIcon:SetWidth(16)
+        warningIcon:SetHeight(16)
+        warningIcon:SetPoint("LEFT", warningBg, "LEFT", leftPadding, 0)
+        
+        -- Create warning text
+        local warnText = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        warnText:SetPoint("LEFT", warningIcon, "RIGHT", iconTextGap, 0)
+        warnText:SetPoint("RIGHT", warningBg, "RIGHT", -rightPadding, 0)
+        warnText:SetHeight(warningRowHeight)
+        warnText:SetJustifyH("LEFT")
+        
+        -- Measure text and truncate if needed
+        testString:SetText(warningText)
+        local fullTextWidth = testString:GetStringWidth()
+        
+        -- Truncate text if it's too long using simpler approach
+        if fullTextWidth > availableWidth then
+            -- Calculate approximate character width
+            local avgCharWidth = fullTextWidth / string.len(warningText)
+            -- Estimate how many characters will fit
+            local fitChars = math.floor(availableWidth / avgCharWidth) - 3 -- leave room for ellipsis
+            -- Apply upper limit to ensure we don't go out of bounds
+            fitChars = math.min(fitChars, string.len(warningText))
+            
+            local truncatedText = string.sub(warningText, 1, fitChars) .. "..."
+            warnText:SetText(truncatedText)
+        else
+            warnText:SetText(warningText)
+        end
+        
+        -- Set text color
+        warnText:SetTextColor(1, 0.7, 0.7) -- Light red for warnings
+        
+        return warningRowHeight + rowSpacing
+    end
+    
+    -- Create all warning rows
+    for _, warningText in ipairs(warnings) do
+        local rowHeight = createWarningRow(warningText, totalWarningHeight)
+        totalWarningHeight = totalWarningHeight + rowHeight
+    end
+    
+    -- Set footer height based on all warnings (subtract the last spacing)
+    if totalWarningHeight > 0 then
+        totalWarningHeight = totalWarningHeight - rowSpacing -- Remove the last spacing
+    end
+    footerContainer:SetHeight(totalWarningHeight)
+    
+    -- Clean up the test string
+    testString:Hide()
+    
+    self:Debug("osd", "Created warnings container with " .. table.getn(warnings) .. " warnings")
+    return true
+end
+
+-- Update OSD content with current section data
+function TWRA:UpdateOSDContent(sectionName, currentIndex, totalSections)
+    self:Debug("osd", "Updating OSD content for section: " .. (sectionName or "unknown"))
+    
+    -- Get or create the OSD frame
+    local frame = self:GetOSDFrame()
+    if not frame then
+        self:Debug("error", "Failed to get OSD frame")
+        return
+    end
+    
+    -- Update title text - use the currentSectionName from saved variables if available
+    if frame.titleText then
+        local sectionTitle = sectionName
+        
+        -- Try to get proper section name from saved variables
+        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+           TWRA_SavedVariables.assignments.currentSectionName then
+            sectionTitle = TWRA_SavedVariables.assignments.currentSectionName
+            self:Debug("osd", "Using saved currentSectionName for title: " .. sectionTitle)
+        end
+        
+        frame.titleText:SetText(sectionTitle)
+    end
+    
+    -- Update content with real data if containers exist
+    if frame.contentContainer then
+        -- Clear existing content (release all child elements)
+        for _, rowFrame in pairs(frame.contentContainer.rowFrames or {}) do
+            rowFrame:Hide()
+        end
+        frame.contentContainer.rowFrames = {}
+        
+        -- Generate new content
+        self:CreateContent(frame.contentContainer)
+    end
+    
+    -- Update warnings with real data
+    if frame.footerContainer then
+        -- Clear existing warnings
+        self:CreateWarnings(frame.footerContainer)
+    end
+    
+    -- Recalculate frame height
+    local headerHeight = frame.headerContainer and frame.headerContainer:GetHeight() or 0
+    local contentHeight = frame.contentContainer and frame.contentContainer:GetHeight() or 0
+    local footerHeight = frame.footerContainer and frame.footerContainer:GetHeight() or 0
+    
+    -- Calculate total height with padding
+    local totalHeight = headerHeight + contentHeight + footerHeight + 15  -- 15px total padding
+    
+    frame:SetHeight(totalHeight)
+    
+    self:Debug("osd", "Updated OSD content with real data")
+    return true
 end
 
 -- Show OSD permanently (no auto-hide)
