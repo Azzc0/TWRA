@@ -47,8 +47,16 @@ function TWRA:InitOSD()
         -- Register for section navigation events
         self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
             self:Debug("osd", "SECTION_CHANGED event received: " .. sectionName)
+            
+            -- Always update the OSD content if it's currently visible
+            if self.OSD.isVisible and self.OSDFrame and self.OSDFrame:IsShown() then
+                self:Debug("osd", "OSD is visible, updating content regardless of view state")
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+            end
+            
+            -- Separately determine if we should show the OSD (new or existing)
             if self.ShouldShowOSD and self:ShouldShowOSD() then
-                -- Update content with real data from the current section
+                -- Update content (in case OSD wasn't already visible)
                 self:UpdateOSDContent(sectionName, currentIndex, totalSections)
                 -- Show the OSD
                 self:ShowOSD()
@@ -865,6 +873,13 @@ function TWRA:CreateWarnings(footerContainer)
         warningIcon:SetHeight(16)
         warningIcon:SetPoint("LEFT", warningBg, "LEFT", leftPadding, 0)
         
+        -- Process warning text for item links
+        local processedText = warningText
+        if self.Items and self.Items.ProcessText then
+            processedText = self.Items:ProcessText(warningText)
+            self:Debug("osd", "Processed warning text for item links")
+        end
+        
         -- Create warning text
         local warnText = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         warnText:SetPoint("LEFT", warningIcon, "RIGHT", iconTextGap, 0)
@@ -873,26 +888,56 @@ function TWRA:CreateWarnings(footerContainer)
         warnText:SetJustifyH("LEFT")
         
         -- Measure text and truncate if needed
-        testString:SetText(warningText)
+        testString:SetText(processedText)
         local fullTextWidth = testString:GetStringWidth()
         
         -- Truncate text if it's too long using simpler approach
         if fullTextWidth > availableWidth then
             -- Calculate approximate character width
-            local avgCharWidth = fullTextWidth / string.len(warningText)
+            local avgCharWidth = fullTextWidth / string.len(processedText)
             -- Estimate how many characters will fit
             local fitChars = math.floor(availableWidth / avgCharWidth) - 3 -- leave room for ellipsis
             -- Apply upper limit to ensure we don't go out of bounds
-            fitChars = math.min(fitChars, string.len(warningText))
+            fitChars = math.min(fitChars, string.len(processedText))
             
-            local truncatedText = string.sub(warningText, 1, fitChars) .. "..."
+            local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
             warnText:SetText(truncatedText)
         else
-            warnText:SetText(warningText)
+            warnText:SetText(processedText)
         end
         
         -- Set text color
         warnText:SetTextColor(1, 0.7, 0.7) -- Light red for warnings
+        
+        -- Make the row clickable to announce to raid
+        local clickArea = CreateFrame("Button", nil, footerContainer)
+        clickArea:SetAllPoints(warningBg)
+        clickArea:SetScript("OnEnter", function()
+            warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Highlight on hover
+            GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Click to announce to raid")
+            GameTooltip:Show()
+        end)
+        
+        clickArea:SetScript("OnLeave", function()
+            warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Original color
+            GameTooltip:Hide()
+        end)
+        
+        clickArea:SetScript("OnClick", function()
+            -- Announce the warning with properly processed item links
+            SendChatMessage(warningText, "RAID")
+            
+            -- Visual feedback
+            warningBg:SetTexture(0.7, 0.1, 0.1, 0.7)
+            self:ScheduleTimer(function()
+                if clickArea:IsMouseOver() then
+                    warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Hover color
+                else
+                    warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Original color
+                end
+            end, 0.2)
+        end)
         
         return warningRowHeight + rowSpacing
     end
@@ -1407,12 +1452,15 @@ function TWRA:ShouldShowOSD()
         return false
     end
     
-    -- If showOnNavigation is enabled, return true
-    if self.OSD.showOnNavigation then
-        return true
+    -- If showOnNavigation is disabled, only respect the frame visibility
+    if not self.OSD.showOnNavigation then
+        return not self.mainFrame or not self.mainFrame:IsShown()
     end
     
-    -- Show OSD when main frame isn't visible or we're in options view
+    -- Show OSD when:
+    -- 1. Main frame isn't visible, OR
+    -- 2. We're in options view
+    -- This way, navigating with the main frame open and in main view won't show the OSD
     return not self.mainFrame or 
            not self.mainFrame:IsShown() or 
            self.currentView == "options"

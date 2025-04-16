@@ -535,12 +535,19 @@ function TWRA:ShowMainView()
             self:Debug("ui", "Updated handlerText to: " .. sectionName)
         end
         
-        -- Display current section directly using FilterAndDisplayHandler instead of DisplayCurrentSection
-        -- This ensures we rebuild the content directly rather than depending on possible hooks
-        local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
-        if currentHandler then
-            self:Debug("ui", "Directly calling FilterAndDisplayHandler for section: " .. currentHandler)
-            self:FilterAndDisplayHandler(currentHandler)
+        -- Check if we have a pending handler that was deferred while in options view
+        if self.pendingHandler then
+            self:Debug("ui", "Found pending handler: " .. self.pendingHandler)
+            local handlerToUse = self.pendingHandler
+            self.pendingHandler = nil -- Clear it before using
+            self:FilterAndDisplayHandler(handlerToUse)
+        else
+            -- Display current section using the normal process
+            local currentHandler = self.navigation.handlers[self.navigation.currentIndex]
+            if currentHandler then
+                self:Debug("ui", "Directly calling FilterAndDisplayHandler for section: " .. currentHandler)
+                self:FilterAndDisplayHandler(currentHandler)
+            end
         end
     else
         self:Debug("error", "No handlers available to display in ShowMainView")
@@ -649,10 +656,22 @@ function TWRA:NavigateToSection(index, source)
     return true
 end
 
--- Replace FilterAndDisplayHandler to use event system
+-- Replace FilterAndDisplayHandler to use event system and respect view state
 function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Debug entry
     self:Debug("ui", "FilterAndDisplayHandler called for section: " .. (currentHandler or "nil"))
+    
+    -- Store current handler for when we switch back to main view
+    self.pendingHandler = currentHandler
+    
+    -- If we're not in the main view, defer creating content until we switch back
+    if self.currentView ~= "main" then
+        self:Debug("ui", "Not in main view - deferring content creation for: " .. currentHandler)
+        return
+    end
+    
+    -- Clear pending handler since we're about to process it
+    self.pendingHandler = nil
     
     -- Get the current section data based on the handler name
     local sectionData = nil
@@ -881,7 +900,7 @@ function TWRA:ClearFooters()
     end
 end
 
--- Make sure CreateFooterElement creates visible elements
+-- Make sure CreateFooterElement creates visible elements with item link support
 function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     self:Debug("ui", "Creating footer element: " .. footerType .. " at y=" .. yOffset)
     
@@ -912,11 +931,17 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         icon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
     end
     
-    -- Create text (don't process with Items module yet to avoid nil errors)
+    -- Process text with item links
+    local processedText = text
+    if TWRA.Items and TWRA.Items.ProcessText then
+        processedText = TWRA.Items:ProcessText(text)
+    end
+    
+    -- Create text element with item link support
     local textElement = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     textElement:SetPoint("TOPLEFT", bg, "TOPLEFT", icon and 32 or 10, -6)  -- More space for larger icon
     textElement:SetPoint("TOPRIGHT", bg, "TOPRIGHT", -10, -4)
-    textElement:SetText(text)
+    textElement:SetText(processedText)
     textElement:SetJustifyH("LEFT")
     
     -- Set text color based on type
@@ -958,11 +983,41 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         GameTooltip:Hide()
     end)
     
-    -- Add the click handler to send to chat
+    -- Add the click handler to send to chat with item links
     clickFrame:SetScript("OnClick", function()
-        -- Call the announce function with the footer text
+        -- Call the announce function with the footer text, processing item links
         self:Debug("ui", "Announcing footer: " .. text)
-        SendChatMessage(text, "RAID")
+        
+        -- Get the appropriate channel for the announcement
+        local channel = "RAID"
+        
+        -- Check if we have a function to determine announcement channel
+        if self.GetAnnouncementChannels then
+            local channelInfo = self:GetAnnouncementChannels()
+            if footerType == "Warning" then
+                channel = channelInfo.warning
+            else
+                channel = channelInfo.assignment
+            end
+        end
+        
+        -- Process the text with item links before sending
+        local announcementText = text
+        if self.Items and self.Items.EnhancedProcessText then
+            -- Use the enhanced processor that does both bracketed items and consumables
+            announcementText = self.Items:EnhancedProcessText(text)
+        elseif self.Items and self.Items.ProcessText then
+            -- Fall back to basic processor if enhanced not available
+            announcementText = self.Items:ProcessText(text)
+        end
+        
+        -- Send the processed text to chat
+        if channel == "CHANNEL" then
+            local channelNum = self:GetAnnouncementChannels().channelNum
+            SendChatMessage(announcementText, channel, nil, channelNum)
+        else
+            SendChatMessage(announcementText, channel)
+        end
         
         -- Visual feedback for click
         if footerType == "Warning" then

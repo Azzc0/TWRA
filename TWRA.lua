@@ -573,26 +573,22 @@ function TWRA:AnnounceAssignments()
         end
     end
     
-    -- Collect warnings for the current section
-    local uniqueWarnings = {}
-    if sectionData["Section Rows"] then
-        for _, rowData in ipairs(sectionData["Section Rows"]) do
-            if rowData[1] == "Warning" and rowData[3] and rowData[3] ~= "" then
-                local warningText = rowData[3]
-                local warningKey = warningText  -- Use the raw text as the key
-                
-                if not uniqueWarnings[warningKey] then
-                    uniqueWarnings[warningKey] = true
-                    table.insert(messageQueue, {
-                        text = warningText,
-                        type = "warning"
-                    })
-                    self:Debug("ui", "Warning message created: " .. warningText)
-                else
-                    self:Debug("ui", "Skipping duplicate warning: " .. warningText)
-                end
+    -- Get warnings from Section Metadata
+    if sectionData["Section Metadata"] and sectionData["Section Metadata"]["Warning"] then
+        local warnings = sectionData["Section Metadata"]["Warning"]
+        
+        -- Add each warning to the message queue
+        for _, warningText in ipairs(warnings) do
+            if warningText and warningText ~= "" then
+                table.insert(messageQueue, {
+                    text = warningText,
+                    type = "warning"
+                })
+                self:Debug("ui", "Warning message added from metadata: " .. warningText)
             end
         end
+    else
+        self:Debug("ui", "No warnings found in section metadata")
     end
     
     -- Now send the messages using the existing function
@@ -650,8 +646,19 @@ function TWRA:SendAnnouncementMessages(messageQueue)
             
             -- Process item links before sending
             local processedText = msg.text
-            if TWRA.Items and TWRA.Items.ProcessText then
-                processedText = TWRA.Items:ProcessText(processedText)
+            if self.Items and self.Items.ProcessText then
+                self:Debug("items", "Processing item links in announcement: " .. msg.text)
+                processedText = self.Items:ProcessText(processedText)
+                
+                -- Also try to process common consumable names
+                if self.Items.ProcessConsumables then
+                    processedText = self.Items:ProcessConsumables(processedText)
+                end
+                
+                -- Log the processed text for debugging
+                if processedText ~= msg.text then
+                    self:Debug("items", "Processed item links: " .. processedText)
+                end
             end
             
             -- Send the actual message
