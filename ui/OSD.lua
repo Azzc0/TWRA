@@ -197,6 +197,33 @@ function TWRA:GetOSDFrame()
     return frame
 end
 
+-- Apply OSD settings to the frame
+function TWRA:UpdateOSDSettings()
+    if not self.OSDFrame then
+        self:Debug("osd", "Cannot update OSD settings: frame doesn't exist")
+        return false
+    end
+    
+    -- Apply scale setting
+    self.OSDFrame:SetScale(self.OSD.scale or 1.0)
+    
+    -- Apply position settings
+    self.OSDFrame:ClearAllPoints()
+    self.OSDFrame:SetPoint(self.OSD.point or "CENTER", UIParent, self.OSD.point or "CENTER", self.OSD.xOffset or 0, self.OSD.yOffset or 100)
+    
+    -- Apply movable/locked state
+    self.OSDFrame:SetMovable(not self.OSD.locked)
+    self.OSDFrame:EnableMouse(not self.OSD.locked)
+    
+    -- Show/hide based on enabled setting
+    if not self.OSD.enabled and self.OSD.isVisible then
+        self:HideOSD()
+    end
+    
+    self:Debug("osd", "OSD settings updated")
+    return true
+end
+
 -- Create sample content for Phase 0
 function TWRA:CreateSampleContent(contentContainer)
     -- Store collections for reuse
