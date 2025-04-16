@@ -708,8 +708,9 @@ function TWRA:HandleDebugCommand(args)
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug guids - List all stored GUIDs and their sections")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug target - Check current target for GUID mapping")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug test - Test AutoNavigate with current target")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug sync - Show sync status")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug ui - Show UI debug info")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug sync - Toggle sync debugging and show status")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug ui - Toggle UI debugging")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug osd - Toggle OSD debugging")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug timestamp - Show timestamp information")
         
         -- Add direct category toggles
@@ -766,27 +767,8 @@ function TWRA:HandleDebugCommand(args)
                 -- Show timestamp information
                 local currentTime = time()
                 DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Timestamp Information|r:")
-                DEFAULT_CHAT_FRAME:AddMessage("  Current timestamp: " .. currentTime)
-                
-                -- Show saved assignment timestamp if available
-                if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp then
-                    local savedTime = TWRA_SavedVariables.assignments.timestamp
-                    DEFAULT_CHAT_FRAME:AddMessage("  Saved assignments timestamp: " .. savedTime)
-                    DEFAULT_CHAT_FRAME:AddMessage("  Age: " .. (currentTime - savedTime) .. " seconds")
-                    
-                    -- Show date in readable format
-                    local dateStr = date("%Y-%m-%d %H:%M:%S", savedTime)
-                    DEFAULT_CHAT_FRAME:AddMessage("  Date/time: " .. dateStr)
-                else
-                    DEFAULT_CHAT_FRAME:AddMessage("  No saved assignments timestamp found")
-                end
-                
-                -- Show current date/time in readable format
-                local currentDateStr = date("%Y-%m-%d %H:%M:%S", currentTime)
                 DEFAULT_CHAT_FRAME:AddMessage("  Current date/time: " .. currentDateStr)
             else
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Timestamps are " .. 
-                    (self.DEBUG.showTimestamps and "enabled" or "disabled"))
             end
         end
         
@@ -794,14 +776,29 @@ function TWRA:HandleDebugCommand(args)
     elseif args[1] == "categories" then
         self:ListDebugCategories()
 
-    -- Handle specific commands from Core.lua help
+    -- Handle specific commands with additional functionality
     elseif args[1] == "nav" then
-        -- Toggle AutoNavigate debugging
+        -- First toggle the nav category
+        self:ToggleDebugCategory("nav")
+        
+        -- Then check if there's an AutoNavigate-specific toggle
         if self.ToggleAutoNavigateDebug then
             self:ToggleAutoNavigateDebug()
-        else
-            self:Debug("error", "AutoNavigate debug toggle not available")
         end
+    elseif args[1] == "sync" then
+        -- Toggle the sync debug category first
+        self:ToggleDebugCategory("sync")
+        
+        -- Then show sync status if the function exists
+        if self.ShowSyncStatus then
+            self:ShowSyncStatus()
+        end
+    elseif args[1] == "osd" then
+        -- Toggle the osd debug category
+        self:ToggleDebugCategory("osd")
+    elseif args[1] == "ui" then
+        -- Toggle the ui debug category
+        self:ToggleDebugCategory("ui")
     elseif args[1] == "list" then
         -- List all debug commands
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug Commands|r:")
@@ -810,8 +807,9 @@ function TWRA:HandleDebugCommand(args)
         DEFAULT_CHAT_FRAME:AddMessage("  guids - List all stored GUIDs and their sections")
         DEFAULT_CHAT_FRAME:AddMessage("  target - Check current target for GUID mapping")
         DEFAULT_CHAT_FRAME:AddMessage("  test - Test AutoNavigate with current target")
-        DEFAULT_CHAT_FRAME:AddMessage("  sync - Show sync status")
-        DEFAULT_CHAT_FRAME:AddMessage("  ui - Show UI debug info")
+        DEFAULT_CHAT_FRAME:AddMessage("  sync - Toggle sync debugging and show status")
+        DEFAULT_CHAT_FRAME:AddMessage("  ui - Toggle UI debugging")
+        DEFAULT_CHAT_FRAME:AddMessage("  osd - Toggle OSD debugging")
         DEFAULT_CHAT_FRAME:AddMessage("  time on/off - Toggle timestamps in debug messages")
         DEFAULT_CHAT_FRAME:AddMessage("  timestamp - Show timestamp information")
     elseif args[1] == "guids" then
@@ -834,13 +832,6 @@ function TWRA:HandleDebugCommand(args)
             self:TestAutoNavigateWithTarget()
         else
             self:Debug("error", "AutoNavigate test function not available")
-        end
-    elseif args[1] == "sync" then
-        -- Show sync status
-        if self.ShowSyncStatus then
-            self:ShowSyncStatus()
-        else
-            self:Debug("error", "Sync status function not available")
         end
     elseif args[1] == "monitor" or args[1] == "mon" then
         -- Toggle message monitoring

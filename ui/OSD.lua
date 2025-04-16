@@ -321,275 +321,23 @@ function TWRA:CreateSampleContent(contentContainer)
         rowFrame:SetHeight(rowHeight)
         contentContainer.rowFrames[i] = rowFrame
         
-        -- Create role icon
-        local roleIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+        -- Create role icon and role text
+        local roleIcon, roleFontString, iconWidth = self:CreateRowBaseElements(rowFrame, role)
         contentContainer.roleIcons[i] = roleIcon
-        
-        -- Get role icon path based on role using TWRA.ROLE_MAPPINGS and TWRA.ROLE_ICONS
-        local iconPath = "Interface\\Icons\\INV_Misc_QuestionMark" -- Default fallback
-        
-        -- Try to find a standardized role name using ROLE_MAPPINGS (case-insensitive)
-        local standardRole = "Misc" -- Default if no match found
-        local lowerRole = string.lower(role)
-        
-        -- Check if the role directly exists in ROLE_ICONS
-        if self.ROLE_ICONS and self.ROLE_ICONS[role] then
-            iconPath = self.ROLE_ICONS[role]
-        -- Otherwise try to map it through ROLE_MAPPINGS
-        elseif self.ROLE_MAPPINGS then
-            -- Check if we have a direct match in the mappings
-            if self.ROLE_MAPPINGS[lowerRole] then
-                standardRole = self.ROLE_MAPPINGS[lowerRole]
-            else
-                -- Try to find a partial match (more expensive but catches variations)
-                for pattern, mappedRole in pairs(self.ROLE_MAPPINGS) do
-                    if string.find(lowerRole, pattern) then
-                        standardRole = mappedRole
-                        break
-                    end
-                end
-            end
-            
-            -- Now get the icon path for the standardized role
-            if self.ROLE_ICONS and self.ROLE_ICONS[standardRole] then
-                iconPath = self.ROLE_ICONS[standardRole]
-            end
-        end
-        
-        roleIcon:SetTexture(iconPath)
-        roleIcon:SetWidth(16)
-        roleIcon:SetHeight(16)
-        roleIcon:SetPoint("LEFT", rowFrame, "LEFT", 5, 0)
-        
-        -- Create role text
-        local roleFontString = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         contentContainer.roleFontStrings[i] = roleFontString
-        roleFontString:SetPoint("LEFT", roleIcon, "RIGHT", 3, 0)
-        roleFontString:SetText(role .. " - ")
-        roleFontString:SetJustifyH("LEFT")
         
+        local rowWidth = 0
         -- Different layout based on role type
         if roleType == "healer" then
-            -- Calculate row width for healers
-            local rowWidth = 0
-            
-            -- Start with left padding + role icon + padding + role text
-            rowWidth = 5 + 16 + 3 + roleFontString:GetStringWidth()
-            
-            local tankElements = {}
-            
-            -- Add all tanks with their class icons
-            for t = 1, table.getn(tanks) do
-                local tankName = tanks[t]
-                local tankClass = playerData[tankName] or nil
-                local inRaid = playerStatus[tankName] and playerStatus[tankName].inRaid or false
-                local isOnline = playerStatus[tankName] and playerStatus[tankName].online or false
-                
-                -- Add tank class icon
-                local tankClassIcon = rowFrame:CreateTexture(nil, "ARTWORK")
-                
-                -- Choose the right icon based on availability
-                if not inRaid then
-                    -- Player not in group - use missing icon
-                    local iconInfo = self.ICONS and self.ICONS.Missing or {"Interface\\Buttons\\UI-GroupLoot-Pass-Up", 0, 1, 0, 1}
-                    tankClassIcon:SetTexture(iconInfo[1])
-                    tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-                else
-                    -- Player in group - use class icon
-                    tankClassIcon:SetTexture(self.TEXTURES.CLASS_ICONS)
-                    -- Set class icon texture coordinates using TWRA.CLASS_COORDS
-                    if self.CLASS_COORDS and self.CLASS_COORDS[tankClass] then
-                        local coords = self.CLASS_COORDS[tankClass]
-                        tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                    end
-                end
-                
-                tankClassIcon:SetWidth(14)
-                tankClassIcon:SetHeight(14)
-                tankClassIcon:SetPoint("LEFT", rowFrame, "LEFT", rowWidth + 2, 0)
-                
-                -- Add tank name with class coloring
-                local tankNameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                tankNameText:SetPoint("LEFT", tankClassIcon, "RIGHT", 2, 0)
-                tankNameText:SetText(tankName)
-                
-                -- Apply class coloring using UIUtils function
-                if self.UI and self.UI.ApplyClassColoring then
-                    self.UI:ApplyClassColoring(tankNameText, nil, tankClass, inRaid, isOnline)
-                else
-                    -- Fallback if UI utils not available
-                    if not inRaid then
-                        -- Player not in group - gray color
-                        tankNameText:SetTextColor(0.5, 0.5, 0.5)
-                    elseif not isOnline then
-                        -- Player in group but offline - red color
-                        tankNameText:SetTextColor(1.0, 0.3, 0.3)
-                    else
-                        -- Player in group and online - use class color
-                        if self.VANILLA_CLASS_COLORS and self.VANILLA_CLASS_COLORS[tankClass] then
-                            local color = self.VANILLA_CLASS_COLORS[tankClass]
-                            tankNameText:SetTextColor(color.r, color.g, color.b)
-                        end
-                    end
-                end
-                
-                -- Store reference to tank elements
-                table.insert(tankElements, {icon = tankClassIcon, name = tankNameText})
-                
-                -- Update width calculation with tank elements
-                rowWidth = rowWidth + 14 + 2 + tankNameText:GetStringWidth()
-                
-                -- Add ampersand if more tanks coming
-                if t < table.getn(tanks) then
-                    local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                    ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
-                    ampText:SetText("& ")
-                    ampText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
-                    
-                    -- Add ampersand width to total
-                    rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
-                end
-            end
-                
-            -- Add "tanking" text after the LAST tank name (not each tank)
-            if table.getn(tankElements) > 0 then
-                local lastTankElement = tankElements[table.getn(tankElements)]
-                local tankingText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                tankingText:SetPoint("LEFT", lastTankElement.name, "RIGHT", 3, 0)
-                tankingText:SetText("tanking")
-                tankingText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
-                
-                -- Update width with tanking text
-                rowWidth = rowWidth + 3 + tankingText:GetStringWidth()
-                    
-                -- Add target raid icon with proper spacing
-                local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
-                local iconInfo = self:GetIconInfo(icon)
-                if iconInfo then
-                    targetIcon:SetTexture(iconInfo[1])
-                    targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-                    targetIcon:SetWidth(16)
-                    targetIcon:SetHeight(16)
-                    targetIcon:SetPoint("LEFT", tankingText, "RIGHT", 5, 0)
-                    
-                    -- Add target text with reduced spacing
-                    local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                    targetText:SetPoint("LEFT", targetIcon, "RIGHT", 2, 0)
-                    targetText:SetText(target)
-                    
-                    -- Update width with icon and target text
-                    rowWidth = rowWidth + 5 + 16 + 2 + targetText:GetStringWidth() + 10 -- Extra padding at end
-                    
-                    -- Check if this row is wider than our current max
-                    if rowWidth > maxContentWidth then
-                        maxContentWidth = rowWidth
-                        self:Debug("osd", "New max width from healer row #" .. i .. ": " .. rowWidth)
-                    end
-                end
-            end
+            rowWidth = self:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, playerData, playerStatus)
         else
-            -- TANK/OTHER FORMAT calculation
-            local rowWidth = 0
-            
-            -- Start with left padding + role icon + padding + role text
-            rowWidth = 5 + 16 + 3 + roleFontString:GetStringWidth()
-            
-            local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
-            local iconInfo = self:GetIconInfo(icon)
-            if iconInfo then
-                targetIcon:SetTexture(iconInfo[1])
-                targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-                targetIcon:SetWidth(16)
-                targetIcon:SetHeight(16)
-                targetIcon:SetPoint("LEFT", roleFontString, "RIGHT", 0, 0)
-                
-                -- Add target text
-                local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                targetText:SetPoint("LEFT", targetIcon, "RIGHT", 2, 0)
-                targetText:SetText(target)
-                
-                -- Add target width to calculation
-                rowWidth = rowWidth + 16 + 2 + targetText:GetStringWidth()
-                
-                if table.getn(tanks) > 0 then
-                    -- Add prefix text based on role (no extra spaces)
-                    local prefixText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                    prefixText:SetPoint("LEFT", targetText, "RIGHT", 3, 0)
-                    if roleType == "tank" then
-                        prefixText:SetText("with")
-                    else
-                        prefixText:SetText("tanked by")
-                    end
-                    prefixText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
-                    
-                    -- Add width of prefix text
-                    rowWidth = rowWidth + 3 + prefixText:GetStringWidth() + 5
-                    
-                    -- Add tank widths
-                    for t = 1, table.getn(tanks) do
-                        local tankName = tanks[t]
-                        local tankClass = playerData[tankName] or nil
-                        local inRaid = playerStatus[tankName] and playerStatus[tankName].inRaid or false
-                        local isOnline = playerStatus[tankName] and playerStatus[tankName].online or false
-                        
-                        -- Add tank class icon + name width
-                        local tankClassIcon = rowFrame:CreateTexture(nil, "ARTWORK")
-                        
-                        if not inRaid then
-                            local iconInfo = self.ICONS and self.ICONS.Missing or {"Interface\\Buttons\\UI-GroupLoot-Pass-Up", 0, 1, 0, 1}
-                            tankClassIcon:SetTexture(iconInfo[1])
-                            tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-                        else
-                            tankClassIcon:SetTexture(self.TEXTURES.CLASS_ICONS)
-                            if self.CLASS_COORDS and self.CLASS_COORDS[tankClass] then
-                                local coords = self.CLASS_COORDS[tankClass]
-                                tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                            end
-                        end
-                        
-                        tankClassIcon:SetWidth(14)
-                        tankClassIcon:SetHeight(14)
-                        tankClassIcon:SetPoint("LEFT", rowFrame, "LEFT", rowWidth, 0)
-                        
-                        local tankNameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                        tankNameText:SetPoint("LEFT", tankClassIcon, "RIGHT", 2, 0)
-                        tankNameText:SetText(tankName)
-                        
-                        if self.UI and self.UI.ApplyClassColoring then
-                            self.UI:ApplyClassColoring(tankNameText, nil, tankClass, inRaid, isOnline)
-                        else
-                            if not inRaid then
-                                tankNameText:SetTextColor(0.5, 0.5, 0.5)
-                            elseif not isOnline then
-                                tankNameText:SetTextColor(1.0, 0.3, 0.3)
-                            else
-                                if self.VANILLA_CLASS_COLORS and self.VANILLA_CLASS_COLORS[tankClass] then
-                                    local color = self.VANILLA_CLASS_COLORS[tankClass]
-                                    tankNameText:SetTextColor(color.r, color.g, color.b)
-                                end
-                            end
-                        end
-                        
-                        rowWidth = rowWidth + 14 + 2 + tankNameText:GetStringWidth()
-                        
-                        if t < table.getn(tanks) then
-                            local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                            ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
-                            ampText:SetText("& ")
-                            ampText:SetTextColor(0.82, 0.82, 0.82)
-                            
-                            rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
-                        end
-                    end
-                end
-                
-                rowWidth = rowWidth + 10
-                
-                if rowWidth > maxContentWidth then
-                    maxContentWidth = rowWidth
-                    self:Debug("osd", "New max width from tank/other row #" .. i .. ": " .. rowWidth)
-                end
-            end
+            rowWidth = self:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
+        end
+        
+        -- Check if this row is wider than our current max
+        if rowWidth > maxContentWidth then
+            maxContentWidth = rowWidth
+            self:Debug("osd", "New max width from row #" .. i .. ": " .. rowWidth)
         end
         
         yOffset = yOffset + rowHeight + 2
@@ -610,6 +358,248 @@ function TWRA:CreateSampleContent(contentContainer)
     end
     
     contentContainer:SetHeight(yOffset)
+end
+
+-- Create the base elements (icon and text) for a row
+function TWRA:CreateRowBaseElements(rowFrame, role)
+    -- Create role icon
+    local roleIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+    
+    -- Get role icon path based on role using TWRA.ROLE_MAPPINGS and TWRA.ROLE_ICONS
+    local iconPath = "Interface\\Icons\\INV_Misc_QuestionMark" -- Default fallback
+    
+    -- Try to find a standardized role name using ROLE_MAPPINGS (case-insensitive)
+    local standardRole = "Misc" -- Default if no match found
+    local lowerRole = string.lower(role)
+    
+    -- Check if the role directly exists in ROLE_ICONS
+    if self.ROLE_ICONS and self.ROLE_ICONS[role] then
+        iconPath = self.ROLE_ICONS[role]
+    -- Otherwise try to map it through ROLE_MAPPINGS
+    elseif self.ROLE_MAPPINGS then
+        -- Check if we have a direct match in the mappings
+        if self.ROLE_MAPPINGS[lowerRole] then
+            standardRole = self.ROLE_MAPPINGS[lowerRole]
+        else
+            -- Try to find a partial match (more expensive but catches variations)
+            for pattern, mappedRole in pairs(self.ROLE_MAPPINGS) do
+                if string.find(lowerRole, pattern) then
+                    standardRole = mappedRole
+                    break
+                end
+            end
+        end
+        
+        -- Now get the icon path for the standardized role
+        if self.ROLE_ICONS and self.ROLE_ICONS[standardRole] then
+            iconPath = self.ROLE_ICONS[standardRole]
+        end
+    end
+    
+    roleIcon:SetTexture(iconPath)
+    roleIcon:SetWidth(16)
+    roleIcon:SetHeight(16)
+    roleIcon:SetPoint("LEFT", rowFrame, "LEFT", 5, 0)
+    
+    -- Create role text
+    local roleFontString = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    roleFontString:SetPoint("LEFT", roleIcon, "RIGHT", 3, 0)
+    roleFontString:SetText(role .. " - ")
+    roleFontString:SetJustifyH("LEFT")
+    
+    return roleIcon, roleFontString, 16 -- Return icon width for calculations
+end
+
+-- Create tank element (class icon + name)
+function TWRA:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, xPosition)
+    -- Add tank class icon
+    local tankClassIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+    
+    -- Choose the right icon based on availability
+    if not inRaid then
+        -- Player not in group - use missing icon
+        local iconInfo = self.ICONS and self.ICONS.Missing or {"Interface\\Buttons\\UI-GroupLoot-Pass-Up", 0, 1, 0, 1}
+        tankClassIcon:SetTexture(iconInfo[1])
+        tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    else
+        -- Player in group - use class icon
+        tankClassIcon:SetTexture(self.TEXTURES.CLASS_ICONS)
+        -- Set class icon texture coordinates using TWRA.CLASS_COORDS
+        if self.CLASS_COORDS and self.CLASS_COORDS[tankClass] then
+            local coords = self.CLASS_COORDS[tankClass]
+            tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+        end
+    end
+    
+    tankClassIcon:SetWidth(14)
+    tankClassIcon:SetHeight(14)
+    tankClassIcon:SetPoint("LEFT", rowFrame, "LEFT", xPosition + 2, 0)
+    
+    -- Add tank name with class coloring
+    local tankNameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    tankNameText:SetPoint("LEFT", tankClassIcon, "RIGHT", 2, 0)
+    tankNameText:SetText(tankName)
+    
+    -- Apply class coloring using UIUtils function
+    if self.UI and self.UI.ApplyClassColoring then
+        self.UI:ApplyClassColoring(tankNameText, nil, tankClass, inRaid, isOnline)
+    else
+        -- Fallback if UI utils not available
+        if not inRaid then
+            -- Player not in group - gray color
+            tankNameText:SetTextColor(0.5, 0.5, 0.5)
+        elseif not isOnline then
+            -- Player in group but offline - red color
+            tankNameText:SetTextColor(1.0, 0.3, 0.3)
+        else
+            -- Player in group and online - use class color
+            if self.VANILLA_CLASS_COLORS and self.VANILLA_CLASS_COLORS[tankClass] then
+                local color = self.VANILLA_CLASS_COLORS[tankClass]
+                tankNameText:SetTextColor(color.r, color.g, color.b)
+            end
+        end
+    end
+    
+    -- Return elements and width calculation
+    return tankClassIcon, tankNameText, 14 + 2 + tankNameText:GetStringWidth()
+end
+
+-- Create healer-specific row layout
+function TWRA:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, playerData, playerStatus)
+    -- Calculate row width for healers
+    local rowWidth = 0
+    
+    -- Start with left padding + role icon + padding + role text
+    rowWidth = 5 + 16 + 3 + roleFontString:GetStringWidth()
+    
+    local tankElements = {}
+    
+    -- Add all tanks with their class icons
+    for t = 1, table.getn(tanks) do
+        local tankName = tanks[t]
+        local tankClass = playerData[tankName] or nil
+        local inRaid = playerStatus[tankName] and playerStatus[tankName].inRaid or false
+        local isOnline = playerStatus[tankName] and playerStatus[tankName].online or false
+        
+        local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
+        
+        -- Store reference to tank elements
+        table.insert(tankElements, {icon = tankClassIcon, name = tankNameText})
+        
+        -- Update width calculation with tank elements
+        rowWidth = rowWidth + elementWidth
+        
+        -- Add ampersand if more tanks coming
+        if t < table.getn(tanks) then
+            local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
+            ampText:SetText("& ")
+            ampText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+            
+            -- Add ampersand width to total
+            rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
+        end
+    end
+        
+    -- Add "tanking" text after the LAST tank name (not each tank)
+    if table.getn(tankElements) > 0 then
+        local lastTankElement = tankElements[table.getn(tankElements)]
+        local tankingText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        tankingText:SetPoint("LEFT", lastTankElement.name, "RIGHT", 3, 0)
+        tankingText:SetText("tanking")
+        tankingText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+        
+        -- Update width with tanking text
+        rowWidth = rowWidth + 3 + tankingText:GetStringWidth()
+            
+        -- Add target raid icon with proper spacing
+        local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+        local iconInfo = self:GetIconInfo(icon)
+        if iconInfo then
+            targetIcon:SetTexture(iconInfo[1])
+            targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+            targetIcon:SetWidth(16)
+            targetIcon:SetHeight(16)
+            targetIcon:SetPoint("LEFT", tankingText, "RIGHT", 5, 0)
+            
+            -- Add target text with reduced spacing
+            local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            targetText:SetPoint("LEFT", targetIcon, "RIGHT", 2, 0)
+            targetText:SetText(target)
+            
+            -- Update width with icon and target text
+            rowWidth = rowWidth + 5 + 16 + 2 + targetText:GetStringWidth() + 10 -- Extra padding at end
+        end
+    end
+    
+    return rowWidth
+end
+
+-- Create tank/other row layout
+function TWRA:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
+    -- TANK/OTHER FORMAT calculation
+    local rowWidth = 0
+    
+    -- Start with left padding + role icon + padding + role text
+    rowWidth = 5 + 16 + 3 + roleFontString:GetStringWidth()
+    
+    local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+    local iconInfo = self:GetIconInfo(icon)
+    if iconInfo then
+        targetIcon:SetTexture(iconInfo[1])
+        targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+        targetIcon:SetWidth(16)
+        targetIcon:SetHeight(16)
+        targetIcon:SetPoint("LEFT", roleFontString, "RIGHT", 0, 0)
+        
+        -- Add target text
+        local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        targetText:SetPoint("LEFT", targetIcon, "RIGHT", 2, 0)
+        targetText:SetText(target)
+        
+        -- Add target width to calculation
+        rowWidth = rowWidth + 16 + 2 + targetText:GetStringWidth()
+        
+        if table.getn(tanks) > 0 then
+            -- Add prefix text based on role (no extra spaces)
+            local prefixText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            prefixText:SetPoint("LEFT", targetText, "RIGHT", 3, 0)
+            if roleType == "tank" then
+                prefixText:SetText("with")
+            else
+                prefixText:SetText("tanked by")
+            end
+            prefixText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+            
+            -- Add width of prefix text
+            rowWidth = rowWidth + 3 + prefixText:GetStringWidth() + 5
+            
+            -- Add tank widths
+            for t = 1, table.getn(tanks) do
+                local tankName = tanks[t]
+                local tankClass = playerData[tankName] or nil
+                local inRaid = playerStatus[tankName] and playerStatus[tankName].inRaid or false
+                local isOnline = playerStatus[tankName] and playerStatus[tankName].online or false
+                
+                local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
+                
+                rowWidth = rowWidth + elementWidth
+                
+                if t < table.getn(tanks) then
+                    local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                    ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
+                    ampText:SetText("& ")
+                    ampText:SetTextColor(0.82, 0.82, 0.82)
+                    
+                    rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
+                end
+            end
+        end
+        
+        rowWidth = rowWidth + 10
+    end
+    
+    return rowWidth
 end
 
 -- Helper function to get icon information
@@ -635,26 +625,25 @@ function TWRA:CreateSampleWarnings(footerContainer)
     local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     testString:Hide() -- Keep it invisible
     
-    -- Get the container width ONCE - use parent width to ensure consistency
+    -- Calculate fixed parameters for text fitting once
     local parentFrame = footerContainer:GetParent()
     local containerWidth = parentFrame:GetWidth() or 400
-    self:Debug("osd", "Footer container width: " .. containerWidth)
-    
-    -- Calculate fixed parameters for text fitting - do this once
-    local iconWidth = 16 -- icon width
-    local leftPadding = 5 -- padding left of icon
-    local iconTextGap = 5 -- gap between icon and text
-    local rightPadding = 5 -- right padding
+    local iconWidth = 16
+    local leftPadding = 5
+    local iconTextGap = 5
+    local rightPadding = 5
     local availableWidth = containerWidth - iconWidth - leftPadding - iconTextGap - rightPadding
+    
+    self:Debug("osd", "Footer container width: " .. containerWidth)
     self:Debug("osd", "Available width for all warnings: " .. availableWidth .. "px")
     
-    -- Create frame for each warning
-    for i, warningText in ipairs(warnings) do
-        -- Create background for this warning
+    -- Helper function to create a single warning row
+    local function createWarningRow(warningText, yOffset)
+        -- Create background
         local warningBg = footerContainer:CreateTexture(nil, "BACKGROUND")
         warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Red background
-        warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -totalWarningHeight)
-        warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -totalWarningHeight)
+        warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
+        warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
         warningBg:SetHeight(warningRowHeight)
         
         -- Create warning icon
@@ -664,72 +653,49 @@ function TWRA:CreateSampleWarnings(footerContainer)
         warningIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
         warningIcon:SetWidth(16)
         warningIcon:SetHeight(16)
-        warningIcon:SetPoint("LEFT", warningBg, "LEFT", 5, 0)
+        warningIcon:SetPoint("LEFT", warningBg, "LEFT", leftPadding, 0)
         
-        -- Create warning text directly on the background
+        -- Create warning text
         local warnText = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        warnText:SetPoint("LEFT", warningIcon, "RIGHT", 5, 0)
-        warnText:SetPoint("RIGHT", warningBg, "RIGHT", -5, 0)
+        warnText:SetPoint("LEFT", warningIcon, "RIGHT", iconTextGap, 0)
+        warnText:SetPoint("RIGHT", warningBg, "RIGHT", -rightPadding, 0)
         warnText:SetHeight(warningRowHeight)
         warnText:SetJustifyH("LEFT")
         
-        -- Set the full text to test string to get accurate width measurement
+        -- Measure text and truncate if needed
         testString:SetText(warningText)
         local fullTextWidth = testString:GetStringWidth()
         
         -- Debug info about text width vs available space
-        self:Debug("osd", "Warning #" .. i .. " width check - Text: " .. fullTextWidth .. 
-                  "px, Available: " .. availableWidth .. "px")
+        self:Debug("osd", "Warning width check - Text: " .. fullTextWidth .. "px, Available: " .. availableWidth .. "px")
         
-        -- Only truncate if absolutely necessary - using consistent available width
+        -- Truncate text if it's too long using simpler approach
         if fullTextWidth > availableWidth then
-            -- Test chunks of text to find the maximum that fits
-            local charWidth = fullTextWidth / string.len(warningText) -- average width per char
-            local initialGuess = math.floor(availableWidth / charWidth) - 3 -- leave room for ellipsis
+            -- Calculate approximate character width
+            local avgCharWidth = fullTextWidth / string.len(warningText)
+            -- Estimate how many characters will fit
+            local fitChars = math.floor(availableWidth / avgCharWidth) - 3 -- leave room for ellipsis
+            -- Apply upper limit to ensure we don't go out of bounds
+            fitChars = math.min(fitChars, string.len(warningText))
             
-            -- Start with initial guess and work up until we find the limit
-            local maxFittingLength = initialGuess
-            local foundLimit = false
-            
-            -- Binary search to find maximum fitting length
-            local low = 1
-            local high = string.len(warningText)
-            
-            while low <= high do
-                local mid = math.floor((low + high) / 2)
-                local testText = string.sub(warningText, 1, mid)
-                testString:SetText(testText .. "...")
-                
-                -- Use the SAME availableWidth for all warnings
-                if testString:GetStringWidth() <= availableWidth then
-                    -- This fits, try more characters
-                    maxFittingLength = mid
-                    low = mid + 1
-                else
-                    -- Too long, try fewer characters
-                    high = mid - 1
-                end
-            end
-            
-            -- Add ellipsis only if we actually truncated
-            local finalText = string.sub(warningText, 1, maxFittingLength)
-            if maxFittingLength < string.len(warningText) then
-                finalText = finalText .. "..."
-            end
-            
-            warnText:SetText(finalText)
-            self:Debug("osd", "Warning #" .. i .. " truncated to: " .. finalText)
+            local truncatedText = string.sub(warningText, 1, fitChars) .. "..."
+            warnText:SetText(truncatedText)
+            self:Debug("osd", "Warning truncated to: " .. truncatedText)
         else
-            -- Text fits completely, use full text
             warnText:SetText(warningText)
-            self:Debug("osd", "Warning #" .. i .. " fits completely")
+            self:Debug("osd", "Warning fits completely")
         end
         
         -- Set text color
         warnText:SetTextColor(1, 0.7, 0.7) -- Light red for warnings
         
-        -- Update total height with both row height and spacing
-        totalWarningHeight = totalWarningHeight + warningRowHeight + rowSpacing
+        return warningRowHeight + rowSpacing
+    end
+    
+    -- Create all warning rows
+    for _, warningText in ipairs(warnings) do
+        local rowHeight = createWarningRow(warningText, totalWarningHeight)
+        totalWarningHeight = totalWarningHeight + rowHeight
     end
     
     -- Set footer height based on all warnings (subtract the last spacing)
@@ -1253,4 +1219,78 @@ function TWRA:ShouldShowOSD()
     return not self.mainFrame or 
            not self.mainFrame:IsShown() or 
            self.currentView == "options"
+end
+
+-- Set OSD anchor point while maintaining screen position
+function TWRA:SetOSDAnchor(anchor)
+    if not self.OSDFrame then
+        self:Debug("osd", "Cannot set anchor: frame doesn't exist")
+        return false
+    end
+    
+    -- Get current screen position of the frame
+    local x, y = self.OSDFrame:GetCenter()
+    local screenWidth = UIParent:GetWidth()
+    local screenHeight = UIParent:GetHeight()
+    
+    -- Validate anchor value
+    local newPoint
+    if anchor == "TL" then
+        newPoint = "TOPLEFT"
+    elseif anchor == "TR" then
+        newPoint = "TOPRIGHT"
+    elseif anchor == "BL" then
+        newPoint = "BOTTOMLEFT"
+    elseif anchor == "BR" then
+        newPoint = "BOTTOMRIGHT"
+    elseif anchor == "R" or anchor == "C" then
+        newPoint = "CENTER"
+    else
+        self:Debug("osd", "Invalid anchor point: " .. tostring(anchor))
+        return false
+    end
+    
+    -- Calculate new offsets based on the new anchor point
+    local width = self.OSDFrame:GetWidth() * self.OSDFrame:GetScale()
+    local height = self.OSDFrame:GetHeight() * self.OSDFrame:GetScale()
+    local newXOffset, newYOffset
+    
+    -- Calculate horizontal offset based on anchor
+    if newPoint:find("LEFT") then
+        newXOffset = x - (0 + width/2)
+    elseif newPoint:find("RIGHT") then
+        newXOffset = x - (screenWidth - width/2)
+    else
+        newXOffset = x - (screenWidth/2)
+    end
+    
+    -- Calculate vertical offset based on anchor
+    if newPoint:find("TOP") then
+        newYOffset = y - (0 + height/2)
+    elseif newPoint:find("BOTTOM") then
+        newYOffset = y - (screenHeight - height/2)
+    else
+        newYOffset = y - (screenHeight/2)
+    end
+    
+    -- Save new position settings
+    self.OSD.point = newPoint
+    self.OSD.xOffset = newXOffset
+    self.OSD.yOffset = newYOffset
+    
+    -- Save to saved variables
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.osd then
+        TWRA_SavedVariables.options.osd.point = newPoint
+        TWRA_SavedVariables.options.osd.xOffset = newXOffset
+        TWRA_SavedVariables.options.osd.yOffset = newYOffset
+    end
+    
+    -- Apply new position
+    self.OSDFrame:ClearAllPoints()
+    self.OSDFrame:SetPoint(newPoint, UIParent, newPoint, newXOffset, newYOffset)
+    
+    self:Debug("osd", string.format("OSD anchor changed to %s at offsets x=%.2f, y=%.2f", 
+                                    newPoint, newXOffset, newYOffset))
+    
+    return true
 end

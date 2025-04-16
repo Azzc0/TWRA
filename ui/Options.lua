@@ -392,7 +392,15 @@ function TWRA:CreateOptionsInMainFrame()
     testOSDBtn:SetWidth(80)
     testOSDBtn:SetHeight(22)
     testOSDBtn:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -15)
-    testOSDBtn:SetText("Test")
+    testOSDBtn:SetText("Anchor")
+    testOSDBtn:SetScript("OnClick", function()
+        -- Show OSD with anchor buttons
+        if TWRA.ShowOSDAnchorPoints then
+            TWRA:ShowOSDAnchorPoints()
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD anchor points function not found")
+        end
+    end)
     table.insert(self.optionsElements, testOSDBtn)
     
     local resetPosBtn = CreateFrame("Button", nil, middleColumn, "UIPanelButtonTemplate")
