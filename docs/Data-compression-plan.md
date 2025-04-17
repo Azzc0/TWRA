@@ -1,7 +1,7 @@
 # TWRA Data Compression Plan
 
 ## Overview
-This document outlines the implementation plan for adding data compression to the TWRA addon's sync functionality to reduce lag when receiving data. We'll be using Huffman compression from the LibCompressVanilla library to reduce the size of synced data.
+This document outlines the implementation plan for adding data compression to the TWRA addon's sync functionality to reduce lag when receiving data. We'll be using Huffman compression from the LibCompress library to reduce the size of synced data.
 
 ## Current Issues
 - When receiving synced data, especially for larger raid compositions, users experience lag
@@ -9,86 +9,88 @@ This document outlines the implementation plan for adding data compression to th
 - Duplicated data (like source strings) consumes unnecessary memory
 
 ## Solution: Huffman Compression
-We will implement Huffman compression using the LibCompressVanilla library (https://github.com/tdymel/LibCompressVanilla). This will significantly reduce the data size being transmitted across the addon channel.
+We will implement Huffman compression using the LibCompress library. This will significantly reduce the data size being transmitted across the addon channel.
 
 ### Why Huffman Compression?
 1. Well-suited for text data with repeating patterns (player names, class names, etc.)
-2. Provided by LibCompressVanilla which is compatible with WoW Vanilla/Classic
-3. Simpler implementation than combining multiple compression algorithms
+2. Provided by LibCompress which is compatible with WoW Vanilla/Classic
+3. Testing showed better compression ratio than other methods for our specific data
 
 ## Implementation Plan
 
 ### 1. Library Integration
-- Embed the LibCompressVanilla library in the addon
-- No dependency management required for users
+- LibCompress library is already embedded in the addon
+- Using TableToString + Huffman compression which showed the best results in testing
 
 ### 2. Data Workflow
-We'll maintain most of the current workflow with these key changes:
 
-#### Import Process (unchanged)
-- Continue using Base64 encoding for the initial import from Google Sheets
-- Process the data normally (expand abbreviations, handle special rows, etc.)
+#### Manual Import Flow (Base64 String)
+1. User copies a Base64 string from Google Sheets into the addon
+2. `ImportString()` function processes this Base64 string:
+   - Base64 decoding (unchanged)
+   - Parse into table format (unchanged)
+   - Clean up data (unchanged)
+   - Store uncompressed data in `TWRA_SavedVariables.assignments` (unchanged)
+   - **Don't store original source string**
+   - **Immediately compress the clean data using `CompressAssignmentsData()`**
+   - Create client-specific data
+   - **Store compressed version in `TWRA_SavedVariables.assignments.compressed`**
+3. UI displays the imported data (unchanged)
 
-#### Compression Step (new)
-After processing imported data, add a compression step:
+#### Sync Import Flow
+1. User receives a sync message from another raid member
+2. `HandleDataResponseCommand()` processes this message:
+   - Process received data as compressed data
+   - Pass directly to `ProcessCompressedData()`
+   - Decompress using `DecompressAssignmentsData()`
+   - Save decompressed data with `SaveAssignments()`
+   - **Store compressed version in `TWRA_SavedVariables.assignments.compressed`**
+   - Create client-specific data
 
-1. Create a table with the following fields to be compressed:
-   - TWRA_SavedVariables.assignments.currentSectionName
-   - TWRA_SavedVariables.assignments.isExample
-   - TWRA_SavedVariables.assignments.version
-   - TWRA_SavedVariables.assignments.timestamp
-   - TWRA_SavedVariables.assignments.currentSection
-   - TWRA_SavedVariables.assignments.data
-
-2. Remove fields that shouldn't be synced:
-   - TWRA_SavedVariables.assignments.source (don't store the source string at all)
-   - TWRA_SavedVariables.assignments.data[section index].Section Player Info (client-specific)
-
-3. Compress the table using LibCompressVanilla's Huffman encoder
-
-#### Sync Process
-- Instead of sending the raw data, send the compressed data
-- When receiving, decompress before processing
-- Rebuild Section Player Info on the recipient's side
+#### Sending Data in Sync
+1. When sending assignments:
+   - Always use compressed data from `GetStoredCompressedData()`
+   - Use "COMP:" prefix to indicate compressed data in messages
 
 ### 3. Technical Changes Required
 
-#### Data Storage
-- Remove source string storage to save memory
-- Store compressed data for sync operations
+#### Data Storage Changes
+- Remove source string storage completely to save memory
+- Store compressed data for sync operations and reuse
 
-#### New Functions
+#### New Functions (Implemented)
 1. `CompressAssignmentsData()` - Takes the processed assignment data and compresses it
 2. `DecompressAssignmentsData()` - Takes compressed data and restores it to usable format
 3. `PrepareDataForSync()` - Strips out client-specific data and prepares for compression
+4. `StoreCompressedData()` - Stores compressed data for reuse
+5. `GetStoredCompressedData()` - Retrieves or generates compressed data
 
 #### Modified Functions
 1. Update `ProcessReceivedData()` to handle compressed data
 2. Update `SendDataResponse()` to send compressed data
 3. Update data import to stop storing source strings
+4. Update `SaveAssignments()` to compress data after saving
 
-### 4. Compatibility Considerations
-- The change will be backward incompatible - older versions won't be able to receive data from newer versions
-- Consider adding a version check in the sync protocol
+### 4. Key Implementation Benefits
 
-## Performance Expectations
-- Estimated 40-60% reduction in data size
-- Significantly reduced lag when receiving synced data
-- Slight increase in CPU usage during compression/decompression (but overall net improvement)
+1. **Memory Usage**: Don't store uncompressed source strings at all
+2. **Single Compression**: Compress data once after import and store for future use
+3. **Efficient Sync**: Always send compressed data for sync operations
+4. **Detach Player-specific Info**: Create client-specific player info after decompression, ensuring a universal source of truth for assignments
+5. **Simplified Processing**: Streamline the decompression process for sync
 
-## Risks and Mitigations
-- **Risk**: Compression/decompression errors
-  - **Mitigation**: Robust error handling and fallback mechanisms
-  
-- **Risk**: Compatibility issues
-  - **Mitigation**: Clear version communication and graceful degradation
+## Performance Results
+- Testing showed a compression ratio of approximately 50-60% for typical raid data
+- Memory usage expected to decrease by removing unneeded source strings
+- Reduced lag during sync operations due to smaller data transfers
 
 ## Implementation Phases
-1. **Phase 1**: Embed LibCompressVanilla and create compression/decompression functions
-2. **Phase 2**: Modify sync process to use compressed data
-3. **Phase 3**: Testing and optimization
-4. **Phase 4**: Release and monitoring
+
+1. **Phase 1**: ✅ Basic compression/decompression functions using TableToString + Huffman
+2. **Phase 2**: ✅ Modified sync process to use compressed data
+3. **Phase 3**: Testing with various raid compositions and sizes
+4. **Phase 4**: Final integration and documentation
 
 ## Future Considerations
 - Monitor performance and consider additional optimizations if needed
-- Explore custom Huffman dictionaries optimized for raid assignment data
+- Consider experimenting with different compression settings for special cases

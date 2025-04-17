@@ -362,7 +362,7 @@ function TWRA:HandleDataResponseCommand(message, sender)
         self:Debug("sync", string.format("Received compressed data from %s (timestamp: %d, length: %d)", 
             sender, timestamp, string.len(compressedData)))
         
-        -- Process the compressed data using our new decompression system
+        -- Process the compressed data using our decompression system
         self:ProcessCompressedData(compressedData, timestamp, sender)
         return
     end
@@ -379,7 +379,7 @@ function TWRA:HandleDataResponseCommand(message, sender)
     self:ProcessReceivedData(encodedData, timestamp, sender)
 end
 
--- New function to process compressed data received via sync
+-- Function to process compressed data received via sync
 function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
     -- Compare timestamps
     local ourTimestamp = 0
