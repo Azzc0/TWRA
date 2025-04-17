@@ -31,3 +31,6 @@ Our current implementation of removing tanks from the tank table for all oRA2 us
 
 ### Sections has to have unique names
 We need to make sure that we do not forget to document this.
+
+## Sections with no normal rows
+What happens when a section has no normal rows but special rows?

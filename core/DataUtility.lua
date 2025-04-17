@@ -451,45 +451,6 @@ function TWRA:ClearData()
                 return
             end
             
-            if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-               TWRA_SavedVariables.assignments.data and type(TWRA_SavedVariables.assignments.data) == "table" then
-                
-                -- Find each section by name and restore its metadata
-                for sectionIdx, section in pairs(TWRA_SavedVariables.assignments.data) do
-                    if type(section) == "table" and section["Section Name"] then
-                        local sectionName = section["Section Name"]
-                        
-                        -- If we have metadata for this section name, restore it
-                        if self.pendingMetadataRestore[sectionName] then
-                            section["Section Metadata"] = section["Section Metadata"] or {}
-                            section["Section Metadata"]["Note"] = section["Section Metadata"]["Note"] or {}
-                            section["Section Metadata"]["Warning"] = section["Section Metadata"]["Warning"] or {}
-                            section["Section Metadata"]["GUID"] = section["Section Metadata"]["GUID"] or {}
-                            
-                            -- Restore notes
-                            for _, note in ipairs(self.pendingMetadataRestore[sectionName].Note) do
-                                table.insert(section["Section Metadata"]["Note"], note)
-                            end
-                            
-                            -- Restore warnings
-                            for _, warning in ipairs(self.pendingMetadataRestore[sectionName].Warning) do
-                                table.insert(section["Section Metadata"]["Warning"], warning)
-                            end
-                            
-                            -- Restore GUIDs
-                            for _, guid in ipairs(self.pendingMetadataRestore[sectionName].GUID) do
-                                table.insert(section["Section Metadata"]["GUID"], guid)
-                            end
-                            
-                            self:Debug("data", "Restored metadata for section '" .. sectionName .. "': " ..
-                                      table.getn(self.pendingMetadataRestore[sectionName].Note) .. " notes, " ..
-                                      table.getn(self.pendingMetadataRestore[sectionName].Warning) .. " warnings, " ..
-                                      table.getn(self.pendingMetadataRestore[sectionName].GUID) .. " GUIDs")
-                        end
-                    end
-                end
-            end
-            
             -- Clear the pending metadata
             self.pendingMetadataRestore = nil
         end
@@ -718,7 +679,7 @@ function TWRA:CaptureSpecialRows(data)
                 }
                 
                 -- Only remove special rows if we found any
-                if #specialRowIndices > 0 then
+                if table.getn(specialRowIndices) > 0 then
                     -- Remove special rows from section rows (from highest index to lowest)
                     table.sort(specialRowIndices, function(a,b) return a > b end)
                     for _, idx in ipairs(specialRowIndices) do

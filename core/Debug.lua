@@ -533,12 +533,15 @@ function TWRA:ToggleDetailedLogging(state)
         self:InitDebug()
     end
     
+    -- If state is nil, toggle the current state
     if state == nil then
         state = not self.DEBUG.showDetails
     else
+        -- Otherwise, use the provided state (ensuring it's a boolean)
         state = (state == true or state == 1)
     end
     
+    -- Set the new state
     self.DEBUG.showDetails = state
     
     -- Save to saved variables - ENSURE this happens properly
@@ -547,11 +550,24 @@ function TWRA:ToggleDetailedLogging(state)
     
     DEFAULT_CHAT_FRAME:AddMessage("TWRA: Detailed logging " .. (state and "enabled" or "disabled"))
     
-    -- If enabling details, make sure level is appropriate
-    if state and self.DEBUG.logLevel < 4 then
-        self.DEBUG.logLevel = 4
-        TWRA_SavedVariables.debug.logLevel = 4
+    -- If enabling details, make sure debug is enabled and level is appropriate
+    if state then
+        -- Enable debug if it's not already enabled
+        if not self.DEBUG.enabled then
+            self.DEBUG.enabled = true
+            TWRA_SavedVariables.debug.enabled = true
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug mode automatically enabled")
+        end
+        
+        -- Set log level to VERBOSE if it's lower
+        if self.DEBUG.logLevel < self.DEBUG_LEVELS.VERBOSE then
+            self.DEBUG.logLevel = self.DEBUG_LEVELS.VERBOSE
+            TWRA_SavedVariables.debug.logLevel = self.DEBUG_LEVELS.VERBOSE
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug level set to VERBOSE to show detailed messages")
+        end
     end
+    
+    return state
 end
 
 -- Add timestamp toggle functionality
@@ -751,8 +767,8 @@ function TWRA:HandleDebugCommand(args)
         elseif args[2] == "off" then
             self:ToggleDetailedLogging(false)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Detailed logging is " .. 
-                (self.DEBUG.showDetails and "enabled" or "disabled"))
+            -- Toggle detailed logging when no parameter is provided
+            self:ToggleDetailedLogging()
         end
         
     -- Timestamp toggle
