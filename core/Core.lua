@@ -16,9 +16,26 @@ function TWRA:OnLoad()
     -- Ensure options table exists
     TWRA_SavedVariables.options = TWRA_SavedVariables.options or {}
     
+    -- Initialize TWRA_Assignments if it doesn't exist
+    TWRA_Assignments = TWRA_Assignments or {}
+    
+    -- Ensure TWRA_Assignments.data exists to prevent nil references
+    if not TWRA_Assignments.data then
+        TWRA_Assignments.data = {}
+        
+        -- Try to migrate data from the old format if it exists
+        if TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
+            self:Debug("system", "Migrating data from old format to new format")
+            TWRA_Assignments.data = TWRA_SavedVariables.assignments.data
+            TWRA_Assignments.version = TWRA_SavedVariables.assignments.version or 1
+            TWRA_Assignments.timestamp = TWRA_SavedVariables.assignments.timestamp or time()
+            TWRA_Assignments.currentSection = TWRA_SavedVariables.assignments.currentSection or 1
+        end
+    end
+    
     -- Set default for main frame visibility if it doesn't exist
     if TWRA_SavedVariables.options.hideFrameByDefault == nil then
-        TWRA_SavedVariables.options.hideFrameByDefault = true  -- Changed to boolean
+        TWRA_SavedVariables.options.hideFrameByDefault = true
     end
     
     -- Initialize options with proper boolean values if needed
@@ -419,17 +436,16 @@ function TWRA:RebuildNavigation()
     end
     
     -- Check if we have data to work with
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or
-       not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         self:Debug("error", "No assignment data available")
         return false
     end
     
     -- Special handling for the new format structure (table with numerical indices)
-    if type(TWRA_SavedVariables.assignments.data) == "table" then
+    if type(TWRA_Assignments.data) == "table" then
         -- Check if we're dealing with the new format (structured data)
         local isNewFormat = false
-        for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+        for idx, section in pairs(TWRA_Assignments.data) do
             if type(section) == "table" and section["Section Name"] then
                 isNewFormat = true
                 break
@@ -439,7 +455,7 @@ function TWRA:RebuildNavigation()
         if isNewFormat then
             -- Collect section names from our new format structure
             local sections = {}
-            for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+            for idx, section in pairs(TWRA_Assignments.data) do
                 if type(section) == "table" and section["Section Name"] and section["Section Name"] ~= "" then
                     table.insert(self.navigation.handlers, section["Section Name"])
                     table.insert(sections, section["Section Name"])
@@ -624,8 +640,8 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
         -- Get our current timestamp to include in broadcast
         local timestamp = 0
-        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp then
-            timestamp = TWRA_SavedVariables.assignments.timestamp
+        if TWRA_SavedVariables and TWRA_Assignments and TWRA_Assignments.timestamp then
+            timestamp = TWRA_Assignments.timestamp
         end
         
         -- Log the broadcast attempt with timestamp
@@ -651,23 +667,23 @@ end
 -- Function to save the current section index
 function TWRA:SaveCurrentSection(name)
     -- Only save if we have assignments already
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and self.navigation then
+    if TWRA_Assignments and self.navigation then
         -- Make sure currentIndex exists before trying to save it 
         if self.navigation.currentIndex then
-            TWRA_SavedVariables.assignments.currentSection = self.navigation.currentIndex
+            TWRA_Assignments.currentSection = self.navigation.currentIndex
             
             -- Also save the section name
             if self.navigation.handlers and 
                self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
                 local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                TWRA_SavedVariables.assignments.currentSectionName = sectionName
+                TWRA_Assignments.currentSectionName = sectionName
                 self:Debug("nav", "Saved current section: " .. self.navigation.currentIndex .. 
                             " (" .. sectionName .. ")")
             end
         else
             -- If no current index, default to 1
-            TWRA_SavedVariables.assignments.currentSection = 1
-            TWRA_SavedVariables.assignments.currentSectionName = nil
+            TWRA_Assignments.currentSection = 1
+            TWRA_Assignments.currentSectionName = nil
         end
     end
 end
@@ -853,8 +869,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         end
         
         -- CRITICAL ADDITION: Preserve Section Metadata from existing sections
-        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-           TWRA_SavedVariables.assignments.data and type(TWRA_SavedVariables.assignments.data) == "table" then
+        if TWRA_Assignments and TWRA_Assignments.data and type(TWRA_Assignments.data) == "table" then
             self:Debug("data", "Preserving metadata from existing sections")
             
             for newSectionIdx, newSection in pairs(data.data) do
@@ -862,7 +877,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
                     local sectionName = newSection["Section Name"]
                     
                     -- Look for matching section in existing data
-                    for _, oldSection in pairs(TWRA_SavedVariables.assignments.data) do
+                    for _, oldSection in pairs(TWRA_Assignments.data) do
                         if type(oldSection) == "table" and oldSection["Section Name"] == sectionName then
                             -- Transfer section metadata if it exists
                             if oldSection["Section Metadata"] and type(oldSection["Section Metadata"]) == "table" then
@@ -885,15 +900,14 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
                                             
                                             if not exists then
                                                 table.insert(newSection["Section Metadata"][key], value)
-                                                self:Debug("data", "Preserved " .. key .. " for section " .. sectionName .. ": " .. value)
+                                                self:Debug("data", "Preserved metadata " .. key .. " for section " .. sectionName)
                                             end
                                         end
                                     end
                                 end
                             end
                             
-                            -- We found the matching section, no need to continue searching
-                            break
+                            break -- Found matching section, no need to continue
                         end
                     end
                 end
@@ -901,17 +915,23 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         end
     end
     
-    -- Use provided timestamp or generate new one
-    local timestamp = originalTimestamp or time()
-    
-    -- Store current section before updating data
-    local currentSectionIndex = 1
-    local currentSectionName = nil
-    if self.navigation and self.navigation.currentIndex then
-        currentSectionIndex = self.navigation.currentIndex
-        if self.navigation.handlers and self.navigation.currentIndex <= table.getn(self.navigation.handlers) then
-            currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
+    -- Calculate timestamp (or use provided one)
+    local timestamp = originalTimestamp
+    if not timestamp then
+        if self:IsExampleData(data) then
+            timestamp = 0
+        else
+            timestamp = time()
         end
+    end
+    
+    -- Get current section info before we save
+    local currentSectionName = nil
+    local currentSectionIndex = 1
+    
+    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+        currentSectionIndex = self.navigation.currentIndex
+        currentSectionName = self.navigation.handlers[currentSectionIndex]
         self:Debug("nav", "SaveAssignments - Current section before update: " .. 
                   currentSectionIndex .. " (" .. (currentSectionName or "unknown") .. ")")
     end
@@ -930,8 +950,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         end
         
         -- Direct assignment to SavedVariables for new format
-        TWRA_SavedVariables = TWRA_SavedVariables or {}
-        TWRA_SavedVariables.assignments = {
+        TWRA_Assignments = {
             data = data.data,
             -- IMPORTANT: Don't store source string to save memory
             timestamp = timestamp,
@@ -940,10 +959,17 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
             isExample = false
         }
         
+        -- IMPORTANT: Completely stop using old format data structure
+        -- Instead of maintaining minimal structure, fully remove it
+        if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+            TWRA_SavedVariables.assignments = nil
+            self:Debug("data", "Removed obsolete assignments data structure")
+        end
+        
         -- IMPORTANT: Generate compressed version for future sync
         if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
             self:Debug("data", "Generating compressed data for future sync operations")
-            local syncReadyData = self:PrepareDataForSync(TWRA_SavedVariables.assignments)
+            local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
             local compressedData = self:CompressAssignmentsData(syncReadyData)
             if compressedData then
                 self:StoreCompressedData(compressedData)
@@ -963,72 +989,50 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         -- Skip announcement if noAnnounce is true
         if noAnnounce then return true end
         
-        -- Announce update to group if we're in one
+        -- IMPORTANT: Don't announce in a party/raid during development
         if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-            local announceMsg = string.format("%s:%d:%s", 
-                self.SYNC.COMMANDS.ANNOUNCE,
-                timestamp,
-                UnitName("player"))
-            
-            self:SendAddonMessage(announceMsg)
+            self:Debug("general", "Import detected while in party/raid - suppressing announcement")
+            return true
         end
         
+        -- Announce the import in chat
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assigned imported data with " .. 
+                                     table.getn(self.navigation.handlers) .. " sections")
         return true
     end
     
-    -- Legacy format handling below
+    -- Legacy format handling
     -- Clean the data using our centralized function
-    local cleanedData = self:CleanAssignmentData(data, false)
+    data = self:CleanAssignmentData(data)
     
-    -- Make one final pass with EnsureCompleteRows to guarantee all indices are filled
-    if self.EnsureCompleteRows then
-        cleanedData = self:EnsureCompleteRows(cleanedData)
-        self:Debug("data", "Applied EnsureCompleteRows during SaveAssignments for legacy format")
-    else
-        self:Debug("error", "EnsureCompleteRows function not found during SaveAssignments")
+    -- Check if we have actual content after cleaning
+    local contentFound = false
+    if type(data) == "table" then
+        contentFound = table.getn(data) > 0
     end
     
-    -- Update our full data with the cleaned data
-    self.fullData = cleanedData
-    
-    -- Check if this is the example data and set the flag correctly
-    local isExampleData = (sourceString == "example_data" or self:IsExampleData(cleanedData))
-    self.usingExampleData = isExampleData
-    
-    -- Set timestamp to 0 for example data if not explicitly provided
-    if isExampleData and originalTimestamp == nil then
-        timestamp = 0
-        self:Debug("data", "Using timestamp 0 for example data")
+    if not contentFound then
+        self:Debug("error", "No valid content found in input data")
+        return false
     end
     
-    -- Rebuild navigation with new section names
-    self:RebuildNavigation()
+    -- Store in saved variables
+    self.fullData = data
     
-    -- Save the cleaned data, source string, and current section index and example flag
-    TWRA_SavedVariables.assignments = {
-        data = cleanedData,
+    -- Set up saved variables structure if it doesn't exist
+    TWRA_Assignments = {
+        data = data,
         -- IMPORTANT: Don't store source string to save memory
         timestamp = timestamp,
-        currentSection = currentSectionIndex,
-        currentSectionName = currentSectionName, -- Store section name for better restoration
-        version = 1,
-        isExample = isExampleData,
-        usingExampleData = isExampleData
+        currentSection = 1, -- Default to first section on import
+        version = 1 -- Mark as v1 (legacy) format
     }
     
-    -- IMPORTANT: Generate compressed version for future sync
-    if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
-        self:Debug("data", "Generating compressed data for future sync operations")
-        local syncReadyData = self:PrepareDataForSync(TWRA_SavedVariables.assignments)
-        local compressedData = self:CompressAssignmentsData(syncReadyData)
-        if compressedData then
-            self:StoreCompressedData(compressedData)
-            self:Debug("data", "Compressed data generated and stored in TWRA_CompressedAssignments")
-        else
-            self:Debug("error", "Failed to generate compressed version of data")
-        end
-    else
-        self:Debug("error", "Missing compression functions - compressed data not generated")
+    -- IMPORTANT: Completely stop using old format data structure
+    -- Instead of maintaining minimal structure, fully remove it
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+        TWRA_SavedVariables.assignments = nil
+        self:Debug("data", "Removed obsolete assignments data structure")
     end
     
     self:Debug("nav", "SaveAssignments - Saved with section: " .. 
@@ -1038,16 +1042,19 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     -- Skip announcement if noAnnounce is true
     if noAnnounce then return true end
     
-    -- Announce update to group if we're in one
+    -- IMPORTANT: Don't announce in a party/raid during development
     if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-        local announceMsg = string.format("%s:%d:%s", 
-            self.SYNC.COMMANDS.ANNOUNCE,
-            timestamp,
-            UnitName("player"))
-        
-        self:SendAddonMessage(announceMsg)
+        self:Debug("general", "Import detected while in party/raid - suppressing announcement")
+        return true
     end
     
+    -- Rebuild navigation with the new data
+    self:RebuildNavigation()
+    
+    -- Announce the import in chat
+    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Imported " .. table.getn(self.fullData) .. 
+                                 " assignments in " ..
+                                 table.getn(self.navigation.handlers) .. " sections")
     return true
 end
 
@@ -1061,15 +1068,14 @@ function TWRA:BuildNavigationFromNewFormat()
     self.navigation.currentIndex = 1
     
     -- Check if we have data to work with
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or
-       not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         self:Debug("error", "No assignment data available")
         return false
     end
     
     -- Collect section names from our new format structure
     local sections = {}
-    for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+    for idx, section in pairs(TWRA_Assignments.data) do
         if type(section) == "table" and section["Section Name"] then
             table.insert(self.navigation.handlers, section["Section Name"])
             table.insert(sections, section["Section Name"])

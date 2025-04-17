@@ -352,11 +352,11 @@ function TWRA:CreateMainFrame()
     end)
 
     -- After creating all UI elements, rebuild navigation but don't display content yet
-    if TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
+    if TWRA_Assignments and TWRA_Assignments.data then
         -- Check if we're using the new data format
         local isNewFormat = false
-        if type(TWRA_SavedVariables.assignments.data) == "table" then
-            for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+        if type(TWRA_Assignments.data) == "table" then
+            for idx, section in pairs(TWRA_Assignments.data) do
                 if type(section) == "table" and section["Section Name"] then
                     isNewFormat = true
                     break
@@ -370,14 +370,14 @@ function TWRA:CreateMainFrame()
             self:RebuildNavigation()
             
             -- Set example data flag properly
-            self.usingExampleData = TWRA_SavedVariables.assignments.usingExampleData or
-                                    TWRA_SavedVariables.assignments.isExample or false
+            self.usingExampleData = TWRA_Assignments.usingExampleData or
+                                    TWRA_Assignments.isExample or false
             
             -- Restore saved section index or name for later use (but don't display yet)
-            if TWRA_SavedVariables.assignments.currentSectionName and self.navigation.handlers then
+            if TWRA_Assignments.currentSectionName and self.navigation.handlers then
                 local found = false
                 for i, name in ipairs(self.navigation.handlers) do
-                    if name == TWRA_SavedVariables.assignments.currentSectionName then
+                    if name == TWRA_Assignments.currentSectionName then
                         self.navigation.currentIndex = i
                         found = true
                         self:Debug("nav", "Main frame stored section by name: " .. name)
@@ -386,8 +386,8 @@ function TWRA:CreateMainFrame()
                 end
                 
                 -- If not found by name, try by index
-                if not found and TWRA_SavedVariables.assignments.currentSection then
-                    local index = TWRA_SavedVariables.assignments.currentSection
+                if not found and TWRA_Assignments.currentSection then
+                    local index = TWRA_Assignments.currentSection
                     if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
                         self.navigation.currentIndex = index
                         self:Debug("nav", "Main frame stored section by index: " .. index)
@@ -399,7 +399,7 @@ function TWRA:CreateMainFrame()
             end
         else
             -- Legacy format handling (unchanged but no content display)
-            self.fullData = TWRA_SavedVariables.assignments.data
+            self.fullData = TWRA_Assignments.data
             
             -- Update navigation handlers
             self.navigation.handlers = {}
@@ -414,8 +414,8 @@ function TWRA:CreateMainFrame()
             end
 
             -- Restore saved section index
-            if TWRA_SavedVariables.assignments.currentSection then
-                self.navigation.currentIndex = TWRA_SavedVariables.assignments.currentSection
+            if TWRA_Assignments.currentSection then
+                self.navigation.currentIndex = TWRA_Assignments.currentSection
             else
                 self.navigation.currentIndex = 1
             end
@@ -635,9 +635,9 @@ function TWRA:NavigateToSection(index, source)
     end
     
     -- Save current section to saved variables
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        TWRA_SavedVariables.assignments.currentSection = index
-        TWRA_SavedVariables.assignments.currentSectionName = sectionName
+    if TWRA_Assignments then
+        TWRA_Assignments.currentSection = index
+        TWRA_Assignments.currentSectionName = sectionName
     end
     
     -- Trigger the event before updating display
@@ -675,9 +675,10 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     
     -- Get the current section data based on the handler name
     local sectionData = nil
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.data then
-        for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+    
+    -- Try to find the section data for the current handler
+    if TWRA_Assignments and TWRA_Assignments.data then
+        for _, section in pairs(TWRA_Assignments.data) do
             if section["Section Name"] == currentHandler then
                 sectionData = section
                 break

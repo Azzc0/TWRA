@@ -419,9 +419,9 @@ function TWRA:FindSectionByGuid(guid)
     end
     
     -- Check the assignments data for GUID rows
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
+    if TWRA_Assignments and TWRA_Assignments.data then
         -- Get the saved data directly from the SavedVariables
-        local savedData = TWRA_SavedVariables.assignments.data
+        local savedData = TWRA_Assignments.data
         
         if self.AUTONAVIGATE.debug then
             self:Debug("nav", "Checking assignment data for GUIDs...")
@@ -599,8 +599,8 @@ function TWRA:ToggleAutoNavigateDebug()
         end
         
         -- Show GUID mappings (Updated for flat data structure)
-        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
-            local savedData = TWRA_SavedVariables.assignments.data
+        if TWRA_Assignments and TWRA_Assignments.data then
+            local savedData = TWRA_Assignments.data
             local currentSection = nil
             
             self:Debug("nav", "Checking for GUIDs:")
@@ -631,12 +631,12 @@ function TWRA:ListAllGuids()
     self:Debug("nav", "Listing all stored GUIDs and their sections:")
     
     -- Check if we have assignment data
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         self:Debug("nav", "No assignment data available")
         return
     end
     
-    local savedData = TWRA_SavedVariables.assignments.data
+    local savedData = TWRA_Assignments.data
     local guidCount = 0
     local currentSection = nil
     local guidsBySection = {}

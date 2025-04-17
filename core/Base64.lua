@@ -238,15 +238,11 @@ function TWRA:StoreCompressedData(compressedData)
         return false
     end
     
-    if not TWRA_SavedVariables then
-        TWRA_SavedVariables = {}
+    if not TWRA_Assignments then
+        TWRA_Assignments = {}
     end
     
-    if not TWRA_SavedVariables.assignments then
-        TWRA_SavedVariables.assignments = {}
-    end
-    
-    TWRA_SavedVariables.assignments.compressed = compressedData
+    TWRA_Assignments.compressed = compressedData
     self:Debug("data", "Stored compressed data for reuse")
     return true
 end
@@ -254,21 +250,17 @@ end
 -- Function to get stored compressed data or generate it if not available
 function TWRA:GetStoredCompressedData()
     -- Check if we have stored compressed data
-    if TWRA_SavedVariables and 
-       TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.compressed then
+    if TWRA_Assignments and TWRA_Assignments.compressed then
         self:Debug("data", "Using stored compressed data")
-        return TWRA_SavedVariables.assignments.compressed
+        return TWRA_Assignments.compressed
     end
     
     -- If not, check if we have assignment data that we can compress
-    if TWRA_SavedVariables and 
-       TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.data then
+    if TWRA_Assignments and TWRA_Assignments.data then
         self:Debug("data", "No stored compressed data, compressing current data")
         
         -- Prepare data for sync
-        local syncData = self:PrepareDataForSync(TWRA_SavedVariables.assignments)
+        local syncData = self:PrepareDataForSync(TWRA_Assignments)
         
         -- Compress the prepared data
         local compressedData = self:CompressAssignmentsData(syncData)
@@ -475,16 +467,13 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         -- Since this is already a table, we can skip the rest of the parsing
         -- Just process client-specific data
         
-        -- Initialize SavedVariables if they don't exist
-        if not TWRA_SavedVariables then
-            TWRA_SavedVariables = {}
-        end
-        if not TWRA_SavedVariables.assignments then
-            TWRA_SavedVariables.assignments = {}
+        -- Initialize Assignments if they don't exist
+        if not TWRA_Assignments then
+            TWRA_Assignments = {}
         end
         
         -- Store the decompressed data
-        TWRA_SavedVariables.assignments.data = decompressedData.data
+        TWRA_Assignments.data = decompressedData.data
         
         -- Store the compressed version for future sync operations
         self:StoreCompressedData(base64Str)
@@ -530,9 +519,9 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
             end
         else
             -- If this is a sync operation with timestamp, handle it directly
-            TWRA_SavedVariables.assignments.timestamp = syncTimestamp
-            TWRA_SavedVariables.assignments.version = 2
-            self:Debug("data", "Saved data to SavedVariables with timestamp: " .. syncTimestamp)
+            TWRA_Assignments.timestamp = syncTimestamp
+            TWRA_Assignments.version = 2
+            self:Debug("data", "Saved data to Assignments with timestamp: " .. syncTimestamp)
             
             -- Rebuild navigation after sync import
             if self.RebuildNavigation then
@@ -775,28 +764,25 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                 if self.ProcessPlayerInfo then
                     self:Debug("data", "Processing player-relevant information for imported data")
                     
-                    -- Initialize SavedVariables if they don't exist
-                    if not TWRA_SavedVariables then
-                        TWRA_SavedVariables = {}
-                    end
-                    if not TWRA_SavedVariables.assignments then
-                        TWRA_SavedVariables.assignments = {}
+                    -- Initialize Assignments if they don't exist
+                    if not TWRA_Assignments then
+                        TWRA_Assignments = {}
                     end
                     
                     -- IMPORTANT: Clear existing data only once, right before we need it for processing
                     -- This prevents multiple redundant clearing operations
-                    TWRA_SavedVariables.assignments.data = result.data
+                    TWRA_Assignments.data = result.data
                     
                     -- Process player information
                     self:ProcessPlayerInfo()
                     self:Debug("data", "Player information processed")
                     
-                    -- Get the processed data back from SavedVariables
-                    result.data = TWRA_SavedVariables.assignments.data
+                    -- Get the processed data back from Assignments
+                    result.data = TWRA_Assignments.data
                     
                     -- Clear the data if this was just a validation and not a real import
                     if not syncTimestamp then
-                        TWRA_SavedVariables.assignments.data = nil
+                        TWRA_Assignments.data = nil
                     end
                 end
                 
@@ -866,14 +852,14 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                 else
                     -- If this is a sync operation with timestamp, handle it directly
                     self:Debug("data", "Setting up data for sync import")
-                    TWRA_SavedVariables.assignments = {
+                    TWRA_Assignments = {
                         data = result.data,
                         timestamp = syncTimestamp,
                         version = 2,
                         -- Store compressed version for future sync
                         compressed = compressedData
                     }
-                    self:Debug("data", "Saved data to SavedVariables with timestamp: " .. syncTimestamp)
+                    self:Debug("data", "Saved data to Assignments with timestamp: " .. syncTimestamp)
                     
                     -- Rebuild navigation after sync import
                     if self.RebuildNavigation then

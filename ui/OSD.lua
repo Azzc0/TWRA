@@ -161,9 +161,8 @@ function TWRA:GetOSDFrame()
         local sectionTitle = sectionName
         
         -- Try to get proper section name from saved variables
-        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-           TWRA_SavedVariables.assignments.currentSectionName then
-            sectionTitle = TWRA_SavedVariables.assignments.currentSectionName
+        if TWRA_Assignments and TWRA_Assignments.currentSectionName then
+            sectionTitle = TWRA_Assignments.currentSectionName
             self:Debug("osd", "Using saved currentSectionName for title: " .. sectionTitle)
         end
         
@@ -579,9 +578,8 @@ function TWRA:CreateContent(contentContainer)
         currentSection = self.navigation.handlers[self.navigation.currentIndex]
         
         -- Find section data
-        if currentSection and TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-           TWRA_SavedVariables.assignments.data then
-            for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+        if currentSection and TWRA_Assignments and TWRA_Assignments.data then
+            for _, section in pairs(TWRA_Assignments.data) do
                 if section["Section Name"] == currentSection then
                     currentSectionData = section
                     break
@@ -807,9 +805,8 @@ function TWRA:CreateWarnings(footerContainer)
         currentSection = self.navigation.handlers[self.navigation.currentIndex]
         
         -- Find section data
-        if currentSection and TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-           TWRA_SavedVariables.assignments.data then
-            for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+        if currentSection and TWRA_Assignments and TWRA_Assignments.data then
+            for _, section in pairs(TWRA_Assignments.data) do
                 if section["Section Name"] == currentSection then
                     currentSectionData = section
                     break
@@ -977,9 +974,8 @@ function TWRA:UpdateOSDContent(sectionName, currentIndex, totalSections)
         local sectionTitle = sectionName
         
         -- Try to get proper section name from saved variables
-        if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-           TWRA_SavedVariables.assignments.currentSectionName then
-            sectionTitle = TWRA_SavedVariables.assignments.currentSectionName
+        if TWRA_Assignments and TWRA_Assignments.currentSectionName then
+            sectionTitle = TWRA_Assignments.currentSectionName
             self:Debug("osd", "Using saved currentSectionName for title: " .. sectionTitle)
         end
         

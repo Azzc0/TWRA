@@ -82,7 +82,7 @@ function TWRA:LoadExampleData()
     self.fullData = self.EXAMPLE_DATA
     
     -- Save the example data with proper flags
-    TWRA_SavedVariables.assignments = {
+    TWRA_Assignments = {
         data = self.EXAMPLE_DATA,
         source = "example_data",
         timestamp = time(),

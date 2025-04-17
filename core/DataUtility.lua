@@ -82,11 +82,11 @@ end
 
 -- Check if we're using the new data format
 function TWRA:IsNewDataFormat()
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         return false
     end
     
-    local data = TWRA_SavedVariables.assignments.data
+    local data = TWRA_Assignments.data
     if type(data) ~= "table" then return false end
     
     -- Check if data is an object with sections rather than an array
@@ -101,12 +101,12 @@ end
 function TWRA:BuildNavigationFromNewFormat()
     self:Debug("nav", "Building navigation from new format data")
     
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         self:Debug("error", "No data found for rebuilding navigation")
         return false
     end
     
-    local data = TWRA_SavedVariables.assignments.data
+    local data = TWRA_Assignments.data
     if not data or type(data) ~= "table" then 
         self:Debug("error", "Data is not a table or is empty for rebuilding navigation")
         return false
@@ -152,7 +152,7 @@ function TWRA:GetNewFormatSection(index)
         return nil
     end
     
-    return TWRA_SavedVariables.assignments.data[index]
+    return TWRA_Assignments.data[index]
 end
 
 -- Get the section data for the current section in the new format
@@ -161,7 +161,7 @@ function TWRA:GetCurrentSectionData()
         return nil
     end
     
-    local data = TWRA_SavedVariables.assignments.data
+    local data = TWRA_Assignments.data
     if not data then return nil end
     
     return data[self.navigation.currentIndex]
@@ -386,11 +386,10 @@ function TWRA:ClearData()
     
     -- Check if we have metadata to preserve
     local metadataToPreserve = {}
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.data and type(TWRA_SavedVariables.assignments.data) == "table" then
+    if TWRA_Assignments and TWRA_Assignments.data and type(TWRA_Assignments.data) == "table" then
         
         -- Extract metadata from each section
-        for sectionIdx, section in pairs(TWRA_SavedVariables.assignments.data) do
+        for sectionIdx, section in pairs(TWRA_Assignments.data) do
             if type(section) == "table" and section["Section Name"] and section["Section Metadata"] then
                 local sectionName = section["Section Name"]
                 metadataToPreserve[sectionName] = {
@@ -486,35 +485,34 @@ end
 
 -- Verify and log the new data structure
 function TWRA:VerifyNewDataStructure()
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
-        self:Debug("error", "SavedVariables or assignments not found")
+    if not TWRA_Assignments then
+        self:Debug("error", "TWRA_Assignments not found")
         return false
     end
     
-    local assignments = TWRA_SavedVariables.assignments
     self:Debug("data", "Verifying assignments structure:")
-    self:Debug("data", "  version: " .. (assignments.version or "nil"))
-    self:Debug("data", "  timestamp: " .. (assignments.timestamp or "nil"))
-    self:Debug("data", "  currentSection: " .. (assignments.currentSection or "nil"))
+    self:Debug("data", "  version: " .. (TWRA_Assignments.version or "nil"))
+    self:Debug("data", "  timestamp: " .. (TWRA_Assignments.timestamp or "nil"))
+    self:Debug("data", "  currentSection: " .. (TWRA_Assignments.currentSection or "nil"))
     
-    if not assignments.data then
-        self:Debug("error", "assignments.data is nil")
+    if not TWRA_Assignments.data then
+        self:Debug("error", "TWRA_Assignments.data is nil")
         return false
     end
     
-    if type(assignments.data) ~= "table" then
-        self:Debug("error", "assignments.data is not a table, but " .. type(assignments.data))
+    if type(TWRA_Assignments.data) ~= "table" then
+        self:Debug("error", "TWRA_Assignments.data is not a table, but " .. type(TWRA_Assignments.data))
         return false
     end
     
     local count = 0
-    for idx, section in pairs(assignments.data) do
+    for idx, section in pairs(TWRA_Assignments.data) do
         count = count + 1
         self:Debug("data", "  Section " .. idx .. ": " .. 
                   (section["Section Name"] or "unnamed"))
     end
     
-    self:Debug("data", "Found " .. count .. " sections in assignments.data")
+    self:Debug("data", "Found " .. count .. " sections in TWRA_Assignments.data")
     
     -- Register diagnostic command
     if SLASH_TWRA1 and not self.diagCommandAdded then
@@ -547,13 +545,12 @@ function TWRA:AddSpecialRowToMetadata(sectionName, rowType, content)
     end
     
     -- Ensure saved variables exist
-    TWRA_SavedVariables = TWRA_SavedVariables or {}
-    TWRA_SavedVariables.assignments = TWRA_SavedVariables.assignments or {}
-    TWRA_SavedVariables.assignments.data = TWRA_SavedVariables.assignments.data or {}
+    TWRA_Assignments = TWRA_Assignments or {}
+    TWRA_Assignments.data = TWRA_Assignments.data or {}
     
     -- Find the section by name
     local sectionFound = false
-    for sectionIdx, section in pairs(TWRA_SavedVariables.assignments.data) do
+    for sectionIdx, section in pairs(TWRA_Assignments.data) do
         if type(section) == "table" and section["Section Name"] == sectionName then
             -- Ensure Section Metadata structure exists
             section["Section Metadata"] = section["Section Metadata"] or {}

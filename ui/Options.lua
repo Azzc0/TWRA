@@ -896,9 +896,9 @@ function TWRA:CreateOptionsInMainFrame()
         local currentSectionName = nil
         local currentSectionIndex = 1
         
-        if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-            currentSectionName = TWRA_SavedVariables.assignments.currentSectionName
-            currentSectionIndex = TWRA_SavedVariables.assignments.currentSection or 1
+        if TWRA_Assignments then
+            currentSectionName = TWRA_Assignments.currentSectionName
+            currentSectionIndex = TWRA_Assignments.currentSection or 1
             self:Debug("data", "Import with saved section: " .. 
                        (currentSectionName or "unnamed") .. " (" .. currentSectionIndex .. ")")
         end
@@ -1236,18 +1236,17 @@ function TWRA:DirectImportNewFormat(importText)
     
     self:Debug("data", "Verified new data format structure with " .. sectionCount .. " sections")
     
-    -- Step 6: Save to TWRA_SavedVariables directly
-    TWRA_SavedVariables = TWRA_SavedVariables or {}
+    -- Step 6: Save directly to TWRA_Assignments
     local timestamp = time()
     
-    TWRA_SavedVariables.assignments = {
+    TWRA_Assignments = {
         data = importData.data,
         timestamp = timestamp,
         version = 2, -- Mark as new format
         currentSection = 1
     }
     
-    self:Debug("data", "Successfully assigned to TWRA_SavedVariables.assignments")
+    self:Debug("data", "Successfully assigned to TWRA_Assignments")
     
     -- Step 7: Build navigation from the imported data
     self.navigation = self.navigation or { handlers = {}, currentIndex = 1 }

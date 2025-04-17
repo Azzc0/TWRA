@@ -75,8 +75,8 @@ function TWRA:HandleSectionCommand(message, sender)
     
     -- Compare timestamps
     local ourTimestamp = 0
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        ourTimestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    if TWRA_Assignments then
+        ourTimestamp = TWRA_Assignments.timestamp or 0
     end
     
     -- If the sender has newer data, request a sync
@@ -142,8 +142,8 @@ function TWRA:HandleAnnounceCommand(message, sender)
     
     -- Compare timestamps with better debugging
     local ourTimestamp = 0
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        ourTimestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    if TWRA_Assignments then
+        ourTimestamp = TWRA_Assignments.timestamp or 0
     end
     
     self:Debug("sync", "Comparing announced import - theirs: " .. timestamp .. ", ours: " .. ourTimestamp)
@@ -178,9 +178,9 @@ function TWRA:HandleDataRequestCommand(message, sender)
     local ourTimestamp = 0
     local sourceString = nil
     
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        ourTimestamp = TWRA_SavedVariables.assignments.timestamp or 0
-        sourceString = TWRA_SavedVariables.assignments.source
+    if TWRA_Assignments then
+        ourTimestamp = TWRA_Assignments.timestamp or 0
+        sourceString = TWRA_Assignments.source
     end
     
     self:Debug("sync", "Our data: timestamp=" .. ourTimestamp .. 
@@ -383,8 +383,8 @@ end
 function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
     -- Compare timestamps
     local ourTimestamp = 0
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        ourTimestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    if TWRA_Assignments then
+        ourTimestamp = TWRA_Assignments.timestamp or 0
     end
     
     -- Only process if we need this data
@@ -506,8 +506,8 @@ function TWRA:BroadcastSectionChange(sectionIndex, sectionName)
     
     -- Get current timestamp
     local timestamp = 0
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        timestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    if TWRA_Assignments then
+        timestamp = TWRA_Assignments.timestamp or 0
     end
     
     -- Format and send the message

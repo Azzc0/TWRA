@@ -1,6 +1,35 @@
-TWRA_SavedVariables = TWRA_SavedVariables or {
-    assignments = {}
-}
+-- Global variables initialization
+-- Early initialization at file load time to prevent nil references
+TWRA_SavedVariables = TWRA_SavedVariables or {}
+TWRA_Assignments = TWRA_Assignments or {}
+
+-- CRITICAL: Ensure data table always exists
+if not TWRA_Assignments.data then
+    TWRA_Assignments.data = {}
+end
+
+-- Create a frame to periodically check and ensure TWRA_Assignments.data is never nil
+local dataGuardFrame = CreateFrame("Frame")
+dataGuardFrame.sinceLastUpdate = 0
+dataGuardFrame:SetScript("OnUpdate", function()
+    -- Only check every 0.5 seconds to avoid overhead
+    this.sinceLastUpdate = this.sinceLastUpdate + arg1
+    if this.sinceLastUpdate >= 0.5 then
+        this.sinceLastUpdate = 0
+        
+        -- Check and repair if needed
+        if not TWRA_Assignments then
+            TWRA_Assignments = {}
+            print("|cFFFF3333TWRA Error:|r TWRA_Assignments was nil and has been restored")
+        end
+        if not TWRA_Assignments.data then
+            TWRA_Assignments.data = {}
+            print("|cFFFF3333TWRA Error:|r TWRA_Assignments.data was nil and has been restored")
+        end
+    end
+end)
+
+-- Addon namespace
 TWRA = TWRA or {}
 
 -- Fix NavigateToSection to properly update UI when changing sections
@@ -29,12 +58,10 @@ function TWRA:NavigateToSection(index, source)
     self.navigation.currentIndex = index
     
     -- Save current section in saved variables for persistence
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        local sectionName = self.navigation.handlers[index]
-        TWRA_SavedVariables.assignments.currentSection = index
-        TWRA_SavedVariables.assignments.currentSectionName = sectionName
-        self:Debug("nav", "Saved current section: " .. index .. " (" .. sectionName .. ")")
-    end
+    local sectionName = self.navigation.handlers[index]
+    TWRA_Assignments.currentSection = index
+    TWRA_Assignments.currentSectionName = sectionName
+    self:Debug("nav", "Saved current section: " .. index .. " (" .. sectionName .. ")")
     
     -- Update UI if main frame exists and is shown
     if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
@@ -194,7 +221,7 @@ function TWRA:Initialize()
     end
 
     -- Check if this is a UI reload and restore state
-    if self.mainFrame and TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+    if self.mainFrame and TWRA_Assignments then
         -- Restore current view
         if TWRA_SavedVariables.currentView then
             self.currentView = TWRA_SavedVariables.currentView
@@ -202,10 +229,10 @@ function TWRA:Initialize()
         
         -- If we were in main view before reload, restore section too
         if self.currentView == "main" and 
-           TWRA_SavedVariables.assignments.currentSection then
+           TWRA_Assignments.currentSection then
             self:Debug("ui", "UI reload detected - restoring section: " .. 
-                      TWRA_SavedVariables.assignments.currentSection)
-            self:NavigateToSection(TWRA_SavedVariables.assignments.currentSection, "reload")
+                      TWRA_Assignments.currentSection)
+            self:NavigateToSection(TWRA_Assignments.currentSection, "reload")
         end
     end
 end
@@ -315,7 +342,7 @@ end
 -- Enhanced LoadSavedAssignments to update OSD after loading
 function TWRA:LoadSavedAssignments()
     -- Check if we have saved assignments
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
+    if not TWRA_Assignments then
         self:Debug("data", "No saved assignments found")
         -- Load example data if needed
         if self.LoadExampleData then
@@ -325,7 +352,7 @@ function TWRA:LoadSavedAssignments()
     end
     
     -- Check if the assignments structure is complete
-    if not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments.data then
         self:Debug("error", "Assignment data structure incomplete")
         return false
     end
@@ -343,7 +370,7 @@ function TWRA:LoadSavedAssignments()
     end
     
     -- Detect data format version
-    local version = TWRA_SavedVariables.assignments.version or 1
+    local version = TWRA_Assignments.version or 1
     self:Debug("data", "Loading saved assignments (format version " .. version .. ")")
     
     -- Handle new format (version 2+)
@@ -354,19 +381,19 @@ function TWRA:LoadSavedAssignments()
     
     -- Handle old format (version 1)
     -- Copy the saved data to our active data
-    self.fullData = TWRA_SavedVariables.assignments.data
+    self.fullData = TWRA_Assignments.data
     
     -- Update our flag for example data
-    self.usingExampleData = TWRA_SavedVariables.assignments.isExample or false
+    self.usingExampleData = TWRA_Assignments.isExample or false
     
     -- Restore saved section if available
-    if TWRA_SavedVariables.assignments.currentSection then
+    if TWRA_Assignments.currentSection then
         -- First rebuild navigation
         self:RebuildNavigation()
         
         -- Then set current section from saved value with bounds check
         if self.navigation then
-            local savedIndex = TWRA_SavedVariables.assignments.currentSection
+            local savedIndex = TWRA_Assignments.currentSection
             if savedIndex >= 1 and savedIndex <= table.getn(self.navigation.handlers) then
                 self.navigation.currentIndex = savedIndex
                 self:Debug("data", "Restored saved section index: " .. savedIndex)
@@ -376,7 +403,7 @@ function TWRA:LoadSavedAssignments()
             end
         end
         
-        local sectionName = TWRA_SavedVariables.assignments.currentSectionName
+        local sectionName = TWRA_Assignments.currentSectionName
         if sectionName and self.navigation and self.navigation.handlers then
             for idx, name in ipairs(self.navigation.handlers) do
                 if name == sectionName then
@@ -794,7 +821,7 @@ function TWRA:HandleSectionCommand(args, sender)
     local sectionIndex = tonumber(parts[3])
     
     -- Check against our timestamp
-    local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
+    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
     if timestamp > ourTimestamp then
         -- We need newer data
         self.SYNC.pendingSection = sectionIndex
@@ -815,7 +842,7 @@ end
 -- Also update HandleTableAnnounce to save the section after receiving data
 function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
     -- Check against our timestamp
-    local ourTimestamp = TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.timestamp or 0
+    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
     
     if timestamp and timestamp > ourTimestamp then
         -- Use the pending section if available
@@ -859,7 +886,7 @@ function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
         end
         
         -- Store the cleaned structured data with section information
-        TWRA_SavedVariables.assignments = {
+        TWRA_Assignments = {
             data = cleanedTableData,
             timestamp = timestamp,
             currentSection = sectionToUse,
@@ -1222,19 +1249,18 @@ end
 
 -- Helper function to check if we're using the new data format
 function TWRA:IsNewDataFormat()
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or 
-       not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         return false
     end
     
     -- Check for version marker (most reliable way)
-    if TWRA_SavedVariables.assignments.version == 2 then
+    if TWRA_Assignments.version == 2 then
         return true
     end
     
     -- Check structure as a fallback
-    if type(TWRA_SavedVariables.assignments.data) == "table" then
-        for idx, section in pairs(TWRA_SavedVariables.assignments.data) do
+    if type(TWRA_Assignments.data) == "table" then
+        for idx, section in pairs(TWRA_Assignments.data) do
             if type(section) == "table" and section["Section Name"] then
                 return true
             end
@@ -1254,9 +1280,8 @@ function TWRA:GetCurrentSectionData()
     if not sectionName then return nil end
     
     -- Look for the section with this name in the saved data
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.data then
-        for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+    if TWRA_Assignments and TWRA_Assignments.data then
+        for _, section in pairs(TWRA_Assignments.data) do
             if section["Section Name"] == sectionName then
                 return section
             end

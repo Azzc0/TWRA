@@ -16,13 +16,12 @@ function TWRA:InitializeCompression()
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     
     -- Handle migration from old format (if compressed data exists in old location)
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.compressed then
+    if TWRA_Assignments and TWRA_Assignments.compressed then
         self:Debug("compress", "Migrating compressed data to new location")
-        TWRA_CompressedAssignments.data = TWRA_SavedVariables.assignments.compressed
-        TWRA_CompressedAssignments.timestamp = TWRA_SavedVariables.assignments.timestamp or 0
+        TWRA_CompressedAssignments.data = TWRA_Assignments.compressed
+        TWRA_CompressedAssignments.timestamp = TWRA_Assignments.timestamp or 0
         -- Remove from old location
-        TWRA_SavedVariables.assignments.compressed = nil
+        TWRA_Assignments.compressed = nil
     end
     
     self:Debug("system", "Compression system initialized")
@@ -89,8 +88,7 @@ function TWRA:TestCompression()
     
     -- Test with real addon data if it exists
     local realDataTest = false
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.data then
+    if TWRA_Assignments and TWRA_Assignments.data then
         realDataTest = true
         
         local syncData = self:PrepareDataForSync()
@@ -138,23 +136,39 @@ end
 
 -- Prepare data for sync by stripping client-specific information
 function TWRA:PrepareDataForSync()
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
-        self:Debug("error", "No data to prepare for sync")
+    -- Early initialization guard - ensure assignment data structure exists
+    if not TWRA_Assignments then
+        self:Debug("error", "No data to prepare for sync - TWRA_Assignments is nil")
+        -- Auto-repair the structure
+        TWRA_Assignments = {
+            data = {},
+            version = 2,
+            currentSection = 1,
+            timestamp = time()
+        }
+        return nil
+    end
+    
+    -- Also verify that we actually have data to work with
+    if not TWRA_Assignments.data then
+        self:Debug("error", "No assignment data to prepare for sync - TWRA_Assignments.data is nil")
+        -- Auto-repair the data table
+        TWRA_Assignments.data = {}
         return nil
     end
     
     -- Create a copy of the assignments data without client-specific information
     local syncData = {
-        currentSectionName = TWRA_SavedVariables.assignments.currentSectionName,
-        isExample = TWRA_SavedVariables.assignments.isExample,
-        version = TWRA_SavedVariables.assignments.version,
-        timestamp = TWRA_SavedVariables.assignments.timestamp,
-        currentSection = TWRA_SavedVariables.assignments.currentSection,
+        currentSectionName = TWRA_Assignments.currentSectionName,
+        isExample = TWRA_Assignments.isExample,
+        version = TWRA_Assignments.version,
+        timestamp = TWRA_Assignments.timestamp,
+        currentSection = TWRA_Assignments.currentSection,
         data = {}
     }
     
     -- Copy the data without Section Player Info
-    for sectionIndex, sectionData in pairs(TWRA_SavedVariables.assignments.data) do
+    for sectionIndex, sectionData in pairs(TWRA_Assignments.data) do
         if type(sectionData) == "table" then
             syncData.data[sectionIndex] = {}
             
@@ -280,8 +294,8 @@ function TWRA:StoreCompressedData(compressedData)
     TWRA_CompressedAssignments.data = compressedData
     
     -- Also store the timestamp for validation
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        TWRA_CompressedAssignments.timestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    if TWRA_Assignments then
+        TWRA_CompressedAssignments.timestamp = TWRA_Assignments.timestamp or 0
     end
     
     self:Debug("compress", "Stored compressed data (" .. string.len(compressedData) .. " bytes) in TWRA_CompressedAssignments")
@@ -294,12 +308,12 @@ function TWRA:GetStoredCompressedData()
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     
     -- Check if we have saved assignments
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
+    if not TWRA_Assignments then
         return nil, "No saved assignments"
     end
     
     -- Get current timestamp
-    local currentTimestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    local currentTimestamp = TWRA_Assignments.timestamp or 0
     
     -- Check if the compressed data exists and is up to date
     if not TWRA_CompressedAssignments.data or 
@@ -325,8 +339,7 @@ function TWRA:BenchmarkCompression(iterations)
     iterations = iterations or 3 -- Default to 3 iterations
     
     -- Check if we have any saved data to test with
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or 
-       not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333TWRA Compression Benchmark:|r No saved assignments data available")
         return nil, "No saved assignments data available"
     end

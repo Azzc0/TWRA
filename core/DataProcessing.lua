@@ -129,15 +129,14 @@ function TWRA:ProcessStaticPlayerInfo()
               ", class: " .. (playerClass or "unknown"))
     
     -- Skip if we don't have saved data
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or 
-       not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         self:Debug("data", "No saved data available for processing")
         return
     end
     
     -- Process each section in the data
     local sectionsProcessed = 0
-    for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+    for _, section in pairs(TWRA_Assignments.data) do
         -- We're only working with table sections (new format)
         if type(section) == "table" and section["Section Name"] then
             local sectionName = section["Section Name"]
@@ -215,15 +214,14 @@ function TWRA:ProcessDynamicPlayerInfo()
     self:Debug("data", "Dynamic player info: group: " .. (playerGroup or "none"))
     
     -- Skip if we don't have saved data
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments or 
-       not TWRA_SavedVariables.assignments.data then
+    if not TWRA_Assignments or not TWRA_Assignments.data then
         self:Debug("data", "No saved data available for processing")
         return
     end
     
     -- Process each section in the data
     local sectionsProcessed = 0
-    for _, section in pairs(TWRA_SavedVariables.assignments.data) do
+    for _, section in pairs(TWRA_Assignments.data) do
         -- We're only working with table sections (new format)
         if type(section) == "table" and section["Section Name"] then
             local sectionName = section["Section Name"]
