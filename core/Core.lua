@@ -830,7 +830,7 @@ end
 
 -- Consolidated SaveAssignments function incorporating both implementations
 function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
-    if not data or not sourceString then return end
+    if not data then return end
     
     -- Check if this is our new format structure with ["data"] key
     local isNewFormat = false
@@ -933,12 +933,27 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         TWRA_SavedVariables = TWRA_SavedVariables or {}
         TWRA_SavedVariables.assignments = {
             data = data.data,
-            source = sourceString,
+            -- IMPORTANT: Don't store source string to save memory
             timestamp = timestamp,
             currentSection = 1,  -- Start at first section for new imports
             version = 2,  -- Mark as new format
             isExample = false
         }
+        
+        -- IMPORTANT: Generate compressed version for future sync
+        if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
+            self:Debug("data", "Generating compressed data for future sync operations")
+            local syncReadyData = self:PrepareDataForSync(TWRA_SavedVariables.assignments)
+            local compressedData = self:CompressAssignmentsData(syncReadyData)
+            if compressedData then
+                self:StoreCompressedData(compressedData)
+                self:Debug("data", "Compressed data generated and stored in TWRA_CompressedAssignments")
+            else
+                self:Debug("error", "Failed to generate compressed version of data")
+            end
+        else
+            self:Debug("error", "Missing compression functions - compressed data not generated")
+        end
         
         -- Build navigation from the imported sections
         self:BuildNavigationFromNewFormat()
@@ -992,7 +1007,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     -- Save the cleaned data, source string, and current section index and example flag
     TWRA_SavedVariables.assignments = {
         data = cleanedData,
-        source = sourceString,
+        -- IMPORTANT: Don't store source string to save memory
         timestamp = timestamp,
         currentSection = currentSectionIndex,
         currentSectionName = currentSectionName, -- Store section name for better restoration
@@ -1000,6 +1015,21 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         isExample = isExampleData,
         usingExampleData = isExampleData
     }
+    
+    -- IMPORTANT: Generate compressed version for future sync
+    if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
+        self:Debug("data", "Generating compressed data for future sync operations")
+        local syncReadyData = self:PrepareDataForSync(TWRA_SavedVariables.assignments)
+        local compressedData = self:CompressAssignmentsData(syncReadyData)
+        if compressedData then
+            self:StoreCompressedData(compressedData)
+            self:Debug("data", "Compressed data generated and stored in TWRA_CompressedAssignments")
+        else
+            self:Debug("error", "Failed to generate compressed version of data")
+        end
+    else
+        self:Debug("error", "Missing compression functions - compressed data not generated")
+    end
     
     self:Debug("nav", "SaveAssignments - Saved with section: " .. 
                (currentSectionName or "None") .. " (index: " .. currentSectionIndex .. ")")

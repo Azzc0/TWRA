@@ -12,6 +12,19 @@ function TWRA:InitializeCompression()
         return false
     end
     
+    -- Initialize the TWRA_CompressedAssignments if it doesn't exist
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    
+    -- Handle migration from old format (if compressed data exists in old location)
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and 
+       TWRA_SavedVariables.assignments.compressed then
+        self:Debug("compress", "Migrating compressed data to new location")
+        TWRA_CompressedAssignments.data = TWRA_SavedVariables.assignments.compressed
+        TWRA_CompressedAssignments.timestamp = TWRA_SavedVariables.assignments.timestamp or 0
+        -- Remove from old location
+        TWRA_SavedVariables.assignments.compressed = nil
+    end
+    
     self:Debug("system", "Compression system initialized")
     return true
 end
@@ -255,34 +268,46 @@ end
 -- Store compressed data for later use
 -- This replaces storing the source string
 function TWRA:StoreCompressedData(compressedData)
-    if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
-        self:Debug("error", "No assignments data structure to store compressed data in")
-        return false
-    end
-    
     if not compressedData then
         self:Debug("error", "No compressed data to store")
         return false
     end
     
-    -- Store compressed data instead of source
-    TWRA_SavedVariables.assignments.compressed = compressedData
+    -- Ensure our storage exists
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     
-    -- Don't store source anymore
-    TWRA_SavedVariables.assignments.source = nil
+    -- Store the compressed data in our dedicated variable
+    TWRA_CompressedAssignments.data = compressedData
     
-    self:Debug("compress", "Stored compressed data (" .. string.len(compressedData) .. " bytes)")
+    -- Also store the timestamp for validation
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+        TWRA_CompressedAssignments.timestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    end
+    
+    self:Debug("compress", "Stored compressed data (" .. string.len(compressedData) .. " bytes) in TWRA_CompressedAssignments")
     return true
 end
 
 -- Get stored compressed data for syncing
 function TWRA:GetStoredCompressedData()
+    -- Ensure our storage exists
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    
+    -- Check if we have saved assignments
     if not TWRA_SavedVariables or not TWRA_SavedVariables.assignments then
         return nil, "No saved assignments"
     end
     
-    if not TWRA_SavedVariables.assignments.compressed then
-        -- If compressed data doesn't exist yet, create it
+    -- Get current timestamp
+    local currentTimestamp = TWRA_SavedVariables.assignments.timestamp or 0
+    
+    -- Check if the compressed data exists and is up to date
+    if not TWRA_CompressedAssignments.data or 
+       not TWRA_CompressedAssignments.timestamp or 
+       TWRA_CompressedAssignments.timestamp ~= currentTimestamp then
+        
+        -- If compressed data doesn't exist or is outdated, create it
+        self:Debug("compress", "Generating new compressed data (missing or outdated)")
         local compressed, err = self:CompressAssignmentsData()
         if not compressed then
             return nil, "Failed to generate compressed data: " .. tostring(err)
@@ -292,7 +317,7 @@ function TWRA:GetStoredCompressedData()
         self:StoreCompressedData(compressed)
     end
     
-    return TWRA_SavedVariables.assignments.compressed
+    return TWRA_CompressedAssignments.data
 end
 
 -- Benchmark various compression methods using real assignment data

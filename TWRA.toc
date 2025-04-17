@@ -1,9 +1,9 @@
 ## Interface: 11200
 ## Title: TWRA - Turtle WoW Raid Assignments
-## Notes: Raid assignment management tool for Turtle WoW
+## Notes: Raid assignment vieweing tool for Turtle WoW
 ## Author: Azzco
-## Version: 0.1
-## SavedVariables: TWRA_SavedVariables
+## Version: 0.2
+## SavedVariables: TWRA_SavedVariables, TWRA_Assignments, TWRA_CompressedAssignments
 
 # Libraries (must load first)
 libs\LibStub.lua

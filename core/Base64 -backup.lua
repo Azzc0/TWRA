@@ -91,197 +91,49 @@ for i=0, 63 do
     b64EncodeArray[i] = b64Encode(i)
 end
 
--- Initialize LibCompress library
-local LibCompress = LibStub:GetLibrary("LibCompress")
-
--- Function to compress data using Huffman encoding
--- This is a new function that uses LibCompress TableToString + Huffman compression
-function TWRA:CompressAssignmentsData(data)
-    if not data then
-        self:Debug("error", "CompressAssignmentsData: nil data provided", true)
-        return nil
-    end
+-- Fix the modulo usage in EncodeBase64 function
+function TWRA:EncodeBase64(data)
+    if not data then return nil end
     
-    self:Debug("data", "Compressing assignment data for storage/transmission")
-    local startTime = debugprofilestop and debugprofilestop() or 0
+    local bytes = {string.byte(data, 1, string.len(data))}
+    local result = {}
     
-    -- First, convert the Lua table to a string representation
-    local tableString = LibCompress:TableToString(data)
-    if not tableString then
-        self:Debug("error", "Failed to convert table to string format", true)
-        return nil
-    end
-    
-    -- Then compress the string using Huffman encoding
-    local compressedString = LibCompress:CompressHuffman(tableString)
-    if not compressedString then
-        self:Debug("error", "Huffman compression failed", true)
-        return nil
-    end
-    
-    -- Calculate compression ratio for monitoring
-    local originalSize = string.len(tableString or "")
-    local compressedSize = string.len(compressedString or "")
-    local ratio = originalSize > 0 and math.floor((compressedSize / originalSize) * 100) or 0
-    
-    if debugprofilestop then
-        local compressionTime = debugprofilestop() - startTime
-        self:Debug("performance", "Data compressed: " .. originalSize .. " bytes to " .. 
-                   compressedSize .. " bytes (" .. ratio .. "%) in " .. compressionTime .. "ms")
-    else
-        self:Debug("data", "Data compressed: " .. originalSize .. " bytes to " .. 
-                   compressedSize .. " bytes (" .. ratio .. "%)")
-    end
-    
-    -- Mark the string as compressed with a prefix for easier identification
-    return "COMP:" .. compressedString
-end
-
--- Function to decompress data compressed with CompressAssignmentsData
-function TWRA:DecompressAssignmentsData(compressedData)
-    if not compressedData then
-        self:Debug("error", "DecompressAssignmentsData: nil data provided", true)
-        return nil
-    end
-    
-    -- Check for the compression marker
-    local isCompressed = string.sub(compressedData, 1, 5) == "COMP:"
-    if not isCompressed then
-        self:Debug("error", "Data is not in compressed format", true)
-        return nil
-    end
-    
-    self:Debug("data", "Decompressing assignment data")
-    local startTime = debugprofilestop and debugprofilestop() or 0
-    
-    -- Remove the COMP: prefix
-    local compressedString = string.sub(compressedData, 6)
-    
-    -- Decompress the string
-    local tableString, decompressionError = LibCompress:DecompressHuffman(compressedString)
-    if not tableString or decompressionError then
-        self:Debug("error", "Failed to decompress data: " .. (decompressionError or "unknown error"), true)
-        return nil
-    end
-    
-    -- Convert the string back to a table
-    local resultTable = LibCompress:StringToTable(tableString)
-    if not resultTable then
-        self:Debug("error", "Failed to convert string back to table", true)
-        return nil
-    end
-    
-    if debugprofilestop then
-        local decompressionTime = debugprofilestop() - startTime
-        self:Debug("performance", "Data decompressed in " .. decompressionTime .. "ms")
-    end
-    
-    return resultTable
-end
-
--- Function to prepare data for sync by removing client-specific information
-function TWRA:PrepareDataForSync(data)
-    if not data or not data.data then
-        self:Debug("error", "PrepareDataForSync: Invalid data structure", true)
-        return data
-    end
-    
-    self:Debug("sync", "Preparing assignment data for synchronization")
-    
-    -- Create a deep copy to avoid modifying the original
-    local syncData = {
-        data = {}
-    }
-    
-    -- Copy all sections except client-specific data
-    for sectionIdx, section in pairs(data.data) do
-        if type(section) == "table" then
-            syncData.data[sectionIdx] = {}
-            
-            -- Copy basic section data
-            for k, v in pairs(section) do
-                if k ~= "Section Player Info" and k ~= "_specialRowIndices" then
-                    if type(v) == "table" then
-                        -- Deep copy for tables
-                        syncData.data[sectionIdx][k] = {}
-                        for tk, tv in pairs(v) do
-                            if type(tv) == "table" then
-                                syncData.data[sectionIdx][k][tk] = {}
-                                for stk, stv in pairs(tv) do
-                                    syncData.data[sectionIdx][k][tk][stk] = stv
-                                end
-                            else
-                                syncData.data[sectionIdx][k][tk] = tv
-                            end
-                        end
-                    else
-                        syncData.data[sectionIdx][k] = v
-                    end
-                end
-            end
-            
-            -- Initialize empty Section Player Info to ensure consistent structure
-            syncData.data[sectionIdx]["Section Player Info"] = { 
-                ["Relevant Rows"] = {} 
-            }
+    local i = 1
+    while i <= table.getn(bytes) do
+        local b1, b2, b3
+        b1 = bytes[i]
+        i = i + 1
+        b2 = i <= table.getn(bytes) and bytes[i] or 0
+        i = i + 1
+        b3 = i <= table.getn(bytes) and bytes[i] or 0
+        i = i + 1
+        
+        -- Convert 3 bytes to 4 base64 characters
+        table.insert(result, b64EncodeArray[math.floor(b1 / 4)])
+        
+        -- Replace modulo with math.floor approach
+        local b1mod4 = b1 - (math.floor(b1 / 4) * 4)
+        table.insert(result, b64EncodeArray[(b1mod4 * 16) + math.floor(b2 / 16)])
+        
+        if i - 2 > table.getn(bytes) then
+            table.insert(result, "=")
+        else
+            -- Replace modulo with math.floor approach
+            local b2mod16 = b2 - (math.floor(b2 / 16) * 16)
+            local b3div64 = math.floor(b3 / 64)
+            table.insert(result, b64EncodeArray[(b2mod16 * 4) + b3div64])
+        end
+        
+        if i - 1 > table.getn(bytes) then
+            table.insert(result, "=")
+        else
+            -- Replace modulo with math.floor approach
+            local b3mod64 = b3 - (math.floor(b3 / 64) * 64)
+            table.insert(result, b64EncodeArray[b3mod64])
         end
     end
     
-    self:Debug("sync", "Data prepared for sync: removed client-specific information")
-    return syncData
-end
-
--- Function to store compressed data for later reuse
-function TWRA:StoreCompressedData(compressedData)
-    if not compressedData then
-        self:Debug("error", "StoreCompressedData: nil data provided", true)
-        return false
-    end
-    
-    if not TWRA_SavedVariables then
-        TWRA_SavedVariables = {}
-    end
-    
-    if not TWRA_SavedVariables.assignments then
-        TWRA_SavedVariables.assignments = {}
-    end
-    
-    TWRA_SavedVariables.assignments.compressed = compressedData
-    self:Debug("data", "Stored compressed data for reuse")
-    return true
-end
-
--- Function to get stored compressed data or generate it if not available
-function TWRA:GetStoredCompressedData()
-    -- Check if we have stored compressed data
-    if TWRA_SavedVariables and 
-       TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.compressed then
-        self:Debug("data", "Using stored compressed data")
-        return TWRA_SavedVariables.assignments.compressed
-    end
-    
-    -- If not, check if we have assignment data that we can compress
-    if TWRA_SavedVariables and 
-       TWRA_SavedVariables.assignments and 
-       TWRA_SavedVariables.assignments.data then
-        self:Debug("data", "No stored compressed data, compressing current data")
-        
-        -- Prepare data for sync
-        local syncData = self:PrepareDataForSync(TWRA_SavedVariables.assignments)
-        
-        -- Compress the prepared data
-        local compressedData = self:CompressAssignmentsData(syncData)
-        
-        if compressedData then
-            -- Store for future use
-            self:StoreCompressedData(compressedData)
-            return compressedData
-        end
-    end
-    
-    self:Debug("error", "No data available to compress", true)
-    return nil
+    return table.concat(result)
 end
 
 -- Function to expand abbreviations based on static mapping table
@@ -455,105 +307,11 @@ function TWRA:EnsureCompleteRows(data)
     return data
 end
 
--- Modified Base64 decoding function with improved UTF-8 handling and compression support
+-- Improved Base64 decoding function with better UTF-8 handling
 function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     if not base64Str then 
         self:Debug("error", "Decode failed - nil string", true)
         return nil 
-    end
-    
-    -- Check if this is compressed data from sync
-    if string.sub(base64Str, 1, 5) == "COMP:" then
-        self:Debug("data", "Detected compressed data format, processing with decompression")
-        local decompressedData = self:DecompressAssignmentsData(base64Str)
-        
-        if not decompressedData then
-            self:Debug("error", "Failed to decompress data", true)
-            return nil
-        end
-        
-        -- Since this is already a table, we can skip the rest of the parsing
-        -- Just process client-specific data
-        
-        -- Initialize SavedVariables if they don't exist
-        if not TWRA_SavedVariables then
-            TWRA_SavedVariables = {}
-        end
-        if not TWRA_SavedVariables.assignments then
-            TWRA_SavedVariables.assignments = {}
-        end
-        
-        -- Store the decompressed data
-        TWRA_SavedVariables.assignments.data = decompressedData.data
-        
-        -- Store the compressed version for future sync operations
-        self:StoreCompressedData(base64Str)
-        
-        -- Process player information
-        if self.ProcessPlayerInfo then
-            self:ProcessPlayerInfo()
-            self:Debug("data", "Player information processed")
-        end
-        
-        -- If this is not a sync operation with timestamp, handle it as manual import
-        if not syncTimestamp then
-            -- This is a manual import, use SaveAssignments to handle proper UI updates
-            if self.SaveAssignments then
-                local timestamp = time()
-                self:SaveAssignments(decompressedData, "import", timestamp, noAnnounce)
-                
-                -- Reset UI state after import
-                if self.ShowMainView then
-                    self:Debug("ui", "Resetting UI to main view after import")
-                    self:ShowMainView()
-                end
-                
-                -- Make sure navigation is rebuilt
-                if self.RebuildNavigation then
-                    self:Debug("nav", "Rebuilding navigation after import")
-                    self:RebuildNavigation()
-                end
-                
-                -- Navigate to first section
-                if self.NavigateToSection then
-                    self:Debug("nav", "Navigating to first section after import")
-                    self:NavigateToSection(1)
-                end
-                
-                -- Clear import text box if it exists
-                if self.importEditBox then
-                    self:Debug("ui", "Clearing import edit box")
-                    self.importEditBox:SetText("")
-                end
-            else
-                self:Debug("error", "SaveAssignments function not found")
-            end
-        else
-            -- If this is a sync operation with timestamp, handle it directly
-            TWRA_SavedVariables.assignments.timestamp = syncTimestamp
-            TWRA_SavedVariables.assignments.version = 2
-            self:Debug("data", "Saved data to SavedVariables with timestamp: " .. syncTimestamp)
-            
-            -- Rebuild navigation after sync import
-            if self.RebuildNavigation then
-                self:Debug("nav", "Rebuilding navigation after sync import")
-                self:RebuildNavigation()
-            end
-            
-            -- Update dynamic player information after sync imports
-            if self.RefreshPlayerInfo then
-                self:RefreshPlayerInfo()
-                self:Debug("data", "Processed dynamic player information after sync import")
-            end
-            
-            -- Navigate to first section after sync import
-            if self.NavigateToSection then
-                self:Debug("nav", "Navigating to first section after sync import")
-                self:NavigateToSection(1)
-            end
-        end
-        
-        return decompressedData
     end
     
     -- Track operation start time for performance debugging
@@ -690,6 +448,9 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     self:Debug("error", "Format missing 'data' field", true)
                     return nil
                 end
+
+                -- IMPORTANT: We will clear data just once, right before assigning the new data
+                -- (moved from here to later in the code)
                 
                 -- First, expand abbreviations
                 self:Debug("data", "Expanding abbreviations in the imported data")
@@ -761,16 +522,6 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     result = self:FixSpecialCharacters(result)
                 end
                 
-                -- IMPORTANT: Generate and store compressed version for future sync
-                self:Debug("data", "Generating compressed version for future sync")
-                local syncReadyData = self:PrepareDataForSync(result)
-                local compressedData = self:CompressAssignmentsData(syncReadyData)
-                if compressedData then
-                    self:StoreCompressedData(compressedData)
-                else
-                    self:Debug("error", "Failed to create compressed version of imported data")
-                end
-                
                 -- Process player-relevant information
                 if self.ProcessPlayerInfo then
                     self:Debug("data", "Processing player-relevant information for imported data")
@@ -834,7 +585,6 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     
                     -- Use SaveAssignments function which will handle UI resets and navigation building
                     if self.SaveAssignments then
-                        -- IMPORTANT: Don't store the original source string to save memory
                         self:SaveAssignments(result, "import", timestamp, noAnnounce)
                         
                         -- IMPORTANT: Reset UI state after import
@@ -869,9 +619,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     TWRA_SavedVariables.assignments = {
                         data = result.data,
                         timestamp = syncTimestamp,
-                        version = 2,
-                        -- Store compressed version for future sync
-                        compressed = compressedData
+                        version = 2
                     }
                     self:Debug("data", "Saved data to SavedVariables with timestamp: " .. syncTimestamp)
                     
@@ -972,50 +720,6 @@ end
 function TWRA:TableToBase64(tbl)
     if not tbl then return nil end
     
-    -- IMPORTANT: For Base64 encoding, we'll just use the Lua string method
-    -- rather than trying to compress here, since it could be used in different contexts
     local luaStr = self:TableToLuaString(tbl)
     return self:EncodeBase64(luaStr)
-end
-
--- Encode a string to Base64
-function TWRA:EncodeBase64(str)
-    if not str then return nil end
-    
-    local bytes = {}
-    local result = ""
-    
-    for i = 1, string.len(str) do
-        local byte = string.byte(str, i)
-        table.insert(bytes, byte)
-    end
-    
-    -- Process all bytes, 3 at a time
-    for i = 1, table.getn(bytes), 3 do
-        local b1, b2, b3 = bytes[i], bytes[i+1], bytes[i+2]
-        
-        -- Extract 4 6-bit chunks from the 3 bytes
-        local c1 = math.floor(b1 / 4)
-        local c2 = (b1 - c1 * 4) * 16
-        
-        if b2 then
-            c2 = c2 + math.floor(b2 / 16)
-            local c3 = (b2 - math.floor(b2 / 16) * 16) * 4
-            
-            if b3 then
-                c3 = c3 + math.floor(b3 / 64)
-                local c4 = b3 - math.floor(b3 / 64) * 64
-                
-                result = result .. b64EncodeArray[c1] .. b64EncodeArray[c2] .. 
-                                 b64EncodeArray[c3] .. b64EncodeArray[c4]
-            else
-                result = result .. b64EncodeArray[c1] .. b64EncodeArray[c2] .. 
-                                 b64EncodeArray[c3] .. "="
-            end
-        else
-            result = result .. b64EncodeArray[c1] .. b64EncodeArray[c2] .. "=="
-        end
-    end
-    
-    return result
 end
