@@ -5,6 +5,10 @@
 ## Version: 0.1
 ## SavedVariables: TWRA_SavedVariables
 
+# Libraries (must load first)
+libs\LibStub.lua
+libs\LibCompressVanilla.lua
+
 # Core modules
 core\Debug.lua
 core\Constants.lua
