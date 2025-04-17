@@ -143,23 +143,18 @@ function TWRA:ProcessStaticPlayerInfo()
             local sectionName = section["Section Name"]
             sectionsProcessed = sectionsProcessed + 1
             
-            -- Initialize the Section Metadata and Player Info tables
-            section["Section Metadata"] = section["Section Metadata"] or {}
+            -- Ensure Section Player Info exists
             section["Section Player Info"] = section["Section Player Info"] or {}
             
+            -- Ensure Section Metadata exists, but no need to recreate it
+            -- since it's already processed during import in Base64.lua
+            section["Section Metadata"] = section["Section Metadata"] or {}
+            
+            -- Access the metadata that was created during import
             local metadata = section["Section Metadata"]
             local playerInfo = section["Section Player Info"]
             
-            -- CRITICAL FIX: Preserve existing metadata instead of reinitializing
-            -- Store section name in metadata if not already present
-            metadata["Name"] = metadata["Name"] or { sectionName }
-            
-            -- Initialize metadata arrays ONLY if they don't already exist
-            metadata["Note"] = metadata["Note"] or {}
-            metadata["Warning"] = metadata["Warning"] or {}
-            metadata["GUID"] = metadata["GUID"] or {}
-            
-            -- Find tank role columns - store in metadata using new name "Tank Columns"
+            -- Get tank columns from metadata if they exist, otherwise find them
             metadata["Tank Columns"] = metadata["Tank Columns"] or self:FindTankRoleColumns(section)
             local tanksCount = table.getn(metadata["Tank Columns"])
             
@@ -176,12 +171,6 @@ function TWRA:ProcessStaticPlayerInfo()
                 self:Debug("data", "Section '" .. sectionName .. "': Found " .. tanksCount .. 
                           " tank columns: [" .. tanksList .. "]", false, true)
             end
-            
-            -- Log metadata counts
-            self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
-                table.getn(metadata["Note"]) .. " notes, " ..
-                table.getn(metadata["Warning"]) .. " warnings, " ..
-                table.getn(metadata["GUID"]) .. " GUIDs")
             
             -- Find relevant rows by player name or class
             playerInfo["Relevant Rows"] = self:GetPlayerRelevantRowsForSection(section)

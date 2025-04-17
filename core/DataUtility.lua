@@ -629,7 +629,10 @@ function TWRA:CaptureSpecialRows(data)
     
     -- Process each section
     for sectionIdx, section in pairs(data.data) do
-        if type(section) == "table" and section["Section Rows"] and type(section["Section Rows"]) == "table" then
+        -- Make sure section is a table
+        if type(section) ~= "table" then
+            self:Debug("data", "Skipping non-table section: " .. tostring(sectionIdx))
+        else
             local sectionName = section["Section Name"] or tostring(sectionIdx)
             
             -- Initialize Section Metadata if not present
@@ -641,81 +644,89 @@ function TWRA:CaptureSpecialRows(data)
             metadata["Warning"] = metadata["Warning"] or {}
             metadata["GUID"] = metadata["GUID"] or {}
             
-            -- Track indices of special rows to remove later
-            local specialRowIndices = {}
-            
-            -- Scan through rows to find special rows
-            for rowIdx, row in ipairs(section["Section Rows"]) do
-                if type(row) == "table" and row[1] then
-                    -- After abbreviation expansion, we'll have "Note", "Warning", "GUID" 
-                    if row[1] == "Note" and row[2] then
-                        -- Add to metadata if not already there
-                        local exists = false
-                        for _, existingNote in ipairs(metadata["Note"]) do
-                            if existingNote == row[2] then
-                                exists = true
-                                break
+            -- Ensure Section Rows exists before trying to iterate over it
+            if section["Section Rows"] and type(section["Section Rows"]) == "table" then
+                -- Track indices of special rows to remove later
+                local specialRowIndices = {}
+                
+                -- Scan through rows to find special rows
+                for rowIdx, row in ipairs(section["Section Rows"]) do
+                    if type(row) == "table" and row[1] then
+                        -- After abbreviation expansion, we'll have "Note", "Warning", "GUID" 
+                        if row[1] == "Note" and row[2] then
+                            -- Add to metadata if not already there
+                            local exists = false
+                            for _, existingNote in ipairs(metadata["Note"]) do
+                                if existingNote == row[2] then
+                                    exists = true
+                                    break
+                                end
                             end
-                        end
-                        
-                        if not exists then
-                            table.insert(metadata["Note"], row[2])
-                            self:Debug("data", "Found Note in section " .. sectionName .. ": " .. row[2])
-                        end
-                        
-                        -- Mark for removal from rows
-                        table.insert(specialRowIndices, rowIdx)
-                        
-                    elseif row[1] == "Warning" and row[2] then
-                        -- Add to metadata if not already there
-                        local exists = false
-                        for _, existingWarning in ipairs(metadata["Warning"]) do
-                            if existingWarning == row[2] then
-                                exists = true
-                                break
+                            
+                            if not exists then
+                                table.insert(metadata["Note"], row[2])
+                                self:Debug("data", "Found Note in section " .. sectionName .. ": " .. row[2])
                             end
-                        end
-                        
-                        if not exists then
-                            table.insert(metadata["Warning"], row[2])
-                            self:Debug("data", "Found Warning in section " .. sectionName .. ": " .. row[2])
-                        end
-                        
-                        -- Mark for removal from rows
-                        table.insert(specialRowIndices, rowIdx)
-                        
-                    elseif row[1] == "GUID" and row[2] then
-                        -- Add to metadata if not already there
-                        local exists = false
-                        for _, existingGUID in ipairs(metadata["GUID"]) do
-                            if existingGUID == row[2] then
-                                exists = true
-                                break
+                            
+                            -- Mark for removal from rows
+                            table.insert(specialRowIndices, rowIdx)
+                            
+                        elseif row[1] == "Warning" and row[2] then
+                            -- Add to metadata if not already there
+                            local exists = false
+                            for _, existingWarning in ipairs(metadata["Warning"]) do
+                                if existingWarning == row[2] then
+                                    exists = true
+                                    break
+                                end
                             end
+                            
+                            if not exists then
+                                table.insert(metadata["Warning"], row[2])
+                                self:Debug("data", "Found Warning in section " .. sectionName .. ": " .. row[2])
+                            end
+                            
+                            -- Mark for removal from rows
+                            table.insert(specialRowIndices, rowIdx)
+                            
+                        elseif row[1] == "GUID" and row[2] then
+                            -- Add to metadata if not already there
+                            local exists = false
+                            for _, existingGUID in ipairs(metadata["GUID"]) do
+                                if existingGUID == row[2] then
+                                    exists = true
+                                    break
+                                end
+                            end
+                            
+                            if not exists then
+                                table.insert(metadata["GUID"], row[2])
+                                self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. row[2])
+                            end
+                            
+                            -- Mark for removal from rows
+                            table.insert(specialRowIndices, rowIdx)
                         end
-                        
-                        if not exists then
-                            table.insert(metadata["GUID"], row[2])
-                            self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. row[2])
-                        end
-                        
-                        -- Mark for removal from rows
-                        table.insert(specialRowIndices, rowIdx)
                     end
                 end
-            end
-            
-            -- Remember the metadata for this section
-            self.pendingMetadataRestore[sectionName] = {
-                notes = table.getn(metadata["Note"]),
-                warnings = table.getn(metadata["Warning"]),
-                guids = table.getn(metadata["GUID"])
-            }
-            
-            -- Remove special rows from section rows (from highest index to lowest)
-            table.sort(specialRowIndices, function(a,b) return a > b end)
-            for _, idx in ipairs(specialRowIndices) do
-                table.remove(section["Section Rows"], idx)
+                
+                -- Remember the metadata for this section
+                self.pendingMetadataRestore[sectionName] = {
+                    notes = table.getn(metadata["Note"]),
+                    warnings = table.getn(metadata["Warning"]),
+                    guids = table.getn(metadata["GUID"])
+                }
+                
+                -- Only remove special rows if we found any
+                if #specialRowIndices > 0 then
+                    -- Remove special rows from section rows (from highest index to lowest)
+                    table.sort(specialRowIndices, function(a,b) return a > b end)
+                    for _, idx in ipairs(specialRowIndices) do
+                        table.remove(section["Section Rows"], idx)
+                    end
+                end
+            else
+                self:Debug("data", "Section '" .. sectionName .. "' has no Section Rows or it's not a table")
             end
             
             self:Debug("data", "Section '" .. sectionName .. "': Found " .. 

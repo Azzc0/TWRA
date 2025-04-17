@@ -7,7 +7,7 @@
 
 # Libraries (must load first)
 libs\LibStub.lua
-libs\LibCompressVanilla.lua
+libs\LibCompress.lua
 
 # Core modules
 core\Debug.lua
@@ -16,6 +16,7 @@ core\Utils.lua
 core\Events.lua
 core\Base64.lua
 core\ImportDiagnostic.lua
+core\Compression.lua
 Example.lua
 TWRA.lua
 core\Core.lua

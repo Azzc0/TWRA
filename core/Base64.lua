@@ -448,14 +448,16 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     self:Debug("error", "Format missing 'data' field", true)
                     return nil
                 end
+
+                -- IMPORTANT: We will clear data just once, right before assigning the new data
+                -- (moved from here to later in the code)
                 
                 -- First, expand abbreviations
                 self:Debug("data", "Expanding abbreviations in the imported data")
                 result = self:ExpandAbbreviations(result)
                 
-                -- CRITICAL: Process special rows directly here, capturing metadata now
-                -- This approach directly processes the special rows without using a separate helper function
-                self:Debug("data", "Directly processing special rows after abbreviation expansion")
+                -- Process metadata and special rows
+                self:Debug("data", "Processing special rows after abbreviation expansion")
                 
                 -- Process each section
                 for sectionIdx, section in pairs(result.data) do
@@ -464,7 +466,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                         -- Initialize Section Metadata if not present
                         section["Section Metadata"] = section["Section Metadata"] or {}
                         local metadata = section["Section Metadata"]
-                        
+
                         -- Store section name in metadata
                         metadata["Name"] = { section["Section Name"] or "" }
                         
@@ -498,61 +500,12 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                         end
                         
                         -- Store the rows to remove in the section itself
-                        -- This ensures they won't be lost during processing
                         section["_specialRowIndices"] = rowsToRemove
                         
                         self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
                                   table.getn(metadata["Note"]) .. " notes, " ..
                                   table.getn(metadata["Warning"]) .. " warnings, " ..
                                   table.getn(metadata["GUID"]) .. " GUIDs")
-                    end
-                end
-                
-                -- Add a deep copy function to preserve metadata
-                local function deepCopy(original)
-                    local copy
-                    if type(original) == "table" then
-                        copy = {}
-                        for key, value in pairs(original) do
-                            copy[key] = deepCopy(value)
-                        end
-                    else
-                        copy = original
-                    end
-                    return copy
-                end
-                
-                -- Store a backup of the metadata that we can use to restore later if needed
-                local metadataBackup = {}
-                for sectionIdx, section in pairs(result.data) do
-                    if type(section) == "table" and section["Section Name"] and section["Section Metadata"] then
-                        local sectionName = section["Section Name"]
-                        metadataBackup[sectionName] = deepCopy(section["Section Metadata"])
-                        self:Debug("data", "Backed up metadata for section '" .. sectionName .. "'")
-                    end
-                end
-                
-                -- Add a hook to restore metadata after any processing
-                result._restoreMetadata = function()
-                    self:Debug("data", "Restoring metadata from backup")
-                    for sectionIdx, section in pairs(result.data) do
-                        if type(section) == "table" and section["Section Name"] then
-                            local sectionName = section["Section Name"]
-                            if metadataBackup[sectionName] then
-                                -- Initialize Section Metadata if not present
-                                section["Section Metadata"] = section["Section Metadata"] or {}
-                                
-                                -- Restore the metadata fields we care about
-                                section["Section Metadata"]["Note"] = metadataBackup[sectionName]["Note"]
-                                section["Section Metadata"]["Warning"] = metadataBackup[sectionName]["Warning"]
-                                section["Section Metadata"]["GUID"] = metadataBackup[sectionName]["GUID"]
-                                
-                                self:Debug("data", "Restored backup metadata for section '" .. sectionName .. "': " ..
-                                          table.getn(section["Section Metadata"]["Note"] or {}) .. " notes, " ..
-                                          table.getn(section["Section Metadata"]["Warning"] or {}) .. " warnings, " ..
-                                          table.getn(section["Section Metadata"]["GUID"] or {}) .. " GUIDs")
-                            end
-                        end
                     end
                 end
                 
@@ -569,37 +522,36 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     result = self:FixSpecialCharacters(result)
                 end
                 
-                -- UNIFIED APPROACH FOR ALL IMPORTS:
-                -- Process player-relevant information in the imported data (both UI and sync imports)
-                -- First put the data temporarily in SavedVariables so ProcessPlayerInfo can work with it
-                local tempData = nil
+                -- Process player-relevant information
                 if self.ProcessPlayerInfo then
                     self:Debug("data", "Processing player-relevant information for imported data")
                     
-                    -- Store current assignments if they exist (we'll restore them after)
-                    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-                        tempData = TWRA_SavedVariables.assignments.data
+                    -- Initialize SavedVariables if they don't exist
+                    if not TWRA_SavedVariables then
+                        TWRA_SavedVariables = {}
+                    end
+                    if not TWRA_SavedVariables.assignments then
+                        TWRA_SavedVariables.assignments = {}
                     end
                     
-                    -- Temporarily set the data so ProcessPlayerInfo can work with it
-                    TWRA_SavedVariables = TWRA_SavedVariables or {}
-                    TWRA_SavedVariables.assignments = TWRA_SavedVariables.assignments or {}
+                    -- IMPORTANT: Clear existing data only once, right before we need it for processing
+                    -- This prevents multiple redundant clearing operations
                     TWRA_SavedVariables.assignments.data = result.data
                     
-                    -- Process static player information - adds section["Tanks"], section["Section Group Rows"], etc.
+                    -- Process player information
                     self:ProcessPlayerInfo()
-                    self:Debug("data", "Static player information processed")
+                    self:Debug("data", "Player information processed")
                     
                     -- Get the processed data back from SavedVariables
                     result.data = TWRA_SavedVariables.assignments.data
                     
-                    -- Restore previous data if we were just checking
-                    if not syncTimestamp and tempData then
-                        TWRA_SavedVariables.assignments.data = tempData
+                    -- Clear the data if this was just a validation and not a real import
+                    if not syncTimestamp then
+                        TWRA_SavedVariables.assignments.data = nil
                     end
                 end
                 
-                -- NOW, after all processing is complete, remove the special rows
+                -- Remove the special rows now that all processing is complete
                 self:Debug("data", "Removing special rows after all processing")
                 for sectionIdx, section in pairs(result.data) do
                     if type(section) == "table" and section["Section Rows"] and section["_specialRowIndices"] then
@@ -620,21 +572,73 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     end
                 end
                 
-                -- If this is a sync operation with timestamp, handle it directly
-                if syncTimestamp then
-                    -- We need to assign directly to SavedVariables
-                    TWRA_SavedVariables = TWRA_SavedVariables or {}
+                -- IMPORTANT: Clear current data ONE TIME before final save
+                if not syncTimestamp then
+                    -- This is a manual import, use SaveAssignments to handle proper UI updates
+                    self:Debug("data", "Clearing current data before final save")
+                    if self.ClearData then
+                        self:ClearData()
+                    end
+                    
+                    -- Set up timestamp for this import
+                    local timestamp = time()
+                    
+                    -- Use SaveAssignments function which will handle UI resets and navigation building
+                    if self.SaveAssignments then
+                        self:SaveAssignments(result, "import", timestamp, noAnnounce)
+                        
+                        -- IMPORTANT: Reset UI state after import
+                        if self.ShowMainView then
+                            self:Debug("ui", "Resetting UI to main view after import")
+                            self:ShowMainView()
+                        end
+                        
+                        -- IMPORTANT: Make sure navigation is rebuilt
+                        if self.RebuildNavigation then
+                            self:Debug("nav", "Rebuilding navigation after import")
+                            self:RebuildNavigation()
+                        end
+                        
+                        -- IMPORTANT: Navigate to first section
+                        if self.NavigateToSection then
+                            self:Debug("nav", "Navigating to first section after import")
+                            self:NavigateToSection(1)
+                        end
+                        
+                        -- IMPORTANT: Clear import text box if it exists
+                        if self.importEditBox then
+                            self:Debug("ui", "Clearing import edit box")
+                            self.importEditBox:SetText("")
+                        end
+                    else
+                        self:Debug("error", "SaveAssignments function not found")
+                    end
+                else
+                    -- If this is a sync operation with timestamp, handle it directly
+                    self:Debug("data", "Setting up data for sync import")
                     TWRA_SavedVariables.assignments = {
-                        data = result.data, -- This now has the processed player info
+                        data = result.data,
                         timestamp = syncTimestamp,
                         version = 2
                     }
-                    self:Debug("data", "Directly saved data to SavedVariables with timestamp: " .. syncTimestamp)
+                    self:Debug("data", "Saved data to SavedVariables with timestamp: " .. syncTimestamp)
                     
-                    -- Also update dynamic player information after sync imports
+                    -- Rebuild navigation after sync import
+                    if self.RebuildNavigation then
+                        self:Debug("nav", "Rebuilding navigation after sync import")
+                        self:RebuildNavigation()
+                    end
+                    
+                    -- Update dynamic player information after sync imports
                     if self.RefreshPlayerInfo then
                         self:RefreshPlayerInfo()
                         self:Debug("data", "Processed dynamic player information after sync import")
+                    end
+                    
+                    -- Navigate to first section after sync import
+                    if self.NavigateToSection then
+                        self:Debug("nav", "Navigating to first section after sync import")
+                        self:NavigateToSection(1)
                     end
                 end
                 
