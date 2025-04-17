@@ -352,6 +352,21 @@ function TWRA:HandleDataResponseCommand(message, sender)
         end
     end
     
+    -- Check if this is a compressed data message
+    if parts[3] == "COMP" then
+        -- Compressed data format: DRESP:timestamp:COMP:compressedData
+        local prefix = parts[1] .. ":" .. parts[2] .. ":" .. parts[3] .. ":"
+        local prefixLen = string.len(prefix)
+        local compressedData = string.sub(message, prefixLen + 1)
+        
+        self:Debug("sync", string.format("Received compressed data from %s (timestamp: %d, length: %d)", 
+            sender, timestamp, string.len(compressedData)))
+        
+        -- Process the compressed data using our new decompression system
+        self:ProcessCompressedData(compressedData, timestamp, sender)
+        return
+    end
+    
     -- Standard non-chunked response - reconstruct the encoded data
     local prefix = parts[1] .. ":" .. parts[2] .. ":"
     local prefixLen = string.len(prefix)
@@ -364,8 +379,8 @@ function TWRA:HandleDataResponseCommand(message, sender)
     self:ProcessReceivedData(encodedData, timestamp, sender)
 end
 
--- Helper function to process received data (either chunked or standard)
-function TWRA:ProcessReceivedData(encodedData, timestamp, sender)
+-- New function to process compressed data received via sync
+function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
     -- Compare timestamps
     local ourTimestamp = 0
     if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
@@ -374,102 +389,93 @@ function TWRA:ProcessReceivedData(encodedData, timestamp, sender)
     
     -- Only process if we need this data
     if timestamp <= ourTimestamp then
-        self:Debug("sync", "Ignoring data response (we have newer or same data)")
+        self:Debug("sync", "Ignoring compressed data (we have newer or same data)")
         return
     end
     
-    -- Process the data like an import but with sync flags
-    if self.DecodeBase64 then
-        -- Add safety check to ensure the data is complete
-        if string.len(encodedData) < 10 then
-            self:Debug("error", "Data from " .. sender .. " is too short: " .. string.len(encodedData) .. " bytes")
+    -- Initialize compression system if needed
+    if not self.LibCompress then
+        if not self:InitializeCompression() then
+            self:Debug("error", "Failed to initialize compression system")
             return
         end
-        
-        -- Fix Base64 padding without using modulo
-        -- Base64 data length should be divisible by 4
-        local dataLen = string.len(encodedData)
-        local remainder = dataLen
-        while remainder > 0 and remainder < 4 do
-            encodedData = encodedData .. "="
-            remainder = remainder + 1
-            self:Debug("sync", "Added padding to make Base64 string length divisible by 4")
-        end
-        
-        -- Ensure string ends with proper Base64 padding
-        if not string.find(encodedData, "==$") and not string.find(encodedData, "=$") then
-            -- Check if we need padding based on length
-            local padNeeded = 4 - (string.len(encodedData) - (math.floor(string.len(encodedData)/4) * 4))
-            if padNeeded > 0 and padNeeded < 4 then
-                local padding = ""
-                for i = 1, padNeeded do
-                    padding = padding .. "="
-                end
-                encodedData = encodedData .. padding
-                self:Debug("sync", "Added " .. padNeeded .. " padding characters to data")
-            end
-        end
-        
-        -- Try decoding with better error handling
-        local success, result = pcall(function()
-            return self:DecodeBase64(encodedData, timestamp, true)
-        end)
-        
-        if not success then
-            self:Debug("error", "Error decoding sync data: " .. tostring(result))
-            return
-        end
-        
-        if not result then
-            self:Debug("error", "Failed to decode data from " .. sender)
-            return
-        end
-        
-        -- Data successfully imported
-        self:Debug("sync", "Successfully imported data from " .. sender)
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Successfully imported data from " .. sender)
-        
-        -- Navigate to pending section if one was stored
-        if self.SYNC.pendingSection then
-            self:Debug("sync", "Navigating to pending section: " .. self.SYNC.pendingSection.name)
-            self:NavigateToSection(self.SYNC.pendingSection.index, true)
-            self.SYNC.pendingSection = nil
-        end
-    else
-        self:Debug("error", "DecodeBase64 function not found")
     end
-end
-
--- Handle version check commands
-function TWRA:HandleVersionCommand(message, sender)
-    -- Currently just logs the version info
-    self:Debug("sync", "Version check from " .. sender .. " (message: " .. message .. ")")
-end
-
--- Request data sync from group
-function TWRA:RequestDataSync(timestamp)
-    -- Throttle requests - don't spam requests
-    local now = GetTime()
-    if now - self.SYNC.lastRequestTime < self.SYNC.requestTimeout then
-        self:Debug("sync", "Data request throttled")
+    
+    -- Decompress the data
+    local decompressedData, err = self:DecompressAssignmentsData(compressedData)
+    
+    if not decompressedData then
+        self:Debug("error", "Failed to decompress data from " .. sender .. ": " .. tostring(err))
         return
     end
     
-    -- Update last request time
-    self.SYNC.lastRequestTime = now
+    self:Debug("sync", "Successfully decompressed data from " .. sender .. 
+              " (" .. table.getn(decompressedData.data or {}) .. " sections)")
     
-    -- Send data request message
-    local message = string.format("%s:%d", self.SYNC.COMMANDS.DATA_REQUEST, timestamp)
-    self:SendAddonMessage(message)
+    -- Save the decompressed data
+    local saveResult = self:SaveAssignments(decompressedData, "sync", timestamp, true)
+    if not saveResult then
+        self:Debug("error", "Failed to save decompressed data from " .. sender)
+        return
+    end
     
-    self:Debug("sync", "Requested data sync for timestamp: " .. timestamp)
+    -- Data successfully imported
+    self:Debug("sync", "Successfully imported compressed data from " .. sender)
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Successfully imported data from " .. sender)
+    
+    -- Navigate to pending section if one was stored
+    if self.SYNC.pendingSection then
+        self:Debug("sync", "Navigating to pending section: " .. 
+                 (self.SYNC.pendingSection.name or self.SYNC.pendingSection.index))
+        self:NavigateToSection(self.SYNC.pendingSection.index, true)
+        self.SYNC.pendingSection = nil
+    end
 end
 
 -- Send data response to group
 function TWRA:SendDataResponse(encodedData, timestamp)
+    -- Try to use compressed data first if available
+    if self.CompressAssignmentsData then
+        self:Debug("sync", "Attempting to send compressed data response")
+        
+        local compressedData = self:GetStoredCompressedData()
+        
+        if compressedData then
+            -- Format message with COMP marker to indicate compressed data
+            local message = string.format("%s:%d:COMP:%s", 
+                self.SYNC.COMMANDS.DATA_RESPONSE,
+                timestamp,
+                compressedData)
+            
+            -- Check if message is within size limits
+            if string.len(message) <= 254 then  -- Safe limit for addon messages
+                self:Debug("sync", "Sending compressed data response (" .. 
+                          string.len(compressedData) .. " bytes)")
+                self:SendAddonMessage(message)
+                return true
+            else
+                self:Debug("sync", "Compressed data too large (" .. 
+                          string.len(message) .. " bytes), will use chunking")
+                
+                -- If we have the ChunkManager, use it for sending compressed data
+                if self.chunkManager then
+                    self:Debug("sync", "Using ChunkManager to send compressed data")
+                    local prefix = string.format("%s:%d:COMP:", 
+                        self.SYNC.COMMANDS.DATA_RESPONSE, timestamp)
+                    
+                    self.chunkManager:SendChunkedMessage(compressedData, prefix)
+                    return true
+                end
+            end
+        else
+            self:Debug("sync", "No compressed data available, falling back to Base64")
+        end
+    end
+    
+    -- Fall back to original Base64 method if compression isn't available
     if not encodedData or encodedData == "" then
         self:Debug("error", "No data to send in response")
-        return
+        return false
     end
     
     -- Format message

@@ -9,6 +9,7 @@ TWRA.DEBUG_CATEGORIES = {
     ui = { name = "UI", default = true, description = "User interface events and updates" },
     sync = { name = "Sync", default = true, description = "Synchronization messages" },
     data = { name = "Data", default = false, description = "Detailed data processing messages" },
+    compress = { name = "Compress", default = true, description = "Compression-related messages" },
     nav = { name = "Navigation", default = true, description = "Section navigation events" },
     auto = { name = "Auto", default = true, description = "Automatic features" },
     tank = { name = "Tank", default = true, description = "Tank assignments" },
@@ -135,6 +136,7 @@ function TWRA:InitDebug()
         data = "33AAFF",     -- Light Blue
         sync = "FF33FF",     -- Pink
         nav = "FFAA33",      -- Orange
+        compress = "33FFFF", -- Cyan
         osd = "FFFF33",      -- Yellow
         error = "FF0000",    -- Red
         warning = "FFAA00",  -- Orange

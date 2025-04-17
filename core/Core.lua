@@ -26,6 +26,17 @@ function TWRA:OnLoad()
         TWRA_SavedVariables.options = {}
     end
     
+    -- Initialize compression system
+    if self.InitializeCompression then
+        if self:InitializeCompression() then
+            self:Debug("system", "Compression system initialized successfully")
+        else
+            self:Debug("error", "Failed to initialize compression system")
+        end
+    else
+        self:Debug("error", "InitializeCompression function not found")
+    end
+    
     -- Convert any existing numeric values to booleans
     if TWRA_SavedVariables.options.autoNavigate ~= nil and 
        type(TWRA_SavedVariables.options.autoNavigate) ~= "boolean" then
