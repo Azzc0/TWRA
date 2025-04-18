@@ -7,9 +7,10 @@ function TWRA:InitChunkManager()
     -- Ensure we have a place to store chunked data
     self.chunkManager = {
         pendingTransfers = {},  -- Store all currently pending transfers
+        maxChunkSize = 180,     -- Maximum chunk size (conservative)
         transferTimeout = 30,   -- How long to wait for a complete transfer (seconds)
         cleanupInterval = 60,   -- How often to clean up stale transfers (seconds)
-        messageSizeLimit = 2000 -- Updated message size limit based on Turtle WoW testing (max is ~2042)
+        messageSizeLimit = 240  -- Default message size limit (can be updated by testing)
     }
     
     -- Start periodic cleanup of stale transfers
@@ -17,14 +18,162 @@ function TWRA:InitChunkManager()
         self:CleanupStaleTransfers() 
     end, self.chunkManager.cleanupInterval)
     
-    self:Debug("sync", "ChunkManager initialized with message size limit: " .. self.chunkManager.messageSizeLimit)
+    self:Debug("sync", "ChunkManager initialized")
     return true
+end
+
+-- Test function to determine the maximum message size on Turtle WoW
+function TWRA:TestMessageSizeLimit()
+    -- Stop any previously running tests
+    if self.testingInProgress then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Stopping previous test")
+        if self.testTimers then
+            for _, timer in pairs(self.testTimers) do
+                self:CancelTimer(timer)
+            end
+        end
+        -- Restore original handler if exists
+        if self.originalChatMsgHandler then
+            self.OnChatMsgAddon = self.originalChatMsgHandler
+            self.originalChatMsgHandler = nil
+        end
+    end
+    
+    -- Fixed test sizes to try
+    local testSizes = {240, 500, 1000, 1500, 2000, 3000, 4000}
+    self.testTimers = {}
+    self.testResults = {}
+    self.testingInProgress = true
+    
+    -- Function to generate a string of specified length
+    local function generateTestString(length)
+        local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        local str = "TWRA_TEST:" .. tostring(length) .. ":"
+        local baseLength = string.len(str)
+        
+        -- Fill the rest with random characters
+        for i = baseLength, length - 1 do
+            local randIndex = math.random(1, string.len(chars))
+            str = str .. string.sub(chars, randIndex, randIndex)
+        end
+        
+        return str
+    end
+    
+    -- Save the original chat message handler
+    if not self.originalChatMsgHandler then
+        self.originalChatMsgHandler = self.OnChatMsgAddon
+    end
+    
+    -- Create a temporary handler to process test messages
+    self.OnChatMsgAddon = function(self, prefix, message, distribution, sender)
+        -- Pass to original handler
+        if self.originalChatMsgHandler then
+            self:originalChatMsgHandler(prefix, message, distribution, sender)
+        end
+        
+        -- Check if this is our test message
+        if string.sub(message, 1, 10) == "TWRA_TEST:" then
+            local parts = self:SplitString(message, ":")
+            if parts and parts[2] then
+                local size = tonumber(parts[2])
+                if size then
+                    self.testResults[size] = true
+                    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Successfully received message of length " .. size)
+                end
+            end
+        end
+    end
+    
+    -- Schedule the actual tests with delays
+    local function scheduleTests()
+        -- Initialize random seed
+        math.randomseed(GetTime())
+        
+        -- Display test start message
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Starting message size tests with fixed sizes")
+        
+        -- Run tests with 3 seconds between them
+        for i, size in ipairs(testSizes) do
+            local timer = self:ScheduleTimer(function()
+                local testMessage = generateTestString(size)
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Testing size: " .. size)
+                
+                -- Try to use the proper sync channel and prefix
+                if self.SYNC and self.SYNC.PREFIX then
+                    SendAddonMessage(self.SYNC.PREFIX, testMessage, "RAID")
+                else
+                    -- Fallback to a generic prefix if the sync module isn't initialized
+                    SendAddonMessage("TWRA", testMessage, "RAID")
+                end
+            end, (i-1) * 3)
+            
+            table.insert(self.testTimers, timer)
+        end
+        
+        -- Schedule final evaluation
+        local finalTimer = self:ScheduleTimer(function()
+            local maxSuccessfulSize = 0
+            local successCount = 0
+            
+            -- Find the maximum successful size
+            for _, size in ipairs(testSizes) do
+                if self.testResults[size] then
+                    maxSuccessfulSize = size
+                    successCount = successCount + 1
+                end
+            end
+            
+            -- Display results
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Testing completed")
+            if successCount > 0 then
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Maximum successful size: " .. maxSuccessfulSize .. " bytes")
+                
+                -- Set a safe limit (90% of max or 4000, whichever is lower)
+                local recommendedSize = math.min(math.floor(maxSuccessfulSize * 0.9), 4000)
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Recommended chunk size: " .. recommendedSize .. " bytes")
+                
+                -- Update the chunk size in the manager
+                self.chunkManager.messageSizeLimit = recommendedSize
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r No successful tests! Keeping default size of 240 bytes")
+            end
+            
+            -- Clean up test variables
+            self.testingInProgress = false
+            self.testTimers = {}
+            
+            -- Restore original handler
+            self.OnChatMsgAddon = self.originalChatMsgHandler
+            self.originalChatMsgHandler = nil
+        end, table.getn(testSizes) * 3 + 2) -- Wait a few seconds after last test
+        
+        table.insert(self.testTimers, finalTimer)
+    end
+    
+    -- Start the tests
+    scheduleTests()
+    
+    -- Create slash command if it doesn't exist
+    if not self.sizeTestSlashRegistered then
+        SlashCmdList["TWRA_SIZE_TEST"] = function(msg)
+            if msg == "run" then
+                TWRA:TestMessageSizeLimit()
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Current message size limit: " .. 
+                    TWRA.chunkManager.messageSizeLimit .. " bytes")
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Size Test:|r Type /twrasize run to run the test again")
+            end
+        end
+        SLASH_TWRA_SIZE_TEST1 = "/twrasize"
+        self.sizeTestSlashRegistered = true
+    end
 end
 
 -- Split a large message into manageable chunks
 function TWRA:SplitMessageIntoChunks(message)
     local chunks = {}
-    local chunkSize = self.chunkManager.messageSizeLimit or 2042 -- Use the tested/configured message size limit
+    local chunkSize = self.chunkManager.messageSizeLimit or 240 -- Use the tested/configured message size limit
     
     if string.len(message) <= chunkSize then
         return {message}
