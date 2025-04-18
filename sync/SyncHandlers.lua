@@ -158,7 +158,7 @@ function TWRA:HandleAnnounceCommand(message, sender)
     end
 end
 
--- Handle data request commands with more detailed debugging
+-- Handle data request commands with support for compressed data
 function TWRA:HandleDataRequestCommand(message, sender)
     -- Extract parts from the message
     local parts = self:SplitString(message, ":")
@@ -167,30 +167,75 @@ function TWRA:HandleDataRequestCommand(message, sender)
         return
     end
     
-    -- Extract arguments - format is "DREQ:timestamp"
+    -- Extract arguments - format is "DREQ:timestamp" or "DREQ:timestamp:COMP" for compressed
     local requestedTimestamp = tonumber(parts[2])
+    local requestCompressed = (table.getn(parts) >= 3 and parts[3] == "COMP")
     
     -- Debug info
-    self:Debug("sync", string.format("Data request from %s (timestamp: %d)", 
-        sender, requestedTimestamp))
+    self:Debug("sync", string.format("Data request from %s (timestamp: %d, compressed: %s)", 
+        sender, requestedTimestamp, tostring(requestCompressed)))
     
     -- Check if we have the requested data
     local ourTimestamp = 0
-    local sourceString = nil
     
     if TWRA_Assignments then
         ourTimestamp = TWRA_Assignments.timestamp or 0
-        sourceString = TWRA_Assignments.source
     end
-    
-    self:Debug("sync", "Our data: timestamp=" .. ourTimestamp .. 
-               ", source=" .. (sourceString and "present (" .. string.len(sourceString or "") .. " chars)" or "missing"))
     
     -- Only respond if our timestamp matches what was requested
     if ourTimestamp ~= requestedTimestamp then
         self:Debug("sync", "Timestamp mismatch - we have: " .. ourTimestamp .. 
                   ", requested: " .. requestedTimestamp)
         return
+    end
+    
+    -- Try to use compressed data if requested and available
+    if requestCompressed then
+        local compressedData = self:GetStoredCompressedData()
+        if compressedData then
+            self:Debug("sync", "Using stored compressed data for response (length: " .. 
+                      string.len(compressedData) .. ")")
+            
+            -- Add random delay to prevent multiple responses at once
+            -- Delay proportional to group size: 0-2 seconds in a 40-man raid
+            local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
+            local maxDelay = math.min(2, groupSize * 0.05)
+            local delay = maxDelay * math.random()
+            
+            -- Schedule the response after the delay
+            self:ScheduleTimer(function()
+                self:Debug("sync", "Sending compressed data response now")
+                
+                -- Format message with COMP marker to indicate compressed data
+                local message = string.format("%s:%d:COMP:%s", 
+                    self.SYNC.COMMANDS.DATA_RESPONSE,
+                    ourTimestamp,
+                    compressedData)
+                
+                -- Use chunk manager if needed for large data
+                if string.len(message) > 254 and self.chunkManager then
+                    self:Debug("sync", "Data too large, using chunk manager")
+                    local prefix = string.format("%s:%d:COMP:", 
+                        self.SYNC.COMMANDS.DATA_RESPONSE, ourTimestamp)
+                    
+                    self.chunkManager:SendChunkedMessage(compressedData, prefix)
+                else
+                    -- Send directly if small enough
+                    self:SendAddonMessage(message)
+                end
+            end, delay)
+            
+            self:Debug("sync", string.format("Scheduled compressed data response in %.1f seconds", delay))
+            return
+        else
+            self:Debug("sync", "Compressed data requested but not available")
+        end
+    end
+    
+    -- Fall back to Base64 if compressed data not available or not requested
+    local sourceString = nil
+    if TWRA_Assignments then
+        sourceString = TWRA_Assignments.source
     end
     
     -- Make sure we have source data
@@ -200,18 +245,17 @@ function TWRA:HandleDataRequestCommand(message, sender)
     end
     
     -- Add random delay to prevent multiple responses at once
-    -- Delay proportional to group size: 0-2 seconds in a 40-man raid
     local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
     local maxDelay = math.min(2, groupSize * 0.05)
     local delay = maxDelay * math.random()
     
     -- Schedule the response after the delay
     self:ScheduleTimer(function()
-        self:Debug("sync", "Sending data response now with source of length: " .. string.len(sourceString))
+        self:Debug("sync", "Sending Base64 data response now with source of length: " .. string.len(sourceString))
         self:SendDataResponse(sourceString, ourTimestamp)
     end, delay)
     
-    self:Debug("sync", string.format("Scheduling data response in %.1f seconds (data length: %d)", 
+    self:Debug("sync", string.format("Scheduling Base64 data response in %.1f seconds (data length: %d)", 
                 delay, string.len(sourceString)))
 end
 

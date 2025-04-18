@@ -585,7 +585,7 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
             self.navigation.menuButton.text:SetText(sectionName)
         end
         
-        -- IMPORTANT CHANGE: Filter and display the selected section's data
+        -- Filter and display the selected section's data
         if self.FilterAndDisplayHandler then
             self:FilterAndDisplayHandler(sectionName)
             self:Debug("nav", "Updated main frame content for section: " .. sectionName)
@@ -624,7 +624,8 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
         isMainFrameVisible = self.mainFrame and self.mainFrame:IsShown() or false,
         inOptionsView = self.currentView == "options" or false,
         fromSync = suppressSync == "fromSync",
-        forceUpdate = true  -- Always force OSD content update
+        forceUpdate = true,  -- Always force OSD content update
+        suppressSync = suppressSync -- Pass through the suppressSync flag directly to the event handler
     }
     
     -- Send section changed message which triggers OSD if appropriate
@@ -633,27 +634,6 @@ function TWRA:NavigateToSection(targetSection, suppressSync)
     -- ALWAYS refresh OSD content, even if it isn't shown (it will be available to show on demand)
     if self.RefreshOSDContent then
         self:RefreshOSDContent()
-    end
-    
-    -- Broadcast to group if sync enabled and not suppressed
-    -- Enhanced sync handling with timestamp support
-    if not suppressSync and self.SYNC and self.SYNC.liveSync and self.BroadcastSectionChange then
-        -- Get our current timestamp to include in broadcast
-        local timestamp = 0
-        if TWRA_SavedVariables and TWRA_Assignments and TWRA_Assignments.timestamp then
-            timestamp = TWRA_Assignments.timestamp
-        end
-        
-        -- Log the broadcast attempt with timestamp
-        self:Debug("sync", "Broadcasting section change to section " .. sectionIndex .. 
-                  " (timestamp: " .. timestamp .. ")")
-        
-        -- Pass timestamp to broadcast function
-        self:BroadcastSectionChange(sectionIndex, timestamp)
-    elseif suppressSync then
-        self:Debug("sync", "Section change broadcast suppressed for section " .. sectionIndex)
-    elseif not self.SYNC or not self.SYNC.liveSync then
-        self:Debug("sync", "Section change not broadcast - sync disabled")
     end
     
     -- If enabled, update tanks

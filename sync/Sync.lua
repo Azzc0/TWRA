@@ -11,7 +11,8 @@ TWRA.SYNC.pendingSection = nil -- Section to navigate to after sync
 TWRA.SYNC.lastRequestTime = 0 -- When we last requested data
 TWRA.SYNC.requestTimeout = 5 -- Seconds to wait between requests
 TWRA.SYNC.monitorMessages = false -- Monitor all addon messages
-TWRA.SYNC.justActivated = false -- Suppress initial broadcasts
+TWRA.SYNC.justActivated = false -- Keep for backward compatibility
+TWRA.SYNC.sectionChangeHandlerRegistered = false -- Section change handler registration flag
 
 -- Command constants for addon messages
 TWRA.SYNC.COMMANDS = {
@@ -96,22 +97,15 @@ function TWRA:ActivateLiveSync()
         self:Debug("error", "Could not find event frame to register events")
     end
     
+    -- Make sure section change handler is registered (only registers once)
+    self:RegisterSectionChangeHandler()
+    
     -- Enable message handling
     self:Debug("sync", "Live Sync fully activated")
     
     -- Ensure the option is saved in saved variables
     if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
     TWRA_SavedVariables.options.liveSync = true
-    
-    -- IMPORTANT: Do NOT broadcast current section immediately on login/reload
-    -- Flag that we've just activated so we don't broadcast automatically
-    self.SYNC.justActivated = true
-    
-    -- Clear this flag after a short delay
-    self:ScheduleTimer(function()
-        self.SYNC.justActivated = false
-        self:Debug("sync", "Initial section broadcast suppression cleared")
-    end, 5)
     
     return true
 end
@@ -139,14 +133,8 @@ function TWRA:DeactivateLiveSync()
     return true
 end
 
--- Enhanced BroadcastSectionChange function with timestamp support and login suppression
+-- Enhanced BroadcastSectionChange function with timestamp support
 function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
-    -- Skip if we've just activated (to prevent broadcasting on login)
-    if self.SYNC.justActivated then
-        self:Debug("sync", "Section change broadcast suppressed (just activated)")
-        return false
-    end
-    
     -- Default channel selection (RAID or PARTY)
     local channel = "RAID"
     if GetNumRaidMembers() == 0 then
@@ -158,6 +146,9 @@ function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
         self:Debug("sync", "Not broadcasting section change - not in a group")
         return false
     end
+    
+    -- Ensure sectionIndex is a number
+    sectionIndex = tonumber(sectionIndex) or 1
     
     -- Ensure we have navigation data
     if self.navigation and self.navigation.handlers then
@@ -466,6 +457,140 @@ function TWRA:InitializeSync()
     end
     
     self:Debug("sync", "Registered /syncmon command")
+    
+    -- Register our section change handler
+    self:RegisterSectionChangeHandler()
+end
+
+-- Function to request data sync from group members
+function TWRA:RequestDataSync(timestamp)
+    -- Throttle requests to prevent spam
+    local now = GetTime()
+    if now - self.SYNC.lastRequestTime < self.SYNC.requestTimeout then
+        self:Debug("sync", "Data request throttled - too soon since last request")
+        return false
+    end
+    
+    -- Update last request time
+    self.SYNC.lastRequestTime = now
+    
+    -- Check if we're in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("sync", "Not in a group, skipping data request")
+        return false
+    end
+    
+    -- Create the request message with COMP flag to indicate we prefer compressed data
+    local message = string.format("%s:%d:COMP", 
+        self.SYNC.COMMANDS.DATA_REQUEST,
+        timestamp or 0)
+    
+    -- Send the request
+    self:SendAddonMessage(message)
+    self:Debug("sync", "Requested data sync with timestamp " .. (timestamp or 0) .. " (preferring compressed data)")
+    
+    -- Show a message to the user
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Requesting raid assignments from group...")
+    
+    return true
+end
+
+-- Function to announce when new data has been imported
+function TWRA:AnnounceDataImport()
+    -- Check if we're in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("sync", "Not in a group, skipping import announcement")
+        return false
+    end
+    
+    -- Get current timestamp
+    local timestamp = 0
+    if TWRA_Assignments then
+        timestamp = TWRA_Assignments.timestamp or 0
+    end
+    
+    -- Create the announce message
+    local message = string.format("%s:%d:%s", 
+        self.SYNC.COMMANDS.ANNOUNCE,
+        timestamp,
+        UnitName("player"))
+    
+    -- Add debug for monitoring
+    self:Debug("sync", "Announcing data import: timestamp=" .. timestamp)
+    
+    -- Send the announcement
+    self:SendAddonMessage(message)
+    
+    return true
+end
+
+-- Function to handle section changes for sync
+function TWRA:RegisterSectionChangeHandler()
+    self:Debug("sync", "Registering section change handler (only registers once)")
+    
+    -- Check if we've already registered to avoid duplicate handlers
+    if self.SYNC.sectionChangeHandlerRegistered then
+        self:Debug("sync", "Section change handler already registered, skipping")
+        return
+    end
+    
+    -- Register for the SECTION_CHANGED message using the proper event registration method
+    self:RegisterEvent("SECTION_CHANGED", function(sectionName, sectionIndex, numSections, context)
+        -- Always log that we received the event regardless of LiveSync status
+        self:Debug("sync", "SECTION_CHANGED event received: " .. sectionIndex .. 
+                           " (" .. sectionName .. "), liveSync=" .. tostring(self.SYNC.liveSync) .. 
+                           ", isActive=" .. tostring(self.SYNC.isActive))
+        
+        -- Don't broadcast if sync is suppressed or not active
+        if not self.SYNC.liveSync then
+            self:Debug("sync", "Skipping section broadcast - LiveSync not enabled")
+            return
+        end
+        
+        if not self.SYNC.isActive then
+            self:Debug("sync", "Skipping section broadcast - sync not active")
+            return
+        end
+        
+        -- Skip if the context indicates we should suppress sync
+        if context and context.suppressSync then
+            -- Check for various valid suppressSync values
+            local shouldSuppress = false
+            
+            if context.suppressSync == true then
+                shouldSuppress = true
+            elseif type(context.suppressSync) == "string" then
+                -- Handle string values like "fromSync", "reload", etc.
+                if context.suppressSync == "fromSync" or 
+                   context.suppressSync == "reload" or
+                   context.suppressSync == "true" then
+                    shouldSuppress = true
+                end
+            end
+            
+            if shouldSuppress then
+                self:Debug("sync", "Skipping section broadcast - suppressSync flag is set: " .. tostring(context.suppressSync))
+                return
+            end
+        end
+        
+        -- Get timestamp for sync
+        local timestamp = 0
+        if TWRA_Assignments and TWRA_Assignments.timestamp then
+            timestamp = TWRA_Assignments.timestamp
+        end
+        
+        -- Broadcast the section change
+        self:Debug("sync", "Broadcasting section change from event: " .. sectionIndex .. 
+                  " (" .. sectionName .. ") with timestamp " .. timestamp)
+        
+        self:BroadcastSectionChange(sectionIndex, timestamp)
+    end, "SYNC")
+    
+    -- Mark as registered to prevent duplicate registrations
+    self.SYNC.sectionChangeHandlerRegistered = true
+    
+    self:Debug("sync", "Section change handler registered successfully")
 end
 
 -- Execute registration of sync events immediately
