@@ -140,7 +140,7 @@ end
 -- List all registered events and their listener counts
 -- @param includeDetails Whether to include detailed information about each listener
 function TWRA:ListRegisteredEvents(includeDetails)
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Internal Events:|r")
+    TWRA:Debug("data", TWRA Internal Events:|r")
     
     local eventCount = 0
     local totalListeners = 0

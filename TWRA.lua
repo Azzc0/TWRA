@@ -342,11 +342,26 @@ end
 -- Enhanced LoadSavedAssignments to update OSD after loading
 function TWRA:LoadSavedAssignments()
     -- Check if we have saved assignments
+    local needExampleData = false
+    
     if not TWRA_Assignments then
-        self:Debug("data", "No saved assignments found")
-        -- Load example data if needed
-        if self.LoadExampleData then
+        self:Debug("data", "No saved assignments found, will load example data")
+        needExampleData = true
+    elseif not TWRA_Assignments.data or (type(TWRA_Assignments.data) == "table" and next(TWRA_Assignments.data) == nil) then
+        self:Debug("data", "Assignment data is nil or empty, will load example data")
+        needExampleData = true
+    end
+    
+    -- Load example data if needed
+    if needExampleData then
+        if self.LoadExampleDataAndShow then
+            self:Debug("data", "Loading example data for new users")
+            self:LoadExampleDataAndShow()
+            return true
+        elseif self.LoadExampleData then
+            self:Debug("data", "Loading example data (without UI refresh)")
             self:LoadExampleData()
+            return true
         end
         return false
     end

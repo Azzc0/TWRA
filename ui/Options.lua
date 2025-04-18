@@ -978,28 +978,38 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- Example button behavior
     exampleBtn:SetScript("OnClick", function()
-        -- Clear any previous data
-        if self.ClearData then
-            self:ClearData()
-        end
-        
-        -- Load example data
-        if self.LoadExampleData and self:LoadExampleData() then
-            -- Save the example assignments with timestamp 0
-            if self.SaveAssignments then
-                self:SaveAssignments(self.EXAMPLE_DATA, "example_data", 0, true)
-                self:Debug("data", "Example data loaded with timestamp 0")
-            end
+        -- -- Clear any previous data
+        -- if self.ClearData then
+        --     self:ClearData()
+        -- end
+        TWRA:LoadExampleDataAndShow()
+        -- -- Load example data
+        -- if self.LoadExampleData and self:LoadExampleData() then
+        --     -- Save the example assignments with timestamp 0
+        --     if self.SaveAssignments then
+        --         self:SaveAssignments(self.EXAMPLE_DATA, "example_data", 0, true)
+        --         self:Debug("data", "Example data loaded with timestamp 0")
+        --     end
             
-            self:Debug("ui", "Example data loaded successfully!")
+        --     self:Debug("ui", "Example data loaded successfully!")
             
-            -- Switch to main view
-            if self.ShowMainView then
-                self:ShowMainView()
-            end
-        else
-            self:Debug("error", "Failed to load example data")
-        end
+        --     -- Switch to main view
+        --     if self.ShowMainView then
+        --         self:ShowMainView()
+        --     end
+        -- else
+        --     self:Debug("error", "Failed to load example data")
+        -- end
+    end)
+    
+    -- Clear button behavior
+    clearBtn:SetScript("OnClick", function()
+        -- Clear the import box content
+        importBox:SetText("")
+        -- Remove focus from the import box
+        importBox:ClearFocus()
+        -- Debug log
+        self:Debug("ui", "Import box cleared")
     end)
     
     return self.optionsElements
