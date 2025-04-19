@@ -16,14 +16,10 @@ function onOpen() {
     var menu = ui.createMenu('TWRA');
     
     // Add top-level items
-    menu.addItem('Update Strings', 'updateAllStrings');
+    //menu.addItem('Update Strings', 'updateAllStrings');
     
-    // Add Tower of Karazhan submenu
-    menu.addSubMenu(ui.createMenu('Tower of Karazhan')
-      .addItem('Full Tower', 'generateKarazhanFull')
-      .addItem('Basement', 'generateKarazhanBasement')
-      .addItem('Lower Tower', 'generateKarazhanLower')
-      .addItem('Upper Tower', 'generateKarazhanUpper'));
+    // Replace Tower of Karazhan submenu with a single item since there's only one sheet
+    menu.addItem('Tower of Karazhan', 'generateTowerOfKarazhan');
     
     // Add Naxxramas submenu with nested wings
     menu.addSubMenu(ui.createMenu('Naxxramas')
@@ -32,16 +28,28 @@ function onOpen() {
       .addItem('Abomination Wing', 'generateNaxxAbomination')
       .addItem('Military Wing', 'generateNaxxMilitary')
       .addItem('Plague Wing', 'generateNaxxPlague')
-      .addItem('Frostwyrm Lair', 'generateNaxxFrostwyrm'));
+      .addItem('Frostwyrm\'s Lair', 'generateNaxxFrostwyrm'));
+    
+    // Add new raid items as single menu entries
+    menu.addItem('Temple of Ahn\'Qiraj', 'generateTempleAQ');
+    menu.addItem('Blackwing Lair', 'generateBlackwingLair');
+    menu.addItem('Molten Core', 'generateMoltenCore');
+    menu.addItem('Onyxia\'s Lair', 'generateOnyxia');
+    menu.addSubMenu(ui.createMenu('20m Raids')
+      .addItem('Ruins of Ahn\'Qiraj', 'generateRuinsAQ')
+      .addItem('Zul\'Gurub', 'generateZulGurub');
+    menu.addSubMenu(ui.createMenu('10m Content')
+      .addItem('Lower Karazhan Halls', 'generateLowerKarazhanHalls')
+      .addItem('Upper Blackrock Spire', 'generateUpperBlackrockSpire');
     
     // Add the menu to the UI
     menu.addToUi();
-  }
-  
-  /**
-   * Updates all TWRA string outputs in the spreadsheet
-   */
-  function updateAllStrings() {
+}
+
+/**
+ * Updates all TWRA string outputs in the spreadsheet
+ */
+function updateAllStrings() {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     
     // Find cells with GENERATE_TWRA formula and force recalculation
@@ -94,26 +102,13 @@ function onOpen() {
   /**
    * Generate strings for specific raid content and show in popup
    */
-  function generateKarazhanFull() {
-    // Generate popup with full Karazhan
-    showGeneratedTWRAPopup("Karazhan Full Tower", ["Basement", "Lower Tower", "Upper Tower"]);
-  }
-  
-  function generateKarazhanBasement() {
-    showGeneratedTWRAPopup("Karazhan Basement", ["Basement"]);
-  }
-  
-  function generateKarazhanLower() {
-    showGeneratedTWRAPopup("Karazhan Lower Tower", ["Lower Tower"]);
-  }
-  
-  function generateKarazhanUpper() {
-    showGeneratedTWRAPopup("Karazhan Upper Tower", ["Upper Tower"]);
+  function generateTowerOfKarazhan() {
+    showGeneratedTWRAPopup("Tower of Karazhan", ["Tower of Karazhan"]);
   }
   
   function generateNaxxFull() {
-    // Generate popup with all Naxx wings combined
-    showGeneratedTWRAPopup("Naxxramas Full Instance", ["Spider Wing", "Plague Wing", "Abomination Wing", "Military Wing", "Frostwyrm Lair"]);
+    // Generate popup with all Naxx wings combined - fix the Frostwyrm's Lair name
+    showGeneratedTWRAPopup("Naxxramas Full Instance", ["Spider Wing", "Plague Wing", "Abomination Wing", "Military Wing", "Frostwyrm's Lair"]);
   }
   
   function generateNaxxSpider() {
@@ -133,8 +128,44 @@ function onOpen() {
   }
   
   function generateNaxxFrostwyrm() {
-    showGeneratedTWRAPopup("Naxxramas Frostwyrm Lair", ["Frostwyrm Lair"]);
+    // Fix the name here too
+    showGeneratedTWRAPopup("Naxxramas Frostwyrm's Lair", ["Frostwyrm's Lair"]);
   }
+
+  /**
+   * Generate new raid string handlers
+   */
+  function generateTempleAQ() {
+    showGeneratedTWRAPopup("Temple of Ahn'Qiraj", ["Temple of Ahn'Qiraj"]);
+  }
+
+  function generateBlackwingLair() {
+    showGeneratedTWRAPopup("Blackwing Lair", ["Blackwing Lair"]);
+  }
+
+  function generateMoltenCore() {
+    showGeneratedTWRAPopup("Molten Core", ["Molten Core"]);
+  }
+
+  function generateRuinsAQ() {
+    showGeneratedTWRAPopup("Ruins of Ahn'Qiraj", ["Ruins of Ahn'Qiraj"]);
+  }
+
+  function generateOnyxia() {
+    showGeneratedTWRAPopup("Onyxia's Lair", ["Onyxia's Lair"]);
+  }
+
+  function generateZulGurub() {
+    showGeneratedTWRAPopup("Zul'Gurub", ["Zul'Gurub"]);
+  }
+
+  function generateLowerKarazhanHalls() {
+    showGeneratedTWRAPopup("Lower Karazhan Halls", ["Lower Karazhan Halls"]);
+  }
+
+  function generateUpperBlackrockSpire() {
+    showGeneratedTWRAPopup("Upper Blackrock Spire", ["Upper Blackrock Spire"]);
+  } 
   
   /**
    * Helper function to generate TWRA string from named wings and show in popup
@@ -151,7 +182,7 @@ function onOpen() {
       var args = sheetNames.slice();
       args.push(true);  // preferShortKeys = true
       args.push(true);  // useAbbreviations = true
-      var result = GENERATE_TWRA.apply(null, args);
+      var result = global_GENERATE_TWRA.apply(null, args);  // Use global reference function
       
       // Create a modal dialog with the result and a copy button
       var html = HtmlService
@@ -257,7 +288,7 @@ function onOpen() {
     args.push(true);  // useAbbreviations = true
     
     // Use Function.prototype.apply to call GENERATE_TWRA with our array of arguments
-    return GENERATE_TWRA.apply(null, args);
+    return global_GENERATE_TWRA.apply(null, args);  // Use global reference function
   }
   
   /**

@@ -506,3 +506,14 @@ function TEST_ABBREVIATION(input) {
     return input + " (no abbreviation)";
   }
 }
+
+/**
+ * Global reference to ensure GENERATE_TWRA is accessible across all script files
+ * This function helps expose the core TWRA generator function to other files in Apps Script
+ *
+ * @param {...*} args - All arguments passed to GENERATE_TWRA
+ * @return {String} - Base64 encoded TWRA string
+ */
+function global_GENERATE_TWRA() {
+  return GENERATE_TWRA.apply(null, arguments);
+}
