@@ -3,123 +3,137 @@
 TWRA = TWRA or {}
 
 -- Main addon message handler - routes messages to appropriate handlers
-function TWRA:HandleAddonMessage(message, channel, sender)
-    -- Skip our own messages
-    if sender == UnitName("player") then
-        self:Debug("sync", "Ignoring own message: " .. message)
-        return
-    end
-    
-    -- Validate message format with improved diagnostic
+function TWRA:HandleAddonMessage(message, distribution, sender)
+    -- Skip processing if message is empty
     if not message or message == "" then
-        self:Debug("sync", "Received empty message from " .. sender)
+        self:Debug("sync", "Empty message from " .. sender .. ", skipping")
         return
     end
     
-    -- Reduce debug spam - only show this for important messages
-    self:Debug("sync", "Processing message from " .. sender .. ": " .. message)
+    -- Log the full message for debugging if it's not from ourselves
+    if sender ~= UnitName("player") then
+        self:Debug("sync", "Received message from " .. sender .. ": " .. message, true)
+    end
     
-    -- Split message by colon to get command and arguments
-    local parts = self:SplitString(message, ":")
-    if not parts or table.getn(parts) < 1 then
-        self:Debug("sync", "Malformed message from " .. sender .. ": " .. message)
+    -- Enhanced debug for the message parsing step
+    self:Debug("sync", "Parsing message: " .. message, true)
+    
+    -- More robust message parsing to avoid silent failures
+    local command, rest = nil, nil
+    local colonPos = string.find(message, ":", 1, true) -- Find first colon with plain search
+    
+    if colonPos and colonPos > 1 then
+        command = string.sub(message, 1, colonPos-1)
+        rest = string.sub(message, colonPos+1)
+        self:Debug("sync", "Parsed command: '" .. command .. "', rest: '" .. rest .. "'", true)
+    else
+        self:Debug("sync", "Malformed message, no colon found: " .. message, true)
         return
     end
     
-    -- Extract command and arguments
-    local command = parts[1]
+    if not command or command == "" then
+        self:Debug("sync", "Malformed message, empty command: " .. message, true)
+        return
+    end
     
-    -- Route to appropriate handler based on command
-    -- Remove the diagnostic and detailed message parts output for routine operations
-    
+    -- Route to the appropriate handler based on command prefix
     if command == self.SYNC.COMMANDS.SECTION then
-        self:HandleSectionCommand(message, sender)
-    elseif command == self.SYNC.COMMANDS.ANNOUNCE then
-        self:HandleAnnounceCommand(message, sender)
+        -- Section change notification
+        self:Debug("sync", "Routing to HandleSectionCommand with rest: " .. rest, true)
+        self:HandleSectionCommand(rest, sender)
     elseif command == self.SYNC.COMMANDS.DATA_REQUEST then
+        -- Data request
         self:HandleDataRequestCommand(message, sender)
     elseif command == self.SYNC.COMMANDS.DATA_RESPONSE then
+        -- Data response
         self:HandleDataResponseCommand(message, sender)
+    elseif command == self.SYNC.COMMANDS.ANNOUNCE then
+        -- Announce new import
+        self:HandleAnnounceCommand(message, sender)
     elseif command == self.SYNC.COMMANDS.VERSION then
-        self:HandleVersionCommand(message, sender)
+        -- Version check (to be implemented)
+        self:Debug("sync", "Version check from " .. sender .. " (not yet implemented)")
     else
+        -- Unknown command
         self:Debug("sync", "Unknown command from " .. sender .. ": " .. command)
     end
 end
 
--- Handle section change commands (live section sync)
+-- Handle section change commands
 function TWRA:HandleSectionCommand(message, sender)
-    -- Reduce initial debug spam
+    -- Add debug statement right at the start
+    self:Debug("sync", "HandleSectionCommand called with message: " .. message .. " from " .. sender, true)
     
-    -- Extract parts from the message
-    local parts = self:SplitString(message, ":")
-    if table.getn(parts) < 4 then
-        self:Debug("sync", "Malformed section command from " .. sender .. ": " .. message)
-        return
-    end
+    -- More robust extraction of section index and timestamp
+    local sectionIndex, timestamp = nil, nil
+    local colonPos = string.find(message, ":", 1, true)  -- Find the colon with plain search
     
-    -- Extract arguments - format is "SECTION:timestamp:sectionIndex:sectionName"
-    local timestamp = tonumber(parts[2])
-    local sectionIndex = tonumber(parts[3])
-    local sectionName = parts[4]
-    
-    -- Simplified debug info - only show the essential details
-    self:Debug("sync", string.format("Section change from %s: '%s' (index: %d, timestamp: %d)", 
-        sender, sectionName, sectionIndex, timestamp))
-    
-    -- Verify we have live sync enabled - combine checks to reduce debug spam
-    if not self.SYNC or not self.SYNC.liveSync or not self.SYNC.isActive then
-        self:Debug("sync", "Ignoring section change (LiveSync not active)")
-        return
-    end
-    
-    -- Compare timestamps
-    local ourTimestamp = 0
-    if TWRA_Assignments then
-        ourTimestamp = TWRA_Assignments.timestamp or 0
-    end
-    
-    -- If the sender has newer data, request a sync
-    if timestamp > ourTimestamp then
-        self:Debug("sync", "Newer data detected (" .. timestamp .. " vs " .. ourTimestamp .. ") - requesting sync")
+    if colonPos and colonPos > 1 then
+        -- Extract parts directly using string.sub which is more reliable than pattern matching
+        sectionIndex = string.sub(message, 1, colonPos-1)
+        timestamp = string.sub(message, colonPos+1)
         
-        -- Store the pending section to navigate to after sync completes
-        self.SYNC.pendingSection = {
-            index = sectionIndex, 
-            name = sectionName
-        }
-        
-        if self.RequestDataSync then
-            self:RequestDataSync(timestamp)
-        else
-            self:Debug("error", "RequestDataSync function not found")
-        end
-        return
-    end
-    
-    -- If timestamps match, navigate to the section - with less debug spam
-    if timestamp == ourTimestamp then
-        -- Verify navigation functionality in one check to reduce debug spam
-        if not (self.NavigateToSection and self.navigation and self.navigation.handlers) then
-            self:Debug("error", "Navigation system not properly initialized")
-            return
-        end
-        
-        -- Check if the section exists in our handlers
-        local totalSections = table.getn(self.navigation.handlers)
-        if sectionIndex > totalSections then
-            self:Debug("error", "Section index out of range: " .. sectionIndex .. " (max: " .. totalSections .. ")")
-            return
-        end
-        
-        -- Use NavigateToSection with suppressSync=true to avoid broadcast loops
-        self:Debug("sync", "Navigating to section " .. sectionIndex .. " (" .. sectionName .. ")")
-        self:NavigateToSection(sectionIndex, true)
-        
-        -- Show message to user
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Changed to section " .. sectionName .. " by " .. sender)
+        self:Debug("sync", "Parsed from message - sectionIndex: '" .. sectionIndex .. "', timestamp: '" .. timestamp .. "'", true)
     else
-        self:Debug("sync", "Ignoring section change (we have newer data)")
+        self:Debug("sync", "Invalid SECTION message format. Expected sectionIndex:timestamp but got: " .. message, true)
+        return
+    end
+    
+    -- Convert to numbers (default to 0 if conversion fails)
+    local sectionIndexNum = tonumber(sectionIndex)
+    local timestampNum = tonumber(timestamp)
+    
+    if not sectionIndexNum then
+        self:Debug("sync", "Failed to convert section index to number: " .. sectionIndex, true)
+        return
+    end
+    
+    if not timestampNum then
+        self:Debug("sync", "Failed to convert timestamp to number: " .. timestamp, true)
+        return
+    end
+    
+    sectionIndex = sectionIndexNum
+    timestamp = timestampNum
+    
+    -- Always debug what we received
+    self:Debug("sync", string.format("Section change from %s (index: %d, timestamp: %d)", 
+        sender, sectionIndex, timestamp), true)
+    
+    -- Get our own timestamp for comparison
+    -- local ourTimestamp = 0
+
+    -- Debug the timestamp comparison
+    self:Debug("sync", "Comparing timestamps - Received: " .. timestamp .. 
+               " vs Our: " .. TWRA_Assignments.timestamp, true)
+    
+    -- Compare timestamps as specified:
+    -- 1. If timestamps match, navigate to section
+    -- 2. If we have newer timestamp, debug message only
+    -- 3. If they have newer timestamp, note section and request data
+    
+    if timestamp == TWRA_Assignments.timestamp then
+        -- Timestamps match - navigate to the section
+        self:Debug("sync", "Timestamps match - navigating to section " .. sectionIndex, true)
+        
+        self:NavigateToSection(sectionIndex, "fromSync")
+        
+    elseif timestamp < TWRA_Assignments.timestamp then
+        -- We have a newer version - just log it and don't navigate
+        self:Debug("sync", "We have a newer version (timestamp " .. TWRA_Assignments.timestamp .. 
+                  " > " .. timestamp .. "), ignoring section change", true)
+    
+    else -- timestamp > ourTimestamp
+        -- They have a newer version - request their data
+        self:Debug("sync", "Detected newer data from " .. sender .. " (timestamp " .. 
+                  timestamp .. " > " ..TWRA_Assignments.timestamp .. "), requesting data", true)
+        
+        -- Store the section index to navigate to after sync completes
+        self.SYNC.pendingSection = { index = sectionIndex }
+        self:Debug("sync", "Stored pending section index " .. sectionIndex .. " to navigate after sync", true)
+        
+        -- Request the data using the RECEIVED timestamp (not our own)
+        self:RequestDataSync(timestamp)
     end
 end
 
@@ -158,7 +172,7 @@ function TWRA:HandleAnnounceCommand(message, sender)
     end
 end
 
--- Handle data request commands with support for compressed data
+-- Handle data request commands with correct timestamp matching
 function TWRA:HandleDataRequestCommand(message, sender)
     -- Extract parts from the message
     local parts = self:SplitString(message, ":")
@@ -182,12 +196,15 @@ function TWRA:HandleDataRequestCommand(message, sender)
         ourTimestamp = TWRA_Assignments.timestamp or 0
     end
     
-    -- Only respond if our timestamp matches what was requested
+    -- Respond if our timestamp EQUALS the requested timestamp
     if ourTimestamp ~= requestedTimestamp then
         self:Debug("sync", "Timestamp mismatch - we have: " .. ourTimestamp .. 
-                  ", requested: " .. requestedTimestamp)
+                  ", requested: " .. requestedTimestamp .. " (not sending data)")
         return
     end
+    
+    self:Debug("sync", "We have the requested data (timestamp " .. ourTimestamp .. 
+               " = " .. requestedTimestamp .. "), sending data to " .. sender)
     
     -- Try to use compressed data if requested and available
     if requestCompressed then
@@ -532,39 +549,6 @@ function TWRA:SendDataResponse(encodedData, timestamp)
     -- For now, just try to send directly
     self:Debug("sync", "Sending data response (timestamp: " .. timestamp .. ", length: " .. string.len(message) .. ")")
     self:SendAddonMessage(message)
-end
-
--- Send section change notification to group
-function TWRA:BroadcastSectionChange(sectionIndex, sectionName)
-    -- Check if we're in a group
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        self:Debug("sync", "Not in a group, skipping section broadcast")
-        return false
-    end
-    
-    -- Make sure live sync is enabled
-    if not self.SYNC or not self.SYNC.liveSync then
-        self:Debug("sync", "Live sync disabled, skipping section broadcast")
-        return false
-    end
-    
-    -- Get current timestamp
-    local timestamp = 0
-    if TWRA_Assignments then
-        timestamp = TWRA_Assignments.timestamp or 0
-    end
-    
-    -- Format and send the message
-    local message = string.format("%s:%d:%d:%s", 
-        self.SYNC.COMMANDS.SECTION,
-        timestamp,
-        sectionIndex,
-        sectionName or "")
-    
-    self:SendAddonMessage(message)
-    self:Debug("sync", "Broadcast section change: " .. (sectionName or "") .. 
-               " (index: " .. sectionIndex .. ", timestamp: " .. timestamp .. ")")
-    return true
 end
 
 -- Helper function to send an addon message using the correct channel

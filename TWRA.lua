@@ -824,36 +824,6 @@ end
 -- Initialize UI at end of loading - THIS IS THE ONLY INITIALIZE CALL
 TWRA:Initialize()
 
--- Update the HandleSectionCommand to save the current section when changed via sync
-function TWRA:HandleSectionCommand(args, sender)
-    -- Split parts
-    local parts = self:SplitString(args, ":")
-    local partsCount = table.getn(parts)
-    if partsCount < 3 then return end
-    
-    local timestamp = tonumber(parts[1])
-    local sectionName = parts[2]
-    local sectionIndex = tonumber(parts[3])
-    
-    -- Check against our timestamp
-    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
-    if timestamp > ourTimestamp then
-        -- We need newer data
-        self.SYNC.pendingSection = sectionIndex
-        self:SendAddonMessage(self.SYNC.COMMANDS.DATA_REQUEST .. ":" .. timestamp)
-    elseif timestamp == ourTimestamp then
-        -- Timestamps match - navigate to section
-        if self.navigation and sectionIndex <= table.getn(self.navigation.handlers) then
-            -- Use NavigateToSection instead of manually setting values
-            -- This ensures all UI elements are updated properly
-            self:NavigateToSection(sectionIndex, "fromSync")
-            
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Changed to section " .. sectionIndex ..
-                " (" .. self.navigation.handlers[sectionIndex] .. ") by " .. sender)
-        end
-    end
-end
-
 -- Also update HandleTableAnnounce to save the section after receiving data
 function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
     -- Check against our timestamp

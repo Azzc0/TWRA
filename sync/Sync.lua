@@ -6,7 +6,6 @@ TWRA.SYNC = TWRA.SYNC or {}
 TWRA.SYNC.PREFIX = "TWRA" -- Addon message prefix
 TWRA.SYNC.liveSync = false -- Live sync enabled
 TWRA.SYNC.tankSync = false -- Tank sync enabled
-TWRA.SYNC.isActive = false -- Is sync system active
 TWRA.SYNC.pendingSection = nil -- Section to navigate to after sync
 TWRA.SYNC.lastRequestTime = 0 -- When we last requested data
 TWRA.SYNC.requestTimeout = 5 -- Seconds to wait between requests
@@ -67,7 +66,7 @@ function TWRA:CheckAndActivateLiveSync()
     -- Read from saved variables
     if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.liveSync then
         -- Only activate if not already active
-        if not self.SYNC.isActive then
+        if not self.SYNC.liveSync then
             self:Debug("sync", "Auto-activating Live Sync from saved settings")
             self:ActivateLiveSync()
         end
@@ -78,15 +77,8 @@ end
 
 -- Function to activate Live Sync on initialization or UI reload
 function TWRA:ActivateLiveSync()
-    -- Check if we're already active
-    if self.SYNC.isActive then
-        self:Debug("sync", "Live Sync is already active")
-        return true
-    end
-    
-    -- Set active state
+    -- Set liveSync to true when activating
     self.SYNC.liveSync = true
-    self.SYNC.isActive = true
     
     -- Register for addon communication messages
     local frame = getglobal("TWRAEventFrame")
@@ -95,6 +87,7 @@ function TWRA:ActivateLiveSync()
         self:Debug("sync", "Registered for CHAT_MSG_ADDON events")
     else
         self:Debug("error", "Could not find event frame to register events")
+        -- Even without the frame, we'll try to continue
     end
     
     -- Make sure section change handler is registered (only registers once)
@@ -104,8 +97,17 @@ function TWRA:ActivateLiveSync()
     self:Debug("sync", "Live Sync fully activated")
     
     -- Ensure the option is saved in saved variables
-    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
-    TWRA_SavedVariables.options.liveSync = true
+    if TWRA_SavedVariables then
+        if not TWRA_SavedVariables.options then 
+            TWRA_SavedVariables.options = {} 
+        end
+        TWRA_SavedVariables.options.liveSync = true
+    end
+    
+    -- If we're in Options, update the checkbox
+    if TWRA.UI and TWRA.UI.OptionsFrame and TWRA.UI.OptionsFrame.liveSyncCheckbox then
+        TWRA.UI.OptionsFrame.liveSyncCheckbox:SetChecked(true)
+    end
     
     return true
 end
@@ -114,7 +116,6 @@ end
 function TWRA:DeactivateLiveSync()
     -- Set inactive state
     self.SYNC.liveSync = false
-    self.SYNC.isActive = false
     
     -- Unregister addon communication
     -- Instead of checking IsEventRegistered, we'll just unregister if we need to
@@ -135,10 +136,14 @@ end
 
 -- Enhanced BroadcastSectionChange function with timestamp support
 function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
-    -- Default channel selection (RAID or PARTY)
-    local channel = "RAID"
-    if GetNumRaidMembers() == 0 then
-        channel = "PARTY"
+    -- Use provided timestamp or get current timestamp
+    local timeToSync = timestamp or 0
+    if not timeToSync or timeToSync == 0 then
+        if TWRA_Assignments and TWRA_Assignments.timestamp then
+            timeToSync = TWRA_Assignments.timestamp
+        else
+            timeToSync = GetTime()
+        end
     end
     
     -- Skip if not in a group
@@ -147,42 +152,12 @@ function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
         return false
     end
     
-    -- Ensure sectionIndex is a number
-    sectionIndex = tonumber(sectionIndex) or 1
+    self:Debug("sync", "Broadcasting section change to index " .. tostring(sectionIndex) .. " with timestamp " .. tostring(timeToSync))
     
-    -- Ensure we have navigation data
-    if self.navigation and self.navigation.handlers then
-        local numSections = table.getn(self.navigation.handlers)
-        if sectionIndex > numSections then
-            self:Debug("sync", "Section index out of range: " .. sectionIndex .. " (max: " .. numSections .. ")")
-            sectionIndex = math.min(sectionIndex, numSections)
-        end
-        
-        -- Get section name for better debug information
-        local sectionName = self.navigation.handlers[sectionIndex] or "unknown"
-        
-        -- Create the message with timestamp, section index, and section name
-        -- Format: SECTION:timestamp:sectionIndex:sectionName
-        local message = string.format("%s:%d:%d:%s", 
-            self.SYNC.COMMANDS.SECTION,
-            timestamp or 0,
-            sectionIndex,
-            sectionName)
-        
-        -- Send the message
-        if self.SendAddonMessage then
-            self:SendAddonMessage(message)
-            self:Debug("sync", "Broadcast section change: " .. sectionIndex .. 
-                      " (" .. sectionName .. ") with timestamp " .. (timestamp or 0))
-            return true
-        else
-            self:Debug("error", "SendAddonMessage function not available")
-            return false
-        end
-    else
-        self:Debug("sync", "Cannot broadcast - navigation not initialized")
-        return false
-    end
+    -- Format and send the message using proper command format
+    -- Send both section index and timestamp
+    local message = self.SYNC.COMMANDS.SECTION .. ":" .. sectionIndex .. ":" .. timeToSync
+    return self:SendAddonMessage(message, "RAID")
 end
 
 -- Process incoming addon communication messages with reduced debugging spam
@@ -373,13 +348,12 @@ function TWRA:OnGroupChanged()
     end
     
     -- Additional sync-related logic
-    if inGroup and self.SYNC.liveSync and not self.SYNC.isActive then
-        -- We joined a group and sync is enabled but not active, activate it
-        self:Debug("sync", "Joined a group with sync enabled, activating")
+    if inGroup and self.SYNC.liveSync then
+        -- We joined a group and sync is enabled, make sure it's active
+        self:Debug("sync", "Joined a group with sync enabled")
         self:ActivateLiveSync()
-    elseif not inGroup and self.SYNC.isActive then
+    elseif not inGroup then
         -- We left all groups, could consider deactivating sync
-        -- self:Debug("sync", "Left all groups, could deactivate sync")
         -- Not auto-deactivating for now, as the user might join another group soon
     end
 end
@@ -389,7 +363,6 @@ function TWRA:ShowSyncStatus()
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Sync Status:|r")
     DEFAULT_CHAT_FRAME:AddMessage("  Live Sync: " .. (self.SYNC.liveSync and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
     DEFAULT_CHAT_FRAME:AddMessage("  Tank Sync: " .. (self.SYNC.tankSync and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
-    DEFAULT_CHAT_FRAME:AddMessage("  Active: " .. (self.SYNC.isActive and "|cFF00FF00YES|r" or "|cFFFF0000NO|r"))
     DEFAULT_CHAT_FRAME:AddMessage("  Message Monitoring: " .. (self.SYNC.monitorMessages and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
     DEFAULT_CHAT_FRAME:AddMessage("  Prefix: " .. self.SYNC.PREFIX)
     
@@ -480,14 +453,30 @@ function TWRA:RequestDataSync(timestamp)
         return false
     end
     
-    -- Create the request message with COMP flag to indicate we prefer compressed data
-    local message = string.format("%s:%d:COMP", 
+    -- Make sure we have a valid timestamp to request
+    -- IMPORTANT: We are requesting the timestamp passed to us, NOT our own timestamp
+    -- This is because we want data matching that specific timestamp
+    if not timestamp or timestamp == 0 then
+        self:Debug("sync", "No specific timestamp provided, using our current timestamp")
+        if TWRA_Assignments and TWRA_Assignments.timestamp then
+            timestamp = TWRA_Assignments.timestamp
+        else
+            timestamp = 0
+        end
+    end
+    
+    -- Debug timestamp information clearly
+    self:Debug("sync", "RequestDataSync: Requesting timestamp " .. timestamp .. 
+               ", Our timestamp: " .. (TWRA_Assignments and TWRA_Assignments.timestamp or 0))
+    
+    -- Create the request message
+    local message = string.format("%s:%d", 
         self.SYNC.COMMANDS.DATA_REQUEST,
-        timestamp or 0)
+        timestamp)
     
     -- Send the request
     self:SendAddonMessage(message)
-    self:Debug("sync", "Requested data sync with timestamp " .. (timestamp or 0) .. " (preferring compressed data)")
+    self:Debug("sync", "Requested data sync with timestamp " .. timestamp)
     
     -- Show a message to the user
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Requesting raid assignments from group...")
@@ -534,63 +523,41 @@ function TWRA:RegisterSectionChangeHandler()
         return
     end
     
-    -- Register for the SECTION_CHANGED message using the proper event registration method
+    -- Register for the SECTION_CHANGED message
     self:RegisterEvent("SECTION_CHANGED", function(sectionName, sectionIndex, numSections, context)
         -- Always log that we received the event regardless of LiveSync status
-        self:Debug("sync", "SECTION_CHANGED event received: " .. sectionIndex .. 
-                           " (" .. sectionName .. "), liveSync=" .. tostring(self.SYNC.liveSync) .. 
-                           ", isActive=" .. tostring(self.SYNC.isActive))
+        self:Debug("sync", "SECTION_CHANGED event received: " .. tostring(sectionName) .. 
+                  " (" .. tostring(sectionIndex) .. "), liveSync=" .. tostring(self.SYNC.liveSync))
         
-        -- Don't broadcast if sync is suppressed or not active
+        -- Don't broadcast if live sync is not enabled
         if not self.SYNC.liveSync then
             self:Debug("sync", "Skipping section broadcast - LiveSync not enabled")
             return
         end
         
-        if not self.SYNC.isActive then
-            self:Debug("sync", "Skipping section broadcast - sync not active")
+        -- Skip if the context indicates we should suppress sync
+        if context and context.suppressSync then
+            self:Debug("sync", "Skipping section broadcast - suppressSync flag is set")
             return
         end
         
-        -- Skip if the context indicates we should suppress sync
-        if context and context.suppressSync then
-            -- Check for various valid suppressSync values
-            local shouldSuppress = false
-            
-            if context.suppressSync == true then
-                shouldSuppress = true
-            elseif type(context.suppressSync) == "string" then
-                -- Handle string values like "fromSync", "reload", etc.
-                if context.suppressSync == "fromSync" or 
-                   context.suppressSync == "reload" or
-                   context.suppressSync == "true" then
-                    shouldSuppress = true
-                end
-            end
-            
-            if shouldSuppress then
-                self:Debug("sync", "Skipping section broadcast - suppressSync flag is set: " .. tostring(context.suppressSync))
-                return
-            end
+        -- Get current section directly from TWRA_Assignments
+        if not TWRA_Assignments or not TWRA_Assignments.currentSection then
+            self:Debug("error", "Cannot broadcast section - TWRA_Assignments.currentSection is not set")
+            return
         end
         
         -- Get timestamp for sync
-        local timestamp = 0
-        if TWRA_Assignments and TWRA_Assignments.timestamp then
-            timestamp = TWRA_Assignments.timestamp
-        end
+        local timestamp = TWRA_Assignments.timestamp
         
-        -- Broadcast the section change
-        self:Debug("sync", "Broadcasting section change from event: " .. sectionIndex .. 
-                  " (" .. sectionName .. ") with timestamp " .. timestamp)
-        
-        self:BroadcastSectionChange(sectionIndex, timestamp)
-    end, "SYNC")
+        -- Broadcast section change with the current section from assignments
+        self:Debug("sync", "Broadcasting section change with index: " .. TWRA_Assignments.currentSection)
+        self:BroadcastSectionChange(TWRA_Assignments.currentSection, timestamp)
+    end)
     
-    -- Mark as registered to prevent duplicate registrations
+    -- Mark as registered
     self.SYNC.sectionChangeHandlerRegistered = true
-    
-    self:Debug("sync", "Section change handler registered successfully")
+    self:Debug("sync", "Section change handler registered")
 end
 
 -- Execute registration of sync events immediately
