@@ -415,6 +415,30 @@ function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
     self:Debug("sync", "Successfully decompressed data from " .. sender .. 
               " (" .. table.getn(decompressedData.data or {}) .. " sections)")
     
+    -- IMPORTANT: Additional UI cleanup for any lingering elements
+    if self.mainFrame then
+        -- Force a complete hard UI reset before changing data
+        self:Debug("sync", "Performing thorough UI cleanup before saving new data")
+        
+        -- 1. Clear rows and footers
+        if self.ClearRows then self:ClearRows() end
+        if self.ClearFooters then self:ClearFooters() end
+        
+        -- 2. Reset row structures and highlight elements
+        if self.rowFrames then self.rowFrames = {} end
+        if self.highlightPool then 
+            for _, highlight in pairs(self.highlightPool) do
+                if highlight and highlight.Hide then highlight:Hide() end
+            end
+        end
+        
+        -- 3. Save current view state before data change
+        local wasInOptionsView = self.currentView == "options"
+        
+        -- Force clear any potential pending handlers
+        self.pendingHandler = nil
+    end
+    
     -- Save the decompressed data
     local saveResult = self:SaveAssignments(decompressedData, "sync", timestamp, true)
     if not saveResult then
@@ -426,12 +450,68 @@ function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
     self:Debug("sync", "Successfully imported compressed data from " .. sender)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Successfully imported data from " .. sender)
     
-    -- Navigate to pending section if one was stored
+    -- Get pending section to navigate to (if any)
+    local pendingSection = nil
     if self.SYNC.pendingSection then
-        self:Debug("sync", "Navigating to pending section: " .. 
-                 (self.SYNC.pendingSection.name or self.SYNC.pendingSection.index))
-        self:NavigateToSection(self.SYNC.pendingSection.index, true)
+        pendingSection = self.SYNC.pendingSection.index or 1
+        self:Debug("sync", "Found pending section to navigate to: " .. pendingSection)
+    end
+    
+    -- CRITICAL: Force complete UI rebuild in the correct order
+    -- 1. First rebuild navigation with the new data
+    if self.RebuildNavigation then
+        self:Debug("sync", "Rebuilding navigation after sync")
+        self:RebuildNavigation()
+    end
+    
+    -- 2. Process player-specific information (MUST happen before displaying data)
+    if self.ProcessPlayerInfo then
+        self:Debug("sync", "Processing player-relevant info after sync")
+        self:ProcessPlayerInfo()
+    end
+    
+    -- 3. Navigate to the pending section if one was stored
+    -- This will update the UI with the correct section
+    if pendingSection then
+        self:Debug("sync", "Navigating to pending section: " .. pendingSection)
+        -- Force a complete UI rebuild during navigation
+        self:NavigateToSection(pendingSection, "fromSync")
         self.SYNC.pendingSection = nil
+    else
+        -- If no pending section, navigate to first section to ensure UI refreshes
+        self:Debug("sync", "No pending section, navigating to current section")
+        local currentIndex = self.navigation and self.navigation.currentIndex or 1
+        -- Force a complete UI rebuild during navigation
+        self:NavigateToSection(currentIndex, "fromSync")
+    end
+    
+    -- 4. If we're in main view and the frame is visible, ensure view is completely refreshed
+    if self.mainFrame and self.mainFrame:IsShown() then
+        if self.currentView == "main" then
+            -- Get the current section name
+            local currentSectionName = nil
+            if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+                currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
+            end
+            
+            -- Force a complete refresh of the current section's display
+            if currentSectionName and self.FilterAndDisplayHandler then
+                self:Debug("sync", "Forcing complete UI refresh for section: " .. currentSectionName)
+                
+                -- First clear any existing content
+                if self.ClearRows then self:ClearRows() end
+                if self.ClearFooters then self:ClearFooters() end
+                
+                -- Then rebuild the content from scratch
+                self:FilterAndDisplayHandler(currentSectionName)
+            end
+        end
+    end
+    
+    -- 5. Update OSD if it's active
+    if self.RefreshOSDContent then
+        self:Debug("sync", "Refreshing OSD content after sync")
+        self:RefreshOSDContent()
     end
 end
 
