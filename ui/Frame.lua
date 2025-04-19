@@ -989,19 +989,6 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         -- Call the announce function with the footer text, processing item links
         self:Debug("ui", "Announcing footer: " .. text)
         
-        -- Get the appropriate channel for the announcement
-        local channel = "RAID"
-        
-        -- Check if we have a function to determine announcement channel
-        if self.GetAnnouncementChannels then
-            local channelInfo = self:GetAnnouncementChannels()
-            if footerType == "Warning" then
-                channel = channelInfo.warning
-            else
-                channel = channelInfo.assignment
-            end
-        end
-        
         -- Process the text with item links before sending
         local announcementText = text
         if self.Items and self.Items.EnhancedProcessText then
@@ -1012,12 +999,23 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
             announcementText = self.Items:ProcessText(text)
         end
         
-        -- Send the processed text to chat
-        if channel == "CHANNEL" then
-            local channelNum = self:GetAnnouncementChannels().channelNum
-            SendChatMessage(announcementText, channel, nil, channelNum)
+        -- Use specific channel logic based on footer type, ignoring channel settings
+        local success = false
+        
+        if footerType == "Warning" then
+            -- For warnings, try raid warning first, then fall back to raid announcement
+            if IsRaidOfficer() or IsRaidLeader() then
+                SendChatMessage(announcementText, "RAID_WARNING")
+                success = true
+            end
+            
+            -- Fall back to raid announcement if raid warning failed
+            if not success then
+                SendChatMessage(announcementText, "RAID")
+            end
         else
-            SendChatMessage(announcementText, channel)
+            -- For notes, always use raid announcement
+            SendChatMessage(announcementText, "RAID")
         end
         
         -- Visual feedback for click

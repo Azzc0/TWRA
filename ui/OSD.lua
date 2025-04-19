@@ -872,7 +872,10 @@ function TWRA:CreateWarnings(footerContainer)
         
         -- Process warning text for item links
         local processedText = warningText
-        if self.Items and self.Items.ProcessText then
+        if self.Items and self.Items.EnhancedProcessText then
+            processedText = self.Items:EnhancedProcessText(warningText)
+            self:Debug("osd", "Processed warning text for item links with EnhancedProcessText")
+        elseif self.Items and self.Items.ProcessText then
             processedText = self.Items:ProcessText(warningText)
             self:Debug("osd", "Processed warning text for item links")
         end
@@ -922,8 +925,28 @@ function TWRA:CreateWarnings(footerContainer)
         end)
         
         clickArea:SetScript("OnClick", function()
-            -- Announce the warning with properly processed item links
-            SendChatMessage(warningText, "RAID")
+            -- Process the warning text with item links before announcing
+            local announcementText = warningText
+            if self.Items and self.Items.EnhancedProcessText then
+                announcementText = self.Items:EnhancedProcessText(warningText)
+            elseif self.Items and self.Items.ProcessText then
+                announcementText = self.Items:ProcessText(warningText)
+            end
+            
+            -- Always try raid warning first, then fall back to raid announcement
+            -- Ignore channel settings for warnings from OSD
+            local success = false
+            
+            -- Try raid warning first
+            if IsRaidOfficer() or IsRaidLeader() then
+                SendChatMessage(announcementText, "RAID_WARNING")
+                success = true
+            end
+            
+            -- Fall back to raid announcement if raid warning failed
+            if not success then
+                SendChatMessage(announcementText, "RAID")
+            end
             
             -- Visual feedback
             warningBg:SetTexture(0.7, 0.1, 0.1, 0.7)

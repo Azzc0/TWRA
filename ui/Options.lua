@@ -85,7 +85,7 @@ function TWRA:SafeToggleUIElement(element, enabled, textElement)
         
         -- Update text color
         if textElement and textElement.SetTextColor then
-            textElement:SetTextColor(1, 1, 1)
+            textElement.SetTextColor(1, 1, 1)
         end
     else
         -- Disable element
@@ -99,7 +99,7 @@ function TWRA:SafeToggleUIElement(element, enabled, textElement)
         
         -- Update text color
         if textElement and textElement.SetTextColor then
-            textElement:SetTextColor(0.5, 0.5, 0.5)
+            textElement.SetTextColor(0.5, 0.5, 0.5)
         end
     end
 end
@@ -224,7 +224,7 @@ function TWRA:CreateOptionsInMainFrame()
     table.insert(self.optionsElements, liveSyncText)
     
     -- Tank Sync Option
-    local tankSyncCheckbox, tankSyncText = self:CreateCheckbox(leftColumn, "Tank Sync", "TOPLEFT", liveSync, "BOTTOMLEFT", 20, -5)
+    local tankSyncCheckbox, tankSyncText = self:CreateCheckbox(leftColumn, "Tank Sync", "TOPLEFT", liveSync, "BOTTOMLEFT", 0, -10)
     table.insert(self.optionsElements, tankSyncCheckbox)
     table.insert(self.optionsElements, tankSyncText)
     
@@ -245,7 +245,7 @@ function TWRA:CreateOptionsInMainFrame()
     table.insert(self.optionsElements, tankSyncIconFrame)
     
     -- AutoNavigate Option
-    local autoNavigate, autoNavigateText = self:CreateCheckbox(leftColumn, "AutoNavigate", "TOPLEFT", tankSyncCheckbox, "BOTTOMLEFT", -20, -8)
+    local autoNavigate, autoNavigateText = self:CreateCheckbox(leftColumn, "AutoNavigate", "TOPLEFT", tankSyncCheckbox, "BOTTOMLEFT", 0, -10)
     table.insert(self.optionsElements, autoNavigate)
     table.insert(self.optionsElements, autoNavigateText)
     
@@ -590,33 +590,10 @@ function TWRA:CreateOptionsInMainFrame()
         
         -- Debug output
         self:Debug("sync", "Option 'Live Section Sync' set to " .. (isChecked and "ON" or "OFF"))
-        
-        -- Update tank sync state based on live sync
-        if not isChecked then
-            -- If turning off Live Sync, also turn off Tank Sync
-            tankSyncCheckbox:SetChecked(false)
-            if self.SYNC then
-                self.SYNC.tankSync = false
-            end
-            TWRA_SavedVariables.options.tankSync = false
-            self:Debug("sync", "Option 'Tank Sync' auto-disabled because Live Section Sync was turned off")
-            
-            -- Disable the Tank Sync UI
-            self:SafeToggleUIElement(tankSyncCheckbox, false, tankSyncText)
-        else
-            -- Re-enable the Tank Sync UI when Live Sync is turned on
-            self:SafeToggleUIElement(tankSyncCheckbox, true, tankSyncText)
-        end
     end)
     
     -- Tank Sync checkbox behavior
     tankSyncCheckbox:SetScript("OnClick", function()
-        if liveSync:GetChecked() ~= 1 then
-            tankSyncCheckbox:SetChecked(false)
-            self:Debug("tank", "Tank sync requires Live Sync to be enabled.")
-            return
-        end
-        
         local isChecked = (this:GetChecked() == 1)
         TWRA_SavedVariables.options.tankSync = isChecked
         
@@ -628,21 +605,11 @@ function TWRA:CreateOptionsInMainFrame()
         -- Debug output
         self:Debug("tank", "Option 'Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
         
-        -- Enable liveSync if tank sync is enabled (requires liveSync)
-        if isChecked and TWRA_SavedVariables.options.liveSync ~= 1 then
-            liveSync:SetChecked(true)
-            TWRA_SavedVariables.options.liveSync = true
-            self.SYNC.liveSync = true
-            self:Debug("sync", "Option 'Live Section Sync' auto-enabled because Tank Sync was turned on")
+        -- Initialize tank sync if it was just enabled
+        if isChecked and self.InitializeTankSync then
+            self:InitializeTankSync()
         end
     end)
-    
-    -- Update initial Tank Sync state based on Live Sync
-    if not liveSyncEnabled then
-        self:SafeToggleUIElement(tankSyncCheckbox, false, tankSyncText)
-    else
-        self:SafeToggleUIElement(tankSyncCheckbox, true, tankSyncText)
-    end
     
     -- AutoNavigate checkbox behavior
     autoNavigate:SetScript("OnClick", function()
@@ -978,28 +945,7 @@ function TWRA:CreateOptionsInMainFrame()
     
     -- Example button behavior
     exampleBtn:SetScript("OnClick", function()
-        -- -- Clear any previous data
-        -- if self.ClearData then
-        --     self:ClearData()
-        -- end
         TWRA:LoadExampleDataAndShow()
-        -- -- Load example data
-        -- if self.LoadExampleData and self:LoadExampleData() then
-        --     -- Save the example assignments with timestamp 0
-        --     if self.SaveAssignments then
-        --         self:SaveAssignments(self.EXAMPLE_DATA, "example_data", 0, true)
-        --         self:Debug("data", "Example data loaded with timestamp 0")
-        --     end
-            
-        --     self:Debug("ui", "Example data loaded successfully!")
-            
-        --     -- Switch to main view
-        --     if self.ShowMainView then
-        --         self:ShowMainView()
-        --     end
-        -- else
-        --     self:Debug("error", "Failed to load example data")
-        -- end
     end)
     
     -- Clear button behavior
@@ -1137,8 +1083,8 @@ function TWRA:ApplyInitialSettings()
         end
     end
 
-    -- Apply Tank Sync setting (only if Live Sync is also enabled)
-    if options.tankSync and options.liveSync then
+    -- Apply Tank Sync setting
+    if options.tankSync then
         self:Debug("tank", "Initializing Tank Sync: ENABLED")
         -- Make sure SYNC module exists
         self.SYNC = self.SYNC or {} 
