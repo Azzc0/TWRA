@@ -185,7 +185,7 @@ function TWRA:SplitString(str, delimiter)
     if not str then return {} end
     if not delimiter or delimiter == "" then return { str } end
     
-    self:Debug("sync", "SplitString called on: " .. str .. ", delimiter: " .. delimiter)
+    self:Debug("sync", "SplitString called on: " .. str .. ", delimiter: " .. delimiter, false, true) -- Mark as details
     
     local result = {}
     local from = 1
@@ -204,7 +204,7 @@ function TWRA:SplitString(str, delimiter)
     for i, part in ipairs(result) do
         resultInfo = resultInfo .. " [" .. i .. "]=\"" .. part .. "\""
     end
-    self:Debug("sync", resultInfo .. " (total: " .. table.getn(result) .. " parts)")
+    self:Debug("sync", resultInfo .. " (total: " .. table.getn(result) .. " parts)", false, true) -- Mark as details
     
     return result
 end

@@ -249,11 +249,12 @@ function TWRA:HandleDataResponseCommand(message, sender)
     if parts[3] == "CHUNKED" then
         -- If we have the ChunkManager, use it
         if self.chunkManager then
-            self:ProcessChunkHeader(parts, message, sender)
+            self:Debug("sync", "Using chunk manager to process chunked data header")
+            self.chunkManager:ProcessChunkHeader(message, sender)
             return
         else
             -- Basic chunked data handling fallback
-            if table.getn(parts) < 4 then
+            if table.getn(parts) < 6 then
                 self:Debug("sync", "Malformed chunked data header from " .. sender)
                 return
             end
@@ -262,7 +263,7 @@ function TWRA:HandleDataResponseCommand(message, sender)
             self.SYNC.chunkedData = self.SYNC.chunkedData or {}
             
             -- Create a unique transfer ID for this chunked transfer
-            local transferId = parts[1] .. ":" .. parts[2] .. ":" .. sender
+            local transferId = parts[5] -- Use the unique ID from the CHUNKED header
             
             -- Store the transfer info
             self.SYNC.chunkedData[transferId] = {
@@ -270,7 +271,7 @@ function TWRA:HandleDataResponseCommand(message, sender)
                 sender = sender,
                 totalSize = tonumber(parts[4]) or 0,
                 chunks = {},
-                chunkCount = 0,
+                chunkCount = tonumber(parts[6]) or 0,
                 receivedChunks = 0,
                 complete = false,
                 assembledData = nil,
@@ -287,32 +288,31 @@ function TWRA:HandleDataResponseCommand(message, sender)
     if parts[3] == "CHUNK" then
         -- If we have the ChunkManager, use it
         if self.chunkManager then
-            self:ProcessDataChunk(parts, message, sender)
+            self:Debug("sync", "Using chunk manager to process data chunk")
+            self.chunkManager:ProcessChunk(message, sender)
             return
         else
             -- Basic chunk handling fallback
-            if table.getn(parts) < 6 then
+            if table.getn(parts) < 7 then
                 self:Debug("sync", "Malformed data chunk from " .. sender)
                 return
             end
             
-            -- Create transfer ID to match the chunks
-            local transferId = parts[1] .. ":" .. parts[2] .. ":" .. sender
+            -- Extract chunk info
+            local chunkNumber = tonumber(parts[4])
+            local totalChunks = tonumber(parts[5])
+            local transferId = parts[6]
             
             -- Make sure we have SYNC.chunkedData
             self.SYNC.chunkedData = self.SYNC.chunkedData or {}
             
             -- Make sure we're expecting chunks for this transfer
             if not self.SYNC.chunkedData[transferId] then
-                self:Debug("sync", "Received unexpected chunk from " .. sender)
+                self:Debug("sync", "Received unexpected chunk from " .. sender .. " for transfer " .. transferId)
                 return
             end
             
             local transfer = self.SYNC.chunkedData[transferId]
-            
-            -- Extract chunk info
-            local chunkNumber = tonumber(parts[4])
-            local totalChunks = tonumber(parts[5])
             
             -- Update the expected chunk count if this is the first chunk we've seen
             if transfer.chunkCount == 0 then
@@ -320,9 +320,7 @@ function TWRA:HandleDataResponseCommand(message, sender)
             end
             
             -- Extract the chunk data - piece together everything after the header
-            local headerLength = string.len(parts[1] .. ":" .. parts[2] .. ":" .. 
-                                           parts[3] .. ":" .. parts[4] .. ":" .. parts[5] .. ":")
-            local chunkData = string.sub(message, headerLength + 1)
+            local chunkData = parts[7]
             
             -- Store the chunk
             transfer.chunks[chunkNumber] = chunkData
@@ -384,11 +382,8 @@ end
 
 -- Function to process compressed data received via sync
 function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
-    -- Compare timestamps
-    local ourTimestamp = 0
-    if TWRA_Assignments then
-        ourTimestamp = TWRA_Assignments.timestamp or 0
-    end
+    -- Get our current timestamp for comparison
+    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
     
     -- Only process if we need this data
     if timestamp <= ourTimestamp then
@@ -413,7 +408,7 @@ function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
     end
     
     self:Debug("sync", "Successfully decompressed data from " .. sender .. 
-              " (" .. table.getn(decompressedData.data or {}) .. " sections)")
+              " (" .. (decompressedData.data and table.getn(decompressedData.data or {}) or 0) .. " sections)")
     
     -- IMPORTANT: Additional UI cleanup for any lingering elements
     if self.mainFrame then
@@ -448,71 +443,53 @@ function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
     
     -- Data successfully imported
     self:Debug("sync", "Successfully imported compressed data from " .. sender)
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Successfully imported data from " .. sender)
     
-    -- Get pending section to navigate to (if any)
-    local pendingSection = nil
-    if self.SYNC.pendingSection then
-        pendingSection = self.SYNC.pendingSection.index or 1
-        self:Debug("sync", "Found pending section to navigate to: " .. pendingSection)
-    end
+    -- IMPORTANT ADDITION: Refresh UI and rebuild navigation completely
+    self:Debug("sync", "Performing complete UI refresh after sync")
     
-    -- CRITICAL: Force complete UI rebuild in the correct order
-    -- 1. First rebuild navigation with the new data
+    -- Ensure navigation is properly rebuilt after data load
     if self.RebuildNavigation then
-        self:Debug("sync", "Rebuilding navigation after sync")
+        self:Debug("sync", "Rebuilding navigation system after sync")
         self:RebuildNavigation()
     end
     
-    -- 2. Process player-specific information (MUST happen before displaying data)
-    if self.ProcessPlayerInfo then
-        self:Debug("sync", "Processing player-relevant info after sync")
-        self:ProcessPlayerInfo()
+    -- Refresh all player information
+    if self.RefreshPlayerInfo then
+        self:Debug("sync", "Refreshing player information after sync")
+        self:RefreshPlayerInfo()
     end
     
-    -- 3. Navigate to the pending section if one was stored
-    -- This will update the UI with the correct section
-    if pendingSection then
-        self:Debug("sync", "Navigating to pending section: " .. pendingSection)
-        -- Force a complete UI rebuild during navigation
-        self:NavigateToSection(pendingSection, "fromSync")
+    -- Navigate to pending section or first section
+    local sectionToNavigate = 1
+    if self.SYNC and self.SYNC.pendingSection and self.SYNC.pendingSection.index then
+        sectionToNavigate = self.SYNC.pendingSection.index
+        -- Clear pending after using
         self.SYNC.pendingSection = nil
-    else
-        -- If no pending section, navigate to first section to ensure UI refreshes
-        self:Debug("sync", "No pending section, navigating to current section")
-        local currentIndex = self.navigation and self.navigation.currentIndex or 1
-        -- Force a complete UI rebuild during navigation
-        self:NavigateToSection(currentIndex, "fromSync")
     end
     
-    -- 4. If we're in main view and the frame is visible, ensure view is completely refreshed
-    if self.mainFrame and self.mainFrame:IsShown() then
-        if self.currentView == "main" then
-            -- Get the current section name
-            local currentSectionName = nil
-            if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-                currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
-            end
-            
-            -- Force a complete refresh of the current section's display
-            if currentSectionName and self.FilterAndDisplayHandler then
-                self:Debug("sync", "Forcing complete UI refresh for section: " .. currentSectionName)
-                
-                -- First clear any existing content
-                if self.ClearRows then self:ClearRows() end
-                if self.ClearFooters then self:ClearFooters() end
-                
-                -- Then rebuild the content from scratch
-                self:FilterAndDisplayHandler(currentSectionName)
-            end
-        end
+    -- Register handlers for navigation buttons
+    if self.RegisterNavigationHandlers then
+        self:Debug("sync", "Registering navigation handlers after sync")
+        self:RegisterNavigationHandlers()
     end
     
-    -- 5. Update OSD if it's active
-    if self.RefreshOSDContent then
-        self:Debug("sync", "Refreshing OSD content after sync")
-        self:RefreshOSDContent()
+    -- Full UI reload including content
+    if self.LoadContent then
+        self:Debug("sync", "Reloading UI content after sync")
+        self:LoadContent()
+    elseif self.ShowMainView and self.NavigateToSection then
+        self:Debug("sync", "Showing main view and navigating after sync")
+        self:ShowMainView()
+        self:NavigateToSection(sectionToNavigate, "fromSync")
+    elseif self.NavigateToSection then
+        self:Debug("sync", "Navigating to section " .. sectionToNavigate .. " after sync")
+        self:NavigateToSection(sectionToNavigate, "fromSync")
     end
+    
+    -- Notify the user of successful sync
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Synchronized raid assignments from " .. sender)
+    
+    return true
 end
 
 -- Send data response to group

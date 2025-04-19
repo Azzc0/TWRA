@@ -420,3 +420,86 @@ function TWRA:BenchmarkCompression(iterations)
     
     return results
 end
+
+-- Process compressed data received from sync
+function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
+    self:Debug("sync", "ProcessCompressedData: Processing " .. string.len(compressedData) .. 
+              " bytes of compressed data from " .. sender .. " with timestamp " .. timestamp)
+    
+    -- Check if we're still tracking this pending section
+    local pendingSectionIndex = self.SYNC.pendingSection
+    self:Debug("sync", "Pending section to navigate after sync: " .. (pendingSectionIndex or "nil"))
+    
+    -- First decompress the data
+    local decompressedData = self:DecompressAssignmentsData(compressedData)
+    
+    if not decompressedData then
+        self:Debug("error", "ProcessCompressedData: Failed to decompress data from " .. sender)
+        return false
+    end
+    
+    self:Debug("sync", "ProcessCompressedData: Successfully decompressed data with timestamp " .. 
+              (decompressedData.timestamp or "nil"))
+              
+    -- Check if the received data is newer than what we have
+    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
+    
+    if decompressedData.timestamp and decompressedData.timestamp > ourTimestamp then
+        self:Debug("sync", "ProcessCompressedData: Received newer data (timestamp " .. 
+                  decompressedData.timestamp .. " > " .. ourTimestamp .. "), applying it")
+        
+        -- Initialize assignments if needed
+        if not TWRA_Assignments then
+            TWRA_Assignments = {}
+        end
+        
+        -- Store the decompressed data
+        TWRA_Assignments.data = decompressedData.data
+        TWRA_Assignments.timestamp = decompressedData.timestamp
+        TWRA_Assignments.version = 2 -- Use new data format
+        
+        -- Also store the compressed version for future sync
+        self:StoreCompressedData(compressedData)
+        
+        -- Rebuild navigation with the new data
+        self:Debug("sync", "ProcessCompressedData: Rebuilding navigation with new data")
+        if self.RebuildNavigation then
+            self:RebuildNavigation()
+        else
+            self:Debug("error", "ProcessCompressedData: RebuildNavigation function not found")
+        end
+        
+        -- Process player information
+        self:Debug("sync", "ProcessCompressedData: Processing player information")
+        if self.RefreshPlayerInfo then
+            self:RefreshPlayerInfo()
+        elseif self.ProcessPlayerInfo then
+            self:ProcessPlayerInfo()
+        else
+            self:Debug("error", "ProcessCompressedData: Neither RefreshPlayerInfo nor ProcessPlayerInfo function found")
+        end
+        
+        -- Navigate to the pending section or first section
+        local sectionToUse = pendingSectionIndex or 1
+        self:Debug("sync", "ProcessCompressedData: Navigating to section " .. sectionToUse)
+        
+        if self.NavigateToSection then
+            self:NavigateToSection(sectionToUse, "fromSync")
+        else
+            self:Debug("error", "ProcessCompressedData: NavigateToSection function not found")
+        end
+        
+        -- Clear pending section after use
+        self.SYNC.pendingSection = nil
+        
+        self:Debug("sync", "ProcessCompressedData: Data sync from " .. sender .. " complete")
+        
+        -- Notify user
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Synchronized raid assignments from " .. sender)
+        
+        return true
+    else
+        self:Debug("sync", "ProcessCompressedData: Received older or same timestamp data, ignoring")
+        return false
+    end
+end

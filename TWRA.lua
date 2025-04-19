@@ -151,6 +151,14 @@ function TWRA:Initialize()
     
     frame:SetScript("OnEvent", function()
         if event == "VARIABLES_LOADED" then
+            -- Initialize compression system early
+            if self.InitializeCompression then
+                self:Debug("general", "Initializing compression system")
+                self:InitializeCompression()
+            else
+                self:Debug("error", "InitializeCompression function not found - sync may not work properly!")
+            end
+            
             -- Load saved assignments
             self:LoadSavedAssignments()
             
