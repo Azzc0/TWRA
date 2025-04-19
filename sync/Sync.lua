@@ -233,7 +233,7 @@ function TWRA:SendDataResponse(encodedData, timestamp)
     
     -- Ensure proper Base64 padding before sending
     local dataLen = string.len(encodedData)
-    local remainder = dataLen
+    local remainder = dataLen - (math.floor(dataLen / 4) * 4)
     while remainder > 0 and remainder < 4 do
         encodedData = encodedData .. "="
         remainder = remainder + 1
@@ -241,18 +241,21 @@ function TWRA:SendDataResponse(encodedData, timestamp)
     end
     
     -- Check if data needs to be chunked
-    local maxMsgSize = 200  -- Safe maximum for addon messages
+    local maxMsgSize = 2000  -- Increased from 200 to maximize efficiency (close to WoW's 2042 limit)
     
     if string.len(encodedData) > maxMsgSize then
         -- Use chunk manager if available
         if self.chunkManager then
             self:Debug("sync", "Using chunk manager for large data response")
-            local chunks, totalChunks = self:SplitIntoChunks(encodedData, self.SYNC.COMMANDS.DATA_RESPONSE, timestamp)
             
-            if chunks and totalChunks then
-                self:SendChunkedMessage(chunks, totalChunks)
-                return true
-            end
+            -- Use proper prefix format for the chunk manager
+            local prefix = string.format("%s:%d:", 
+                self.SYNC.COMMANDS.DATA_RESPONSE,
+                timestamp)
+                
+            -- Call the chunk manager's function directly
+            self.chunkManager:SendChunkedMessage(encodedData, prefix)
+            return true
         else
             self:Debug("sync", "Chunk manager not available, using fallback chunking")
             -- Fallback to basic chunking
@@ -265,7 +268,7 @@ function TWRA:SendDataResponse(encodedData, timestamp)
             
             -- Break into simple chunks with basic numbering
             local position = 1
-            local chunkSize = 180
+            local chunkSize = 1900  -- Increased from 180 to match ChunkManager's size
             local chunkNum = 1
             local totalChunks = math.ceil(string.len(encodedData) / chunkSize)
             
@@ -536,7 +539,7 @@ function TWRA:RegisterSectionChangeHandler()
         end
         
         -- Skip if the context indicates we should suppress sync
-        if context and context.suppressSync then
+        if context then
             self:Debug("sync", "Skipping section broadcast - suppressSync flag is set")
             return
         end
@@ -558,6 +561,65 @@ function TWRA:RegisterSectionChangeHandler()
     -- Mark as registered
     self.SYNC.sectionChangeHandlerRegistered = true
     self:Debug("sync", "Section change handler registered")
+end
+
+-- Function to handle data requests and route them to the appropriate handler
+function TWRA:HandleDataRequestCommand(message, sender)
+    -- Parse timestamp from message format "DREQ:timestamp"
+    local timestamp = tonumber(string.sub(message, 6)) or 0
+    
+    self:Debug("sync", "Data request from " .. sender .. " for timestamp " .. timestamp)
+    
+    -- If we don't have any saved assignments, exit early
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("sync", "No data to send to " .. sender)
+        return
+    end
+    
+    -- Compare our timestamp with the requested one
+    local ourTimestamp = TWRA_Assignments.timestamp or 0
+    
+    -- Send our data if it matches or is newer
+    if ourTimestamp >= timestamp then
+        self:Debug("sync", "Our data matches or is newer, preparing response")
+        
+        -- Get compressed data to send
+        local compressedData = nil
+        
+        -- Try to get from dedicated compressed storage first
+        if TWRA_CompressedAssignments and TWRA_CompressedAssignments.data then
+            compressedData = TWRA_CompressedAssignments.data
+            self:Debug("sync", "Using stored compressed data")
+        else
+            -- Try to generate compressed data
+            if self.GetStoredCompressedData then
+                compressedData = self:GetStoredCompressedData()
+                self:Debug("sync", "Generated compressed data using GetStoredCompressedData")
+            elseif self.CompressAssignmentsData then
+                -- Prepare sync data
+                local syncData = nil
+                if self.PrepareDataForSync then
+                    syncData = self:PrepareDataForSync(TWRA_Assignments)
+                else
+                    syncData = TWRA_Assignments
+                end
+                
+                -- Compress the data
+                compressedData = self:CompressAssignmentsData(syncData)
+                self:Debug("sync", "Compressed data on-demand")
+            end
+        end
+        
+        -- Send the data if we have it
+        if compressedData then
+            self:Debug("sync", "Sending data to " .. sender .. " with timestamp " .. ourTimestamp)
+            self:SendDataResponse(compressedData, ourTimestamp)
+        else
+            self:Debug("error", "Failed to compress data for " .. sender)
+        end
+    else
+        self:Debug("sync", "Our data is older than requested, not sending")
+    end
 end
 
 -- Execute registration of sync events immediately

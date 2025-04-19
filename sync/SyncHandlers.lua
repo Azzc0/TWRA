@@ -168,80 +168,69 @@ function TWRA:HandleAnnounceCommand(message, sender)
     end
 end
 
--- Handle data request commands with correct timestamp matching
+-- Handle incoming data requests from other users
 function TWRA:HandleDataRequestCommand(message, sender)
-    -- Extract parts from the message
-    local parts = self:SplitString(message, ":")
-    if table.getn(parts) < 2 then
-        self:Debug("sync", "Malformed data request command from " .. sender .. ": " .. message)
+    self:Debug("sync", "HandleDataRequestCommand called with message: " .. message .. " from " .. sender)
+    
+    -- Parse the timestamp
+    local timestamp = tonumber(message) or 0
+    
+    -- Debug detailed information about the request
+    self:Debug("sync", "Data request from " .. sender .. " with timestamp: " .. timestamp)
+    
+    -- Check if we have data to share
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("sync", "No assignments data available to send to " .. sender)
         return
     end
     
-    -- Extract arguments - format is now simply "DREQ:timestamp"
-    local requestedTimestamp = tonumber(parts[2])
+    -- Get our current timestamp
+    local ourTimestamp = TWRA_Assignments.timestamp or 0
     
-    -- Debug info
-    self:Debug("sync", string.format("Data request from %s (timestamp: %d)", 
-        sender, requestedTimestamp))
-    
-    -- Check if we have the requested data
-    local ourTimestamp = 0
-    
-    if TWRA_Assignments then
-        ourTimestamp = TWRA_Assignments.timestamp or 0
-    end
-    
-    -- Respond if our timestamp EQUALS the requested timestamp
-    if ourTimestamp ~= requestedTimestamp then
-        self:Debug("sync", "Timestamp mismatch - we have: " .. ourTimestamp .. 
-                  ", requested: " .. requestedTimestamp .. " (not sending data)")
-        return
-    end
-    
-    self:Debug("sync", "We have the requested data (timestamp " .. ourTimestamp .. 
-               " = " .. requestedTimestamp .. "), sending data to " .. sender)
-    
-    -- Always use compressed data from TWRA_CompressedAssignments.data
-    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.data then
-        local compressedData = TWRA_CompressedAssignments.data
-        self:Debug("sync", "Using stored compressed data for response (length: " .. 
-                  string.len(compressedData) .. ")")
+    -- Only respond if our data is newer or matches the request
+    if ourTimestamp >= timestamp then
+        self:Debug("sync", "Our timestamp (" .. ourTimestamp .. ") matches or is newer than requested (" 
+                   .. timestamp .. "), sending data to " .. sender)
         
-        -- Add random delay to prevent multiple responses at once
-        -- Delay proportional to group size: 0-2 seconds in a 40-man raid
-        local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
-        local maxDelay = math.min(2, groupSize * 0.05)
-        local delay = maxDelay * math.random()
+        -- Get compressed data - first try to get stored compressed data
+        local compressedData = nil
         
-        -- Schedule the response after the delay
-        self:ScheduleTimer(function()
-            self:Debug("sync", "Sending compressed data response now")
-            
-            -- Format message - without COMP marker since we always use compression
-            local message = string.format("%s:%d:%s", 
-                self.SYNC.COMMANDS.DATA_RESPONSE,
-                ourTimestamp,
-                compressedData)
-            
-            -- Use chunk manager if needed for large data
-            if string.len(message) > 254 and self.chunkManager then
-                self:Debug("sync", "Data too large, using chunk manager")
-                local prefix = string.format("%s:%d:", 
-                    self.SYNC.COMMANDS.DATA_RESPONSE, ourTimestamp)
-                
-                self.chunkManager:SendChunkedMessage(compressedData, prefix)
+        -- Try to get from dedicated compressed storage first
+        if TWRA_CompressedAssignments and TWRA_CompressedAssignments.data then
+            compressedData = TWRA_CompressedAssignments.data
+            self:Debug("sync", "Using stored compressed data for response")
+        -- Fall back to our GetStoredCompressedData function if available
+        elseif self.GetStoredCompressedData then
+            compressedData = self:GetStoredCompressedData()
+            self:Debug("sync", "Generated compressed data for response using GetStoredCompressedData")
+        -- Last resort - compress on the fly
+        elseif self.CompressAssignmentsData then
+            -- Prepare data for sync (strip client-specific info)
+            local syncData = nil
+            if self.PrepareDataForSync then
+                syncData = self:PrepareDataForSync(TWRA_Assignments)
+                self:Debug("sync", "Prepared data for sync")
             else
-                -- Send directly if small enough
-                self:SendAddonMessage(message)
+                syncData = TWRA_Assignments
+                self:Debug("sync", "Using raw assignments data (PrepareDataForSync not available)")
             end
-        end, delay)
+            
+            -- Compress the data
+            compressedData = self:CompressAssignmentsData(syncData)
+            self:Debug("sync", "Compressed data on-demand for response")
+        end
         
-        self:Debug("sync", string.format("Scheduled compressed data response in %.1f seconds", delay))
-        return
+        -- Send the response if we have data
+        if compressedData then
+            self:Debug("sync", "Sending data response to " .. sender .. " with timestamp " .. ourTimestamp)
+            self:SendDataResponse(compressedData, ourTimestamp)
+        else
+            self:Debug("error", "Failed to compress data for response to " .. sender)
+        end
+    else
+        self:Debug("sync", "Our timestamp (" .. ourTimestamp .. ") is older than requested (" 
+                   .. timestamp .. "), not sending data to " .. sender)
     end
-    
-    -- If we get here, we don't have compressed data to share
-    self:Debug("sync", "No compressed data available to share")
 end
 
 -- Handle data response commands

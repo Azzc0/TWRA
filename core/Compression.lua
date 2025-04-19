@@ -159,11 +159,11 @@ function TWRA:PrepareDataForSync()
     
     -- Create a copy of the assignments data without client-specific information
     local syncData = {
-        currentSectionName = TWRA_Assignments.currentSectionName,
+        -- currentSectionName = TWRA_Assignments.currentSectionName,
         isExample = TWRA_Assignments.isExample,
         version = TWRA_Assignments.version,
         timestamp = TWRA_Assignments.timestamp,
-        currentSection = TWRA_Assignments.currentSection,
+        -- currentSection = TWRA_Assignments.currentSection,
         data = {}
     }
     
@@ -225,6 +225,9 @@ function TWRA:CompressAssignmentsData()
     self:Debug("compress", "Compressed " .. string.len(dataString) .. " bytes to " .. 
                string.len(compressed) .. " bytes (" .. compressionRatio .. "% of original)")
     
+    -- Base64 encode the compressed data for safe transmission
+    compressed = TWRA:EncodeBase64(compressed)
+    
     -- Add a marker at the beginning to indicate this is using normal TableToString compression
     return "\241"..compressed
 end
@@ -256,8 +259,16 @@ function TWRA:DecompressAssignmentsData(compressedData)
         end
     end
     
+    -- First decode Base64 using our raw decoder to get binary data
+    local binaryData = self:DecodeBase64Raw(compressedData)
+    
+    if not binaryData then
+        self:Debug("error", "Failed to decode Base64 data")
+        return nil, "Failed to decode Base64 data"
+    end
+    
     -- Decompress data using LibCompress
-    local decompressed, err = self.LibCompress:DecompressHuffman(compressedData)
+    local decompressed, err = self.LibCompress:DecompressHuffman(binaryData)
     
     if not decompressed then
         self:Debug("error", "Failed to decompress data: " .. tostring(err))

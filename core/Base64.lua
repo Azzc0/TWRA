@@ -133,8 +133,11 @@ function TWRA:CompressAssignmentsData(data)
                    compressedSize .. " bytes (" .. ratio .. "%)")
     end
     
-    -- Mark the string as compressed with a prefix for easier identification
-    return "COMP:" .. compressedString
+    -- Base64 encode for safe transfer
+    local base64String = self:EncodeBase64(compressedString)
+    
+    -- Add a marker at the beginning to indicate this is using normal TableToString compression
+    return "\241" .. base64String
 end
 
 -- Function to decompress data compressed with CompressAssignmentsData
@@ -144,20 +147,38 @@ function TWRA:DecompressAssignmentsData(compressedData)
         return nil
     end
     
-    -- Check for the compression marker
-    local isCompressed = string.sub(compressedData, 1, 5) == "COMP:"
-    if not isCompressed then
-        self:Debug("error", "Data is not in compressed format", true)
+    -- Check for marker - either new format with byte \241 marker or legacy format with "COMP:" prefix
+    local isNewFormat = string.byte(compressedData, 1) == 241
+    local isLegacyFormat = string.sub(compressedData, 1, 5) == "COMP:"
+    
+    if not (isNewFormat or isLegacyFormat) then
+        self:Debug("error", "Data is not in a recognized compressed format", true)
         return nil
     end
     
     self:Debug("data", "Decompressing assignment data")
     local startTime = debugprofilestop and debugprofilestop() or 0
     
-    -- Remove the COMP: prefix
-    local compressedString = string.sub(compressedData, 6)
+    local compressedString
     
-    -- Decompress the string
+    -- Handle different formats
+    if isNewFormat then
+        -- Remove the marker byte
+        compressedString = string.sub(compressedData, 2)
+        
+        -- First decode the Base64 encoding to get binary data
+        compressedString = self:DecodeBase64Raw(compressedString)
+    else
+        -- Legacy format - remove the COMP: prefix
+        compressedString = string.sub(compressedData, 6)
+    end
+    
+    if not compressedString then
+        self:Debug("error", "Failed to decode Base64 data", true)
+        return nil
+    end
+    
+    -- Decompress using Huffman
     local tableString, decompressionError = LibCompress:DecompressHuffman(compressedString)
     if not tableString or decompressionError then
         self:Debug("error", "Failed to decompress data: " .. (decompressionError or "unknown error"), true)
@@ -445,6 +466,89 @@ function TWRA:EnsureCompleteRows(data)
     end
     
     return data
+end
+
+-- Plain Base64 decoder without any additional processing
+-- Use this for raw binary data decoding
+function TWRA:DecodeBase64Raw(base64Str)
+    if not base64Str then 
+        self:Debug("error", "DecodeBase64Raw failed - nil string", true)
+        return nil 
+    end
+    
+    -- Clean up the string
+    base64Str = string.gsub(base64Str, " ", "")
+    base64Str = string.gsub(base64Str, "\n", "")
+    base64Str = string.gsub(base64Str, "\r", "")
+    base64Str = string.gsub(base64Str, "\t", "")
+    
+    -- Safety check for minimum length
+    if string.len(base64Str) < 4 then
+        self:Debug("error", "DecodeBase64Raw failed - string too short: " .. string.len(base64Str), true)
+        return nil
+    end
+    
+    -- Ensure string is a multiple of 4 characters by adding padding if necessary
+    local remainder = string.len(base64Str) - (math.floor(string.len(base64Str) / 4) * 4)
+    local padding = 0
+    if remainder > 0 then
+        padding = 4 - remainder
+    end
+    if padding > 0 then
+        for i = 1, padding do
+            base64Str = base64Str .. "="
+        end
+    end
+    
+    -- Convert Base64 to binary string
+    local binaryStr = ""
+    local bits = 0
+    local bitCount = 0
+    
+    -- Use protected call for decoding loop to avoid crashing on bad input
+    local success, result = pcall(function()
+        for i = 1, string.len(base64Str) do
+            local b64char = string.sub(base64Str, i, i)
+            local b64value = b64Table[b64char]
+            
+            -- Skip padding characters (=)
+            if b64char == "=" then
+                -- Just skip, padding at the end is normal
+            elseif not b64value then
+                -- Invalid character - graceful handling
+                self:Debug("error", "Invalid Base64 character: '" .. b64char .. "' at position " .. i, true)
+                -- Continue processing rather than breaking, to be more forgiving
+            elseif b64value >= 0 then
+                -- Left shift bits by 6 and add new value
+                bits = (bits * 64) + b64value
+                bitCount = bitCount + 6
+                
+                -- If we have at least 8 bits, extract a byte
+                while bitCount >= 8 do
+                    bitCount = bitCount - 8
+                    
+                    -- Extract next byte (shift right)
+                    local byte = math.floor(bits / (2^bitCount))
+                    
+                    -- Keep only the lowest 8 bits
+                    byte = byte - (math.floor(byte / 256) * 256)
+                    
+                    binaryStr = binaryStr .. string.char(byte)
+                    
+                    -- Remove the consumed bits
+                    bits = bits - (math.floor(bits / (2^bitCount)) * (2^bitCount))
+                end
+            end
+        end
+        return true
+    end)
+    
+    if not success then
+        self:Debug("error", "Error during Base64 decoding: " .. tostring(result), true)
+        return nil
+    end
+    
+    return binaryStr
 end
 
 -- Modified Base64 decoding function with improved UTF-8 handling and compression support
