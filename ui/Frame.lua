@@ -1182,7 +1182,7 @@ function TWRA:RefreshAssignmentTable()
     self:FilterAndDisplayHandler(currentSection)
 end
 
--- Update CreateRow to use the new TWRA.PLAYERS table format for class and online status
+-- Update CreateRow to improve column widths and resize frame as needed
 function TWRA:CreateRow(rowNum, data)
     local rowFrames = {}
     local yOffset = -40 - (rowNum * 20)
@@ -1191,37 +1191,47 @@ function TWRA:CreateRow(rowNum, data)
     
     local numColumns = self.headerColumns or table.getn(data)
     
-    -- Calculate total available width
-    local totalAvailableWidth = self.mainFrame:GetWidth() - 40
-
-    -- Adjust icon column width here - change this value to make the icon column wider/narrower
-    local iconColumnWidth = 10  -- Reduced from 40px to 30px
-    local targetColumnWidth = 170
-    local remainingWidth = totalAvailableWidth - iconColumnWidth - targetColumnWidth
-    local roleColumnsCount = numColumns - 2
+    -- Fixed column widths based on content requirements
+    local iconColumnWidth = 15     -- Fixed width for icon column
+    local targetColumnWidth = 120  -- Wider width for target names like "Grand Widow Fairlina"
+    local playerColumnWidth = 80  -- Width for player names (12 chars + icon)
     
-    local roleColumnWidth = 100 -- Default minimum width
-    if roleColumnsCount > 0 then
-        roleColumnWidth = math.max(roleColumnWidth, math.floor(remainingWidth / roleColumnsCount))
+    -- Calculate total required width for all columns
+    local totalRequiredWidth = iconColumnWidth + targetColumnWidth + (playerColumnWidth * (numColumns - 2))
+    
+    -- Standard frame width and padding
+    local standardFrameWidth = 800
+    local framePadding = 40  -- 20px on each side
+    
+    -- Check if we need to expand the frame to fit all columns
+    local frameWidth = standardFrameWidth
+    if totalRequiredWidth + framePadding > standardFrameWidth then
+        -- Expand the frame width to fit all columns
+        frameWidth = totalRequiredWidth + framePadding
+        
+        -- Update the main frame width if it exists
+        if self.mainFrame then
+            self.mainFrame:SetWidth(frameWidth)
+            self:Debug("ui", "Expanded frame width to " .. frameWidth .. " to fit " .. numColumns .. " columns")
+        end
     end
     
-    -- If columns don't fit, adjust proportionally
-    if iconColumnWidth + targetColumnWidth + (roleColumnWidth * roleColumnsCount) > totalAvailableWidth then
-        local totalWidth = totalAvailableWidth
-        iconColumnWidth = math.floor(totalWidth / (numColumns + 0.5)) -- Icon column is half-sized
-        targetColumnWidth = math.floor(totalWidth / numColumns)
-        roleColumnWidth = math.floor(totalWidth / numColumns)
-    end
+    -- Calculate available width for content inside frame
+    local totalAvailableWidth = frameWidth - framePadding
     
     local xOffset = 20 -- Starting offset
     
     -- Process all columns
     for i = 1, numColumns do
-        local cellWidth = iconColumnWidth
-        if i == 2 then
-            cellWidth = targetColumnWidth
-        elseif i > 2 then
-            cellWidth = roleColumnWidth
+        local cellWidth
+        
+        -- Determine column width based on column type
+        if i == 1 then
+            cellWidth = iconColumnWidth      -- Icon column
+        elseif i == 2 then
+            cellWidth = targetColumnWidth    -- Target column
+        else
+            cellWidth = playerColumnWidth    -- Player/role columns
         end
         
         local cellData = data[i] or ""
@@ -1249,17 +1259,15 @@ function TWRA:CreateRow(rowNum, data)
         if i == 1 then
             -- Icon column - don't show text, only icon
             if isHeader then
-                -- Hide the header text for the icon column
-                cell:SetText("")
-                cell:SetJustifyH("CENTER")
-                cell:SetTextColor(1, 1, 1)
+                -- Header displays "Icon" text
+                cell = self:CreateHeaderCell(cell, "", cellWidth, 0)
             else
                 cell:SetText("") -- Don't show icon text
                 
                 -- Create icon texture if we have valid icon data
-                if cellData and TWRA.ICONS and TWRA.ICONS[cellData] then
+                if cellData and cellData ~= "" and TWRA.ICONS and TWRA.ICONS[cellData] then
                     iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-                    iconTexture:SetPoint("CENTER", bg, "CENTER", 0, 0)
+                    iconTexture:SetPoint("CENTER", bg, "CENTER", 8, 0)
                     iconTexture:SetWidth(16)
                     iconTexture:SetHeight(16)
                     local iconInfo = TWRA.ICONS[cellData]
@@ -1268,80 +1276,89 @@ function TWRA:CreateRow(rowNum, data)
                 end
             end
         elseif i == 2 then
-            -- Target column
-            cell:SetText(cellData)
-            cell:SetTextColor(1, 1, 1) -- White text for target
+            -- Target column - ensure this is always displayed regardless of icon
+            if isHeader then
+                cell = self:CreateHeaderCell(cell, "Target", cellWidth, 0)
+            elseif cellData and cellData ~= "" then
+                cell:SetText(cellData)
+                cell:SetJustifyH("LEFT")
+                cell:SetTextColor(1, 1, 1) -- White text for target
+            else
+                -- Empty target cell
+                cell:SetText("")
+            end
         else
             -- Role/player columns
-            cell:SetText(cellData)
-            
             if isHeader then
-                -- Header is white
-                cell:SetTextColor(1, 1, 1)
-            elseif cellData and cellData ~= "" then
-                -- Get player info from PLAYERS table
-                local playerInfo = self.PLAYERS and self.PLAYERS[cellData]
+                cell = self:CreateHeaderCell(cell, cellData, cellWidth, 0)
+            else
+                cell:SetText(cellData)
                 
-                -- Default values if not found in PLAYERS table
-                local playerClass = nil
-                local isInRaid = false
-                local isOnline = false
-                
-                -- Create icon texture for the player cell - ALWAYS create one
-                iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-                iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
-                iconTexture:SetWidth(12)
-                iconTexture:SetHeight(12)
-                
-                if playerInfo then
-                    -- Extract class and online status from PLAYERS table
-                    playerClass = playerInfo[1]
-                    isInRaid = true
-                    isOnline = playerInfo[2]
+                if cellData and cellData ~= "" then
+                    -- Get player info from PLAYERS table
+                    local playerInfo = self.PLAYERS and self.PLAYERS[cellData]
                     
-                    -- Set class icon texture for players in raid
-                    iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-                    local coords = self.CLASS_COORDS and self.CLASS_COORDS[string.upper(playerClass)]
-                    if coords then
-                        iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                    end
-                else
-                    -- Player not in raid - use Missing icon
-                    if self.ICONS and self.ICONS["Missing"] then
-                        local iconInfo = self.ICONS["Missing"]
-                        iconTexture:SetTexture(iconInfo[1])
-                        iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+                    -- Default values if not found in PLAYERS table
+                    local playerClass = nil
+                    local isInRaid = false
+                    local isOnline = false
+                    
+                    -- Create icon texture for the player cell - ALWAYS create one
+                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                    iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
+                    iconTexture:SetWidth(12)
+                    iconTexture:SetHeight(12)
+                    
+                    if playerInfo then
+                        -- Extract class and online status from PLAYERS table
+                        playerClass = playerInfo[1]
+                        isInRaid = true
+                        isOnline = playerInfo[2]
+                        
+                        -- Set class icon texture for players in raid
+                        iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+                        local coords = self.CLASS_COORDS and self.CLASS_COORDS[string.upper(playerClass)]
+                        if coords then
+                            iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                        end
                     else
-                        -- Fallback to disconnect icon if Missing icon not available
-                        iconTexture:SetTexture("Interface\\CharacterFrame\\Disconnect-Icon")
-                        iconTexture:SetTexCoord(0, 1, 0, 1)
+                        -- Player not in raid - use Missing icon
+                        if self.ICONS and self.ICONS["Missing"] then
+                            local iconInfo = self.ICONS["Missing"]
+                            iconTexture:SetTexture(iconInfo[1])
+                            iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+                        else
+                            -- Fallback to disconnect icon if Missing icon not available
+                            iconTexture:SetTexture("Interface\\CharacterFrame\\Disconnect-Icon")
+                            iconTexture:SetTexCoord(0, 1, 0, 1)
+                        end
                     end
-                end
-                
-                -- Apply class coloring
-                if self.UI and self.UI.ApplyClassColoring then
-                    -- Use the UIUtils function for consistent coloring
-                    self.UI:ApplyClassColoring(cell, nil, playerClass, isInRaid, isOnline)
-                else
-                    -- Fallback coloring
-                    if not isInRaid then
-                        cell:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
-                    elseif not isOnline then
-                        cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
-                    elseif playerClass and self.VANILLA_CLASS_COLORS then
-                        local color = self.VANILLA_CLASS_COLORS[string.upper(playerClass)]
-                        if color then
-                            cell:SetTextColor(color.r, color.g, color.b)
+                    
+                    -- Apply class coloring
+                    if self.UI and self.UI.ApplyClassColoring then
+                        -- Use the UIUtils function for consistent coloring
+                        self.UI:ApplyClassColoring(cell, nil, playerClass, isInRaid, isOnline)
+                    else
+                        -- Fallback coloring
+                        if not isInRaid then
+                            cell:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
+                        elseif not isOnline then
+                            cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
+                        elseif playerClass and self.VANILLA_CLASS_COLORS then
+                            local color = self.VANILLA_CLASS_COLORS[string.upper(playerClass)]
+                            if color then
+                                cell:SetTextColor(color.r, color.g, color.b)
+                            else
+                                cell:SetTextColor(1, 1, 1) -- White fallback
+                            end
                         else
                             cell:SetTextColor(1, 1, 1) -- White fallback
                         end
-                    else
-                        cell:SetTextColor(1, 1, 1) -- White fallback
                     end
+                else
+                    -- Empty cell is white
+                    cell:SetTextColor(1, 1, 1)
                 end
-            else
-                -- Empty cell is white
-                cell:SetTextColor(1, 1, 1)
             end
         end
         
@@ -1535,4 +1552,50 @@ function TWRA:ApplyRowHighlights(sectionData, displayData)
     end
     
     self:Debug("ui", "Applied " .. highlightCount .. " highlights")
+end
+
+-- Function to create header cells with automatic font size scaling
+function TWRA:CreateHeaderCell(cell, cellData, cellWidth, iconPadding)
+    -- Set initial text and properties
+    cell:SetText(cellData)
+    cell:SetJustifyH("CENTER")
+    cell:SetTextColor(1, 1, 1)
+    
+    -- Set initial dimensions
+    cell:SetWidth(cellWidth - iconPadding - 4)
+    
+    -- Get the width of the text at current font size
+    local textWidth = cell:GetStringWidth()
+    
+    -- Check if text is wider than the available space (with some margin)
+    if textWidth > (cellWidth - iconPadding - 8) then
+        -- Text is too wide, we need to scale down the font
+        local fontName, fontHeight, fontFlags = cell:GetFont()
+        local originalHeight = fontHeight
+        
+        -- Iteratively reduce font size until it fits
+        local attempt = 1
+        local maxAttempts = 3  -- Prevent infinite loops
+        
+        while textWidth > (cellWidth - iconPadding - 8) and attempt <= maxAttempts do
+            -- Reduce font size by 2 pixels each attempt
+            fontHeight = originalHeight - (attempt * 2)
+            
+            -- Don't go below a minimum readable size
+            if fontHeight < 10 then
+                fontHeight = 10
+            end
+            
+            -- Set new font size
+            cell:SetFont(fontName, fontHeight, fontFlags)
+            
+            -- Re-calculate text width with new font size
+            textWidth = cell:GetStringWidth()
+            attempt = attempt + 1
+        end
+        
+        self:Debug("ui", "Scaled header font from " .. originalHeight .. " to " .. fontHeight .. " to fit text: " .. cellData)
+    end
+    
+    return cell
 end
