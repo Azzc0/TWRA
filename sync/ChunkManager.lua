@@ -9,7 +9,7 @@ function TWRA:InitChunkManager()
         pendingTransfers = {},  -- Store all currently pending transfers
         transferTimeout = 30,   -- How long to wait for a complete transfer (seconds)
         cleanupInterval = 60,   -- How often to clean up stale transfers (seconds)
-        messageSizeLimit = 2000 -- Updated message size limit based on Turtle WoW testing (max is ~2042)
+        messageSizeLimit = 1800 -- Updated message size limit based on Turtle WoW testing (max is ~2042)
     }
     
     -- Start periodic cleanup of stale transfers

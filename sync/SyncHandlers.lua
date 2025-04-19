@@ -107,10 +107,6 @@ function TWRA:HandleSectionCommand(message, sender)
     self:Debug("sync", "Comparing timestamps - Received: " .. timestamp .. 
                " vs Our: " .. TWRA_Assignments.timestamp, true)
     
-    -- Compare timestamps as specified:
-    -- 1. If timestamps match, navigate to section
-    -- 2. If we have newer timestamp, debug message only
-    -- 3. If they have newer timestamp, note section and request data
     
     if timestamp == TWRA_Assignments.timestamp then
         -- Timestamps match - navigate to the section
@@ -181,13 +177,12 @@ function TWRA:HandleDataRequestCommand(message, sender)
         return
     end
     
-    -- Extract arguments - format is "DREQ:timestamp" or "DREQ:timestamp:COMP" for compressed
+    -- Extract arguments - format is now simply "DREQ:timestamp"
     local requestedTimestamp = tonumber(parts[2])
-    local requestCompressed = (table.getn(parts) >= 3 and parts[3] == "COMP")
     
     -- Debug info
-    self:Debug("sync", string.format("Data request from %s (timestamp: %d, compressed: %s)", 
-        sender, requestedTimestamp, tostring(requestCompressed)))
+    self:Debug("sync", string.format("Data request from %s (timestamp: %d)", 
+        sender, requestedTimestamp))
     
     -- Check if we have the requested data
     local ourTimestamp = 0
@@ -206,74 +201,47 @@ function TWRA:HandleDataRequestCommand(message, sender)
     self:Debug("sync", "We have the requested data (timestamp " .. ourTimestamp .. 
                " = " .. requestedTimestamp .. "), sending data to " .. sender)
     
-    -- Try to use compressed data if requested and available
-    if requestCompressed then
-        local compressedData = self:GetStoredCompressedData()
-        if compressedData then
-            self:Debug("sync", "Using stored compressed data for response (length: " .. 
-                      string.len(compressedData) .. ")")
+    -- Always use compressed data from TWRA_CompressedAssignments.data
+    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.data then
+        local compressedData = TWRA_CompressedAssignments.data
+        self:Debug("sync", "Using stored compressed data for response (length: " .. 
+                  string.len(compressedData) .. ")")
+        
+        -- Add random delay to prevent multiple responses at once
+        -- Delay proportional to group size: 0-2 seconds in a 40-man raid
+        local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
+        local maxDelay = math.min(2, groupSize * 0.05)
+        local delay = maxDelay * math.random()
+        
+        -- Schedule the response after the delay
+        self:ScheduleTimer(function()
+            self:Debug("sync", "Sending compressed data response now")
             
-            -- Add random delay to prevent multiple responses at once
-            -- Delay proportional to group size: 0-2 seconds in a 40-man raid
-            local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
-            local maxDelay = math.min(2, groupSize * 0.05)
-            local delay = maxDelay * math.random()
+            -- Format message - without COMP marker since we always use compression
+            local message = string.format("%s:%d:%s", 
+                self.SYNC.COMMANDS.DATA_RESPONSE,
+                ourTimestamp,
+                compressedData)
             
-            -- Schedule the response after the delay
-            self:ScheduleTimer(function()
-                self:Debug("sync", "Sending compressed data response now")
+            -- Use chunk manager if needed for large data
+            if string.len(message) > 254 and self.chunkManager then
+                self:Debug("sync", "Data too large, using chunk manager")
+                local prefix = string.format("%s:%d:", 
+                    self.SYNC.COMMANDS.DATA_RESPONSE, ourTimestamp)
                 
-                -- Format message with COMP marker to indicate compressed data
-                local message = string.format("%s:%d:COMP:%s", 
-                    self.SYNC.COMMANDS.DATA_RESPONSE,
-                    ourTimestamp,
-                    compressedData)
-                
-                -- Use chunk manager if needed for large data
-                if string.len(message) > 254 and self.chunkManager then
-                    self:Debug("sync", "Data too large, using chunk manager")
-                    local prefix = string.format("%s:%d:COMP:", 
-                        self.SYNC.COMMANDS.DATA_RESPONSE, ourTimestamp)
-                    
-                    self.chunkManager:SendChunkedMessage(compressedData, prefix)
-                else
-                    -- Send directly if small enough
-                    self:SendAddonMessage(message)
-                end
-            end, delay)
-            
-            self:Debug("sync", string.format("Scheduled compressed data response in %.1f seconds", delay))
-            return
-        else
-            self:Debug("sync", "Compressed data requested but not available")
-        end
-    end
-    
-    -- Fall back to Base64 if compressed data not available or not requested
-    local sourceString = nil
-    if TWRA_Assignments then
-        sourceString = TWRA_Assignments.source
-    end
-    
-    -- Make sure we have source data
-    if not sourceString or sourceString == "" then
-        self:Debug("sync", "No source data available to share")
+                self.chunkManager:SendChunkedMessage(compressedData, prefix)
+            else
+                -- Send directly if small enough
+                self:SendAddonMessage(message)
+            end
+        end, delay)
+        
+        self:Debug("sync", string.format("Scheduled compressed data response in %.1f seconds", delay))
         return
     end
     
-    -- Add random delay to prevent multiple responses at once
-    local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
-    local maxDelay = math.min(2, groupSize * 0.05)
-    local delay = maxDelay * math.random()
-    
-    -- Schedule the response after the delay
-    self:ScheduleTimer(function()
-        self:Debug("sync", "Sending Base64 data response now with source of length: " .. string.len(sourceString))
-        self:SendDataResponse(sourceString, ourTimestamp)
-    end, delay)
-    
-    self:Debug("sync", string.format("Scheduling Base64 data response in %.1f seconds (data length: %d)", 
-                delay, string.len(sourceString)))
+    -- If we get here, we don't have compressed data to share
+    self:Debug("sync", "No compressed data available to share")
 end
 
 -- Handle data response commands
@@ -402,8 +370,8 @@ function TWRA:HandleDataResponseCommand(message, sender)
                     self:Debug("sync", "Successfully assembled chunked data (" .. 
                               string.len(assembledData) .. " bytes)")
                     
-                    -- Process the assembled data
-                    self:ProcessReceivedData(assembledData, timestamp, sender)
+                    -- Process the assembled data - now always treated as compressed
+                    self:ProcessCompressedData(assembledData, timestamp, sender)
                     
                     -- Clean up the transfer data
                     self.SYNC.chunkedData[transferId] = nil
@@ -413,31 +381,16 @@ function TWRA:HandleDataResponseCommand(message, sender)
         end
     end
     
-    -- Check if this is a compressed data message
-    if parts[3] == "COMP" then
-        -- Compressed data format: DRESP:timestamp:COMP:compressedData
-        local prefix = parts[1] .. ":" .. parts[2] .. ":" .. parts[3] .. ":"
-        local prefixLen = string.len(prefix)
-        local compressedData = string.sub(message, prefixLen + 1)
-        
-        self:Debug("sync", string.format("Received compressed data from %s (timestamp: %d, length: %d)", 
-            sender, timestamp, string.len(compressedData)))
-        
-        -- Process the compressed data using our decompression system
-        self:ProcessCompressedData(compressedData, timestamp, sender)
-        return
-    end
-    
-    -- Standard non-chunked response - reconstruct the encoded data
+    -- Standard non-chunked response - extract the data portion
     local prefix = parts[1] .. ":" .. parts[2] .. ":"
     local prefixLen = string.len(prefix)
-    local encodedData = string.sub(message, prefixLen + 1)
+    local compressedData = string.sub(message, prefixLen + 1)
     
-    self:Debug("sync", string.format("Received standard data response from %s (timestamp: %d, length: %d)", 
-        sender, timestamp, string.len(encodedData)))
+    self:Debug("sync", string.format("Received data response from %s (timestamp: %d, length: %d)", 
+        sender, timestamp, string.len(compressedData)))
     
-    -- Process the data
-    self:ProcessReceivedData(encodedData, timestamp, sender)
+    -- Process the data - now always treat as compressed
+    self:ProcessCompressedData(compressedData, timestamp, sender)
 end
 
 -- Function to process compressed data received via sync
@@ -503,7 +456,7 @@ function TWRA:SendDataResponse(encodedData, timestamp)
         
         if compressedData then
             -- Format message with COMP marker to indicate compressed data
-            local message = string.format("%s:%d:COMP:%s", 
+            local message = string.format("%s:%d:%s", 
                 self.SYNC.COMMANDS.DATA_RESPONSE,
                 timestamp,
                 compressedData)
@@ -521,7 +474,7 @@ function TWRA:SendDataResponse(encodedData, timestamp)
                 -- If we have the ChunkManager, use it for sending compressed data
                 if self.chunkManager then
                     self:Debug("sync", "Using ChunkManager to send compressed data")
-                    local prefix = string.format("%s:%d:COMP:", 
+                    local prefix = string.format("%s:%d:", 
                         self.SYNC.COMMANDS.DATA_RESPONSE, timestamp)
                     
                     self.chunkManager:SendChunkedMessage(compressedData, prefix)

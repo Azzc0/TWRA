@@ -33,6 +33,7 @@ We will implement Huffman compression using the LibCompress library. This will s
    - Store uncompressed data in `TWRA_Assignments` (updated)
    - **Don't store original source string**
    - **Immediately compress the clean data using `CompressAssignmentsData()`**
+   - **Base64Encode the compressed data**
    - Create client-specific data
    - **Store compressed version in `TWRA_Assignments.compressed`** (updated)
 3. UI displays the imported data (unchanged)
@@ -42,6 +43,7 @@ We will implement Huffman compression using the LibCompress library. This will s
 2. `HandleDataResponseCommand()` processes this message:
    - Process received data as compressed data
    - Pass directly to `ProcessCompressedData()`
+   - Decode the Base64 string (unchanged)
    - Decompress using `DecompressAssignmentsData()`
    - Save decompressed data with `SaveAssignments()`
    - **Store compressed version in `TWRA_Assignments.compressed`** (updated)
