@@ -1,6 +1,7 @@
 -- TWRA Chunk Manager
 -- Manages splitting and reassembling large messages
 TWRA = TWRA or {}
+TWRA.chunkManager = TWRA.chunkManager or {}
 
 -- Initialize chunk management system
 function TWRA:InitChunkManager()

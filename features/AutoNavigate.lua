@@ -418,68 +418,139 @@ function TWRA:FindSectionByGuid(guid)
         end
     end
     
-    -- Check the assignments data for GUID rows
+    -- Check the assignments data for GUIDs in the new data structure
     if TWRA_Assignments and TWRA_Assignments.data then
-        -- Get the saved data directly from the SavedVariables
         local savedData = TWRA_Assignments.data
         
         if self.AUTONAVIGATE.debug then
-            self:Debug("nav", "Checking assignment data for GUIDs...")
+            self:Debug("nav", "Checking assignment data for GUIDs in Section Metadata...")
         end
         
-        -- Track current section while iterating through the flat array
-        local currentSection = nil
+        -- New data format: Check each section's metadata for GUIDs
+        for _, section in pairs(savedData) do
+            -- Skip if not a properly formatted section
+            if not (type(section) ~= "table" or not section["Section Name"]) then
+                local sectionName = section["Section Name"]
+                
+                -- Check if this section has metadata with GUIDs
+                if section["Section Metadata"] and section["Section Metadata"]["GUID"] then
+                    local guidList = section["Section Metadata"]["GUID"]
+                    
+                    if self.AUTONAVIGATE.debug then
+                        self:Debug("nav", "Found GUIDs in metadata for section: " .. sectionName)
+                    end
+                    
+                    -- Check each GUID in the metadata
+                    for _, rowGuid in ipairs(guidList) do
+                        if rowGuid and rowGuid ~= "" then
+                            if self.AUTONAVIGATE.debug then
+                                self:Debug("nav", "Checking GUID: " .. rowGuid)
+                            end
+                            
+                            -- Normalize for comparison
+                            local normalizedRowGuid = string.lower(rowGuid)
+                            local rowGuidWithoutPrefix = normalizedRowGuid
+                            if string.sub(normalizedRowGuid, 1, 2) == "0x" then
+                                rowGuidWithoutPrefix = string.sub(normalizedRowGuid, 3)
+                            end
+                            
+                            -- Try exact matches first
+                            if normalizedRowGuid == normalizedGuid or 
+                               rowGuidWithoutPrefix == guidWithoutPrefix then
+                                if self.AUTONAVIGATE.debug then
+                                    self:Debug("nav", "Found exact GUID match for " .. 
+                                        sectionName .. ": " .. rowGuid)
+                                end
+                                return sectionName
+                            end
+                            
+                            -- Try partial matching with the end of the GUID
+                            if shortGuid and string.len(normalizedRowGuid) >= 8 then
+                                local shortRowGuid = string.sub(normalizedRowGuid, -12)
+                                if string.find(shortRowGuid, shortGuid, 1, true) or 
+                                   string.find(shortGuid, shortRowGuid, 1, true) then
+                                    if self.AUTONAVIGATE.debug then
+                                        self:Debug("nav", "Found partial GUID match for " .. 
+                                            sectionName .. ": " .. shortRowGuid .. " ~ " .. shortGuid)
+                                    end
+                                    return sectionName
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            -- No goto continue needed - the loop will naturally continue to the next section
+        end
         
-        -- Iterate through all rows
+        -- Fall back to legacy format if no match found and the data might be in the old format
+        local isLegacyFormat = false
         for i = 1, table.getn(savedData) do
-            local row = savedData[i]
-            
-            -- Update current section name if this row has one
-            if type(row) == "table" and row[1] and row[1] ~= "" then
-                currentSection = row[1]
+            if type(savedData[i]) == "table" and not savedData[i]["Section Name"] then
+                isLegacyFormat = true
+                break
+            end
+        end
+        
+        if isLegacyFormat then
+            if self.AUTONAVIGATE.debug then
+                self:Debug("nav", "No match found in new format, checking legacy format...")
             end
             
-            -- Check if it's a GUID row - in flat data structure the GUID is in column 2
-            if type(row) == "table" and row[2] == "GUID" then
-                if self.AUTONAVIGATE.debug and currentSection then
-                    self:Debug("nav", "Found GUID row in section: " .. currentSection)
+            -- Legacy format: Track current section while iterating through the flat array
+            local currentSection = nil
+            
+            -- Iterate through all rows
+            for i = 1, table.getn(savedData) do
+                local row = savedData[i]
+                
+                -- Update current section name if this row has one
+                if type(row) == "table" and row[1] and row[1] ~= "" then
+                    currentSection = row[1]
                 end
                 
-                -- Check each cell in the row for GUIDs
-                for j = 3, table.getn(row) do
-                    local rowGuid = row[j]
-                    if rowGuid and rowGuid ~= "" then
-                        if self.AUTONAVIGATE.debug then
-                            self:Debug("nav", "Checking GUID: " .. rowGuid)
-                        end
-                        
-                        -- Normalize for comparison
-                        local normalizedRowGuid = string.lower(rowGuid)
-                        local rowGuidWithoutPrefix = normalizedRowGuid
-                        if string.sub(normalizedRowGuid, 1, 2) == "0x" then
-                            rowGuidWithoutPrefix = string.sub(normalizedRowGuid, 3)
-                        end
-                        
-                        -- Try exact matches first
-                        if normalizedRowGuid == normalizedGuid or 
-                           rowGuidWithoutPrefix == guidWithoutPrefix then
+                -- Check if it's a GUID row - in flat data structure the GUID is in column 2
+                if type(row) == "table" and row[2] == "GUID" then
+                    if self.AUTONAVIGATE.debug and currentSection then
+                        self:Debug("nav", "Found GUID row in legacy format section: " .. currentSection)
+                    end
+                    
+                    -- Check each cell in the row for GUIDs
+                    for j = 3, table.getn(row) do
+                        local rowGuid = row[j]
+                        if rowGuid and rowGuid ~= "" then
                             if self.AUTONAVIGATE.debug then
-                                self:Debug("nav", "Found exact GUID match for " .. 
-                                    currentSection .. ": " .. rowGuid)
+                                self:Debug("nav", "Checking legacy GUID: " .. rowGuid)
                             end
-                            return currentSection
-                        end
-                        
-                        -- Try partial matching with the end of the GUID
-                        if shortGuid and string.len(normalizedRowGuid) >= 8 then
-                            local shortRowGuid = string.sub(normalizedRowGuid, -12)
-                            if string.find(shortRowGuid, shortGuid, 1, true) or 
-                               string.find(shortGuid, shortRowGuid, 1, true) then
+                            
+                            -- Normalize for comparison
+                            local normalizedRowGuid = string.lower(rowGuid)
+                            local rowGuidWithoutPrefix = normalizedRowGuid
+                            if string.sub(normalizedRowGuid, 1, 2) == "0x" then
+                                rowGuidWithoutPrefix = string.sub(normalizedRowGuid, 3)
+                            end
+                            
+                            -- Try exact matches first
+                            if normalizedRowGuid == normalizedGuid or 
+                               rowGuidWithoutPrefix == guidWithoutPrefix then
                                 if self.AUTONAVIGATE.debug then
-                                    self:Debug("nav", "Found partial GUID match for " .. 
-                                        currentSection .. ": " .. shortRowGuid .. " ~ " .. shortGuid)
+                                    self:Debug("nav", "Found exact GUID match in legacy format for " .. 
+                                        currentSection .. ": " .. rowGuid)
                                 end
                                 return currentSection
+                            end
+                            
+                            -- Try partial matching with the end of the GUID
+                            if shortGuid and string.len(normalizedRowGuid) >= 8 then
+                                local shortRowGuid = string.sub(normalizedRowGuid, -12)
+                                if string.find(shortRowGuid, shortGuid, 1, true) or 
+                                   string.find(shortGuid, shortRowGuid, 1, true) then
+                                    if self.AUTONAVIGATE.debug then
+                                        self:Debug("nav", "Found partial GUID match in legacy format for " .. 
+                                            currentSection .. ": " .. shortRowGuid .. " ~ " .. shortGuid)
+                                    end
+                                    return currentSection
+                                end
                             end
                         end
                     end
