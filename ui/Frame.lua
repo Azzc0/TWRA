@@ -23,28 +23,34 @@ function TWRA:GetPlayerStatus(name)
         return true, true 
     end
     
+    -- Check if we have this player in our PLAYERS table
+    if self.PLAYERS and self.PLAYERS[name] then
+        if debugMe then
+            DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in PLAYERS table: " .. 
+                                         self.PLAYERS[name][1] .. ", " .. (self.PLAYERS[name][2] and "Online" or "Offline"))
+        end
+        return true, self.PLAYERS[name][2] -- Return online status directly from table
+    end
+    
     -- Check if we're using example data
     if self.usingExampleData and self.EXAMPLE_PLAYERS then
-        -- Get the player class directly from EXAMPLE_PLAYERS
         local classInfo = self.EXAMPLE_PLAYERS[name]
-        
-        -- If the player is in our example data
         if classInfo then
-            -- Check if the player is marked as offline (has |OFFLINE suffix)
-            local isOffline = string.find(classInfo, "|OFFLINE")
-            
-            if debugMe then
-                DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus (example): " .. name .. 
-                                           " classInfo=" .. tostring(classInfo) .. 
-                                           " offline=" .. tostring(isOffline ~= nil))
-            end
-            
-            if isOffline then
-                -- Example player exists but is offline
-                return true, false
-            else
-                -- Example player exists and is online
-                return true, true
+            -- For old string format
+            if type(classInfo) == "string" then
+                local isOffline = string.find(classInfo, "|OFFLINE")
+                if debugMe then
+                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in EXAMPLE_PLAYERS (string format): " .. 
+                                                tostring(not isOffline))
+                end
+                return true, not isOffline
+            -- For new array format
+            elseif type(classInfo) == "table" then
+                if debugMe then
+                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in EXAMPLE_PLAYERS (table format): " .. 
+                                                tostring(classInfo[2]))
+                end
+                return true, classInfo[2]
             end
         end
     end
@@ -54,7 +60,10 @@ function TWRA:GetPlayerStatus(name)
         for i = 1, GetNumRaidMembers() do
             local raidName, _, _, _, _, _, _, online = GetRaidRosterInfo(i)
             if raidName == name then
-                return true, (online ~= 0)
+                if debugMe then
+                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in raid: " .. tostring(online == 1))
+                end
+                return true, online == 1
             end
         end
     end
@@ -63,7 +72,11 @@ function TWRA:GetPlayerStatus(name)
     if GetNumRaidMembers() == 0 and GetNumPartyMembers() > 0 then
         for i = 1, GetNumPartyMembers() do
             if UnitName("party"..i) == name then
-                return true, UnitIsConnected("party"..i)
+                local isConnected = UnitIsConnected("party"..i)
+                if debugMe then
+                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in party: " .. tostring(isConnected))
+                end
+                return true, isConnected
             end
         end
     end
@@ -83,6 +96,30 @@ function TWRA:CloseDropdownMenu()
     if self.navigation and self.navigation.dropdownMenu and self.navigation.dropdownMenu:IsShown() then
         self.navigation.dropdownMenu:Hide()
     end
+end
+
+-- Register for player update events
+function TWRA:RegisterPlayerEvents()
+    -- Only register if we have the event system
+    if not self.RegisterEvent then
+        self:Debug("ui", "Event system not available, cannot register player events")
+        return false
+    end
+    
+    -- Register for PLAYERS_UPDATED event
+    self:RegisterEvent("PLAYERS_UPDATED", function()
+        -- Only update UI if main frame is visible and in main view
+        if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+            -- If we have a refresh function, call it to update the UI
+            if self.RefreshAssignmentTable then
+                self:Debug("ui", "Refreshing display after player update")
+                self:RefreshAssignmentTable()
+            end
+        end
+    end)
+    
+    self:Debug("ui", "Registered for player update events")
+    return true
 end
 
 -- Enhance CreateMainFrame to use the standardized dropdown and remove Edit button
@@ -1145,7 +1182,7 @@ function TWRA:RefreshAssignmentTable()
     self:FilterAndDisplayHandler(currentSection)
 end
 
--- Update CreateRow to remove highlighting
+-- Update CreateRow to use the new TWRA.PLAYERS table format for class and online status
 function TWRA:CreateRow(rowNum, data)
     local rowFrames = {}
     local yOffset = -40 - (rowNum * 20)
@@ -1242,80 +1279,64 @@ function TWRA:CreateRow(rowNum, data)
                 -- Header is white
                 cell:SetTextColor(1, 1, 1)
             elseif cellData and cellData ~= "" then
-                -- Color by player status or class group
-                local isClassGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[cellData]
+                -- Get player info from PLAYERS table
+                local playerInfo = self.PLAYERS and self.PLAYERS[cellData]
                 
-                if isClassGroup then
-                    -- Class group coloring
-                    local color = TWRA.VANILLA_CLASS_COLORS[TWRA.CLASS_GROUP_NAMES[cellData]]
-                    if color then
-                        cell:SetTextColor(color.r, color.g, color.b)
-                    else
-                        cell:SetTextColor(1, 1, 1)
-                    end
+                -- Default values if not found in PLAYERS table
+                local playerClass = nil
+                local isInRaid = false
+                local isOnline = false
+                
+                -- Create icon texture for the player cell - ALWAYS create one
+                iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+                iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
+                iconTexture:SetWidth(12)
+                iconTexture:SetHeight(12)
+                
+                if playerInfo then
+                    -- Extract class and online status from PLAYERS table
+                    playerClass = playerInfo[1]
+                    isInRaid = true
+                    isOnline = playerInfo[2]
                     
-                    -- Add class icon
-                    iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-                    iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
-                    iconTexture:SetWidth(12)
-                    iconTexture:SetHeight(12)
+                    -- Set class icon texture for players in raid
                     iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-                    
-                    local coords = TWRA.CLASS_COORDS[string.upper(TWRA.CLASS_GROUP_NAMES[cellData])]
+                    local coords = self.CLASS_COORDS and self.CLASS_COORDS[string.upper(playerClass)]
                     if coords then
                         iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
                     end
                 else
-                    -- Player coloring
-                    local inRaid, online = self:GetPlayerStatus(cellData)
-                    local classToUse = nil
-                    
-                    -- Try to determine player class
-                    if cellData == UnitName("player") then
-                        local _, playerClass = UnitClass("player")
-                        classToUse = playerClass
-                    elseif self.usingExampleData and self.EXAMPLE_PLAYERS then
-                        local classInfo = self.EXAMPLE_PLAYERS[cellData]
-                        if classInfo then
-                            classToUse = string.gsub(classInfo, "|OFFLINE", "")
-                        end
-                    elseif inRaid then
-                        for j = 1, GetNumRaidMembers() do
-                            local name, _, _, _, _, class = GetRaidRosterInfo(j)
-                            if name == cellData then
-                                classToUse = class
-                                break
-                            end
-                        end
-                    end
-                    
-                    -- Add class icon if we found a class
-                    if classToUse then
-                        iconTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
-                        iconTexture:SetPoint("LEFT", bg, "LEFT", 4, 0)
-                        iconTexture:SetWidth(12)
-                        iconTexture:SetHeight(12)
-                        iconTexture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-                        
-                        local coords = TWRA.CLASS_COORDS[string.upper(classToUse)]
-                        if coords then
-                            iconTexture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-                        end
-                    end
-                    
-                    -- Color text based on raid status
-                    if TWRA.UI and TWRA.UI.ApplyClassColoring then
-                        TWRA.UI:ApplyClassColoring(cell, cellData, classToUse, inRaid, online)
+                    -- Player not in raid - use Missing icon
+                    if self.ICONS and self.ICONS["Missing"] then
+                        local iconInfo = self.ICONS["Missing"]
+                        iconTexture:SetTexture(iconInfo[1])
+                        iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
                     else
-                        -- Fallback coloring
-                        if inRaid and not online then
-                            cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
-                        elseif classToUse and TWRA.VANILLA_CLASS_COLORS and TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)] then
-                            local color = TWRA.VANILLA_CLASS_COLORS[string.upper(classToUse)]
+                        -- Fallback to disconnect icon if Missing icon not available
+                        iconTexture:SetTexture("Interface\\CharacterFrame\\Disconnect-Icon")
+                        iconTexture:SetTexCoord(0, 1, 0, 1)
+                    end
+                end
+                
+                -- Apply class coloring
+                if self.UI and self.UI.ApplyClassColoring then
+                    -- Use the UIUtils function for consistent coloring
+                    self.UI:ApplyClassColoring(cell, nil, playerClass, isInRaid, isOnline)
+                else
+                    -- Fallback coloring
+                    if not isInRaid then
+                        cell:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
+                    elseif not isOnline then
+                        cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
+                    elseif playerClass and self.VANILLA_CLASS_COLORS then
+                        local color = self.VANILLA_CLASS_COLORS[string.upper(playerClass)]
+                        if color then
                             cell:SetTextColor(color.r, color.g, color.b)
                         else
                             cell:SetTextColor(1, 1, 1) -- White fallback
                         end
+                    else
+                        cell:SetTextColor(1, 1, 1) -- White fallback
                     end
                 end
             else

@@ -337,7 +337,7 @@ end
 -- Handle group composition changes
 function TWRA:OnGroupChanged()
     self:Debug("sync", "Group composition changed")
-    
+    TWRA:UpdatePlayerTable()
     -- Check if we went from solo to group (might want to activate sync)
     local inGroup = (GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0)
     

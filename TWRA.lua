@@ -144,6 +144,7 @@ function TWRA:Initialize()
     frame:RegisterEvent("VARIABLES_LOADED")
     frame:RegisterEvent("RAID_ROSTER_UPDATE")
     frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+    frame:RegisterEvent("GROUP_ROSTER_UPDATE")
     frame:RegisterEvent("CHAT_MSG_ADDON")
     frame:RegisterEvent("UPDATE_BINDINGS")
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")  -- Add this to catch UI reloads
@@ -1383,8 +1384,8 @@ function TWRA:OnGroupChanged()
     self:Debug("general", "Group composition changed, updating player table")
     
     -- Update the player table with current group information
-    -- Pass true if we're using example data to include example players
-    if self:UpdatePlayerTable(self.usingExampleData) then
+    -- UpdatePlayerTable now checks TWRA_Assignments.isExample automatically
+    if self:UpdatePlayerTable() then
         self:Debug("general", "Player table updated successfully")
     end
     

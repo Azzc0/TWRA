@@ -76,6 +76,22 @@ function TWRA:InitOSD()
                 end
             end
         end, "OSD")
+        
+        -- Register for player status updates (new)
+        self:RegisterEvent("PLAYERS_UPDATED", function()
+            self:Debug("osd", "PLAYERS_UPDATED event received")
+            -- Update OSD content if it's currently visible
+            if self.OSD and self.OSD.isVisible then
+                if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+                    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                    local currentIndex = self.navigation.currentIndex
+                    local totalSections = table.getn(self.navigation.handlers)
+                    
+                    self:Debug("osd", "Updating OSD content due to player changes")
+                    self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+                end
+            end
+        end, "OSD")
     end
 
     -- Mark as initialized
@@ -298,20 +314,16 @@ function TWRA:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline,
     -- Add tank class icon
     local tankClassIcon = rowFrame:CreateTexture(nil, "ARTWORK")
     
-    -- Choose the right icon based on availability
-    if not inRaid then
-        -- Player not in group - use missing icon
-        local iconInfo = self.ICONS and self.ICONS.Missing or {"Interface\\Buttons\\UI-GroupLoot-Pass-Up", 0, 1, 0, 1}
-        tankClassIcon:SetTexture(iconInfo[1])
-        tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-    else
-        -- Player in group - use class icon
-        tankClassIcon:SetTexture(self.TEXTURES.CLASS_ICONS)
-        -- Set class icon texture coordinates using TWRA.CLASS_COORDS
-        if self.CLASS_COORDS and self.CLASS_COORDS[string.upper(tankClass)] then
-            local coords = self.CLASS_COORDS[string.upper(tankClass)]
-            tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-        end
+    -- Default to Missing icon
+    local iconInfo = self.ICONS["Missing"]
+    tankClassIcon:SetTexture(iconInfo[1])
+    tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    
+    -- Replace with class icon only if the player is in the raid
+    if inRaid and tankClass and self.CLASS_COORDS and self.CLASS_COORDS[string.upper(tankClass)] then
+        tankClassIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+        local coords = self.CLASS_COORDS[string.upper(tankClass)]
+        tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
     end
     
     tankClassIcon:SetWidth(14)
@@ -323,27 +335,27 @@ function TWRA:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline,
     tankNameText:SetPoint("LEFT", tankClassIcon, "RIGHT", 2, 0)
     tankNameText:SetText(tankName)
     
-    -- Apply class coloring using UIUtils function
+    -- Apply class coloring using UIUtils function or fallback
     if self.UI and self.UI.ApplyClassColoring then
+        -- Use the UIUtils function for consistent coloring
         self.UI:ApplyClassColoring(tankNameText, nil, tankClass, inRaid, isOnline)
     else
-        -- Fallback if UI utils not available
         if not inRaid then
-            -- Player not in group - gray color
-            tankNameText:SetTextColor(0.5, 0.5, 0.5)
+            tankNameText:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
         elseif not isOnline then
-            -- Player in group but offline - red color
-            tankNameText:SetTextColor(1.0, 0.3, 0.3)
-        else
-            -- Player in group and online - use class color
-            if self.VANILLA_CLASS_COLORS and self.VANILLA_CLASS_COLORS[tankClass] then
-                local color = self.VANILLA_CLASS_COLORS[tankClass]
+            tankNameText:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
+        elseif tankClass and self.VANILLA_CLASS_COLORS then
+            local color = self.VANILLA_CLASS_COLORS[string.upper(tankClass)]
+            if color then
                 tankNameText:SetTextColor(color.r, color.g, color.b)
+            else
+                tankNameText:SetTextColor(1, 1, 1) -- White fallback
             end
+        else
+            tankNameText:SetTextColor(1, 1, 1) -- White fallback
         end
     end
     
-    -- Return elements and width calculation
     return tankClassIcon, tankNameText, 14 + 2 + tankNameText:GetStringWidth()
 end
 
@@ -360,9 +372,19 @@ function TWRA:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, pla
     -- Add all tanks with their class icons
     for t = 1, table.getn(tanks) do
         local tankName = tanks[t]
-        local tankClass = playerData[tankName] or nil
-        local inRaid = playerStatus[tankName] and playerStatus[tankName].inRaid or false
-        local isOnline = playerStatus[tankName] and playerStatus[tankName].online or false
+        
+        -- Get player information from TWRA.PLAYERS table
+        local inRaid = false
+        local isOnline = false
+        local tankClass = nil
+        
+        -- Check if player is in the PLAYERS table
+        if self.PLAYERS and self.PLAYERS[tankName] then
+            -- Format of PLAYERS table entry: [1] = class, [2] = online status
+            tankClass = self.PLAYERS[tankName][1]
+            isOnline = self.PLAYERS[tankName][2]
+            inRaid = true
+        end
         
         local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
         
@@ -460,9 +482,19 @@ function TWRA:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, tar
             -- Add tank widths
             for t = 1, table.getn(tanks) do
                 local tankName = tanks[t]
-                local tankClass = playerData[tankName] or nil
-                local inRaid = playerStatus[tankName] and playerStatus[tankName].inRaid or false
-                local isOnline = playerStatus[tankName] and playerStatus[tankName].online or false
+                
+                -- Get player information from TWRA.PLAYERS table
+                local inRaid = false
+                local isOnline = false
+                local tankClass = nil
+                
+                -- Check if player is in the PLAYERS table
+                if self.PLAYERS and self.PLAYERS[tankName] then
+                    -- Format of PLAYERS table entry: [1] = class, [2] = online status
+                    tankClass = self.PLAYERS[tankName][1]
+                    isOnline = self.PLAYERS[tankName][2]
+                    inRaid = true
+                end
                 
                 local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
                 

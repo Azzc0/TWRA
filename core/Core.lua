@@ -43,9 +43,39 @@ function TWRA:OnLoad()
         TWRA_SavedVariables.options = {}
     end
     
-    -- Initialize PLAYERS table
+    -- Initialize PLAYERS table with error handling
     self:Debug("general", "Initializing player table")
-    self:UpdatePlayerTable(self.usingExampleData)
+    
+    -- Create a new PLAYERS table (don't try to use an existing one that might be corrupted)
+    self.PLAYERS = {}
+    
+    -- Try to initialize the player table with error handling
+    local success, errorMsg = pcall(function()
+        return self:UpdatePlayerTable()
+    end)
+    
+    if not success then
+        -- Log the error and create a minimal PLAYERS table with at least the player themselves
+        self:Debug("error", "Failed to initialize PLAYERS table: " .. tostring(errorMsg))
+        
+        -- Create a minimal table with just the player
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        self.PLAYERS = {}
+        self.PLAYERS[playerName] = {playerClass, true}  -- Player is always online
+        
+        self:Debug("general", "Created minimal PLAYERS table with just the player")
+    end
+    
+    -- Debug output to verify PLAYERS table initialization
+    local playerCount = 0
+    for name, data in pairs(self.PLAYERS) do
+        playerCount = playerCount + 1
+        if playerCount <= 3 then -- Just show first 3 players for brevity
+            self:Debug("general", "Player in table: " .. name .. " = " .. data[1] .. " (" .. (data[2] and "Online" or "Offline") .. ")")
+        end
+    end
+    self:Debug("general", "Player table initialized with " .. playerCount .. " entries")
     
     -- Initialize compression system
     if self.InitializeCompression then
@@ -197,7 +227,7 @@ function TWRA:OnEvent()
             self:Debug("general", "Creating minimap button after addon loaded")
             self:CreateMinimapButton()
         end
-    elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
+    elseif event == "GROUP_ROSTER_UPDATE" then
         -- Handle group composition changes
         if self.OnGroupChanged then
             self:OnGroupChanged()
@@ -227,6 +257,19 @@ frame:SetScript("OnEvent", function()
         if TWRA.InitOSD then
             TWRA:Debug("ui", "Initializing OSD system")
             TWRA:InitOSD()
+        end
+        
+        -- IMPORTANT: Ensure PLAYERS table is properly initialized
+        -- This ensures the table is always populated properly even if early initialization failed
+        if TWRA.UpdatePlayerTable then
+            TWRA:Debug("general", "Reinitializing PLAYERS table during PLAYER_ENTERING_WORLD")
+            TWRA:UpdatePlayerTable() -- No parameters needed now
+            
+            -- Log the results
+            local playerCount = TWRA:GetTableSize(TWRA.PLAYERS or {})
+            TWRA:Debug("general", "PLAYERS table now contains " .. playerCount .. " entries")
+        else
+            TWRA:Debug("error", "UpdatePlayerTable function not available during PLAYER_ENTERING_WORLD")
         end
     else
         -- Call the regular event handler for other events

@@ -233,7 +233,24 @@ function TWRA:IsORA2Available()
 end
 
 -- Function to update the player table with current group information
-function TWRA:UpdatePlayerTable(isExample)
+function TWRA:UpdatePlayerTable()
+    -- Store previous player data for comparison
+    local oldPlayers = {}
+    if self.PLAYERS then
+        for name, data in pairs(self.PLAYERS) do
+            oldPlayers[name] = {data[1], data[2]} -- Copy class and status
+        end
+    end
+    
+    -- Check if we're using example data
+    local useExampleData = false
+    if TWRA_Assignments and TWRA_Assignments.isExample ~= nil then
+        useExampleData = TWRA_Assignments.isExample
+    end
+    
+    -- Set the addon-wide flag for example data
+    self.usingExampleData = useExampleData
+    
     -- Create or reset the player table
     self.PLAYERS = {}
     
@@ -279,25 +296,86 @@ function TWRA:UpdatePlayerTable(isExample)
     -- Add class group names from CLASS_GROUP_NAMES
     if self.CLASS_GROUP_NAMES then
         for groupName, className in pairs(self.CLASS_GROUP_NAMES) do
-            self.PLAYERS[groupName] = {groupName, true} -- Class groups are always "online"
+            self.PLAYERS[groupName] = {className, true} -- Class groups are always "online"
         end
     end
     
     -- Add example players if requested
-    if isExample and self.EXAMPLE_PLAYERS then
+    if useExampleData and self.EXAMPLE_PLAYERS then
         for name, classInfo in pairs(self.EXAMPLE_PLAYERS) do
             if not self.PLAYERS[name] then  -- Don't overwrite real players
-                -- Convert from old format with |OFFLINE marker to new format
-                local isOffline = string.find(classInfo, "|OFFLINE")
-                local class = string.gsub(classInfo, "|OFFLINE", "")
-                self.PLAYERS[name] = {class, not isOffline}
+                -- If we have new format (array format)
+                if type(classInfo) == "table" then
+                    self.PLAYERS[name] = {classInfo[1], classInfo[2]}
+                else
+                    -- Convert from old format with |OFFLINE marker to new format
+                    local isOffline = string.find(classInfo, "|OFFLINE")
+                    local class = string.gsub(classInfo, "|OFFLINE", "")
+                    self.PLAYERS[name] = {class, not isOffline}
+                end
+            end
+        end
+    end
+    
+    -- Check if the player table has changed
+    local hasChanges = false
+    
+    -- Check for added or modified players
+    for name, data in pairs(self.PLAYERS) do
+        if not oldPlayers[name] or 
+           oldPlayers[name][1] ~= data[1] or 
+           oldPlayers[name][2] ~= data[2] then
+            hasChanges = true
+            break
+        end
+    end
+    
+    -- Check for removed players
+    if not hasChanges then
+        for name, _ in pairs(oldPlayers) do
+            if not self.PLAYERS[name] then
+                hasChanges = true
+                break
+            end
+        end
+    end
+    
+    -- Notify about changes if detected
+    if hasChanges then
+        self:Debug("data", "Player table changed - triggering updates")
+        
+        -- Trigger PLAYERS_UPDATED event if the event system is available
+        if self.TriggerEvent then
+            self:TriggerEvent("PLAYERS_UPDATED")
+        end
+        
+        -- Update UI if main frame is visible
+        if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+            -- Refresh assignment table to update player colors/status
+            if self.RefreshAssignmentTable then
+                self:Debug("ui", "Refreshing assignment table due to player changes")
+                self:RefreshAssignmentTable()
+            end
+        end
+        
+        -- Update OSD if it's visible
+        if self.OSD and self.OSD.isVisible then
+            -- Update OSD content with current section
+            if self.UpdateOSDContent and self.navigation and
+               self.navigation.currentIndex and self.navigation.handlers then
+                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                local currentIndex = self.navigation.currentIndex
+                local totalSections = table.getn(self.navigation.handlers)
+                
+                self:Debug("osd", "Updating OSD content due to player changes")
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
             end
         end
     end
     
     self:Debug("data", "Updated player table with " .. self:GetTableSize(self.PLAYERS) .. " entries")
     
-    return self.PLAYERS
+    return self.PLAYERS, hasChanges
 end
 
 -- Helper function to count table entries (including non-integer keys)
