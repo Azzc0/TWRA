@@ -43,6 +43,10 @@ function TWRA:OnLoad()
         TWRA_SavedVariables.options = {}
     end
     
+    -- Initialize PLAYERS table
+    self:Debug("general", "Initializing player table")
+    self:UpdatePlayerTable(self.usingExampleData)
+    
     -- Initialize compression system
     if self.InitializeCompression then
         if self:InitializeCompression() then

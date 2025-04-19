@@ -1377,3 +1377,17 @@ function TWRA:ProcessImportedData(stringData)
     
     return parsed
 end
+
+-- Handle group composition changes
+function TWRA:OnGroupChanged()
+    self:Debug("general", "Group composition changed, updating player table")
+    
+    -- Update the player table with current group information
+    -- Pass true if we're using example data to include example players
+    if self:UpdatePlayerTable(self.usingExampleData) then
+        self:Debug("general", "Player table updated successfully")
+    end
+    
+    -- Additional group change handling can go here
+    -- This is where existing group change code would be
+end

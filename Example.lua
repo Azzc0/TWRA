@@ -2,25 +2,25 @@ TWRA = TWRA or {}
 
 -- Example player data (only used for demo purposes)
 TWRA.EXAMPLE_PLAYERS = {
-    -- Active players
-    ["Azzco"] = "WARRIOR",
-    ["Recin"] = "WARRIOR",
-    ["Nytorpa"] = "WARRIOR",
-    ["Dhl"] = "DRUID",
-    ["Lenato"] = "PALADIN",
-    ["Sinfuil"] = "PALADIN",
-    ["Kroken"] = "ROGUE",
-    ["Kaydaawg"] = "PRIEST",
-    ["Slaktaren"] = "PRIEST",
-    ["Pooras"] = "DRUID",
-    ["Ambulans"] = "SHAMAN",
-    ["Heartstiller"] = "PRIEST",
-    ["Jouthor"] = "HUNTER",
-    ["Nattoega"] = "HUNTER",
-    ["Vasslan"] = "HUNTER",
-    ["Falken"] = "HUNTER",
+    -- Active players with format: {class, isOnline}
+    ["Azzco"] = {"WARRIOR", true},
+    ["Recin"] = {"WARRIOR", true},
+    ["Nytorpa"] = {"WARRIOR", true},
+    ["Dhl"] = {"DRUID", true},
+    ["Lenato"] = {"PALADIN", true},
+    ["Sinfuil"] = {"PALADIN", true},
+    ["Kroken"] = {"ROGUE", true},
+    ["Kaydaawg"] = {"PRIEST", true},
+    ["Slaktaren"] = {"PRIEST", true},
+    ["Pooras"] = {"DRUID", true},
+    ["Ambulans"] = {"SHAMAN", true},
+    ["Heartstiller"] = {"PRIEST", true},
+    ["Jouthor"] = {"HUNTER", true},
+    ["Nattoega"] = {"HUNTER", true},
+    ["Vasslan"] = {"HUNTER", true},
+    ["Falken"] = {"HUNTER", true},
     -- Offline player
-    ["Slubban"] = "PRIEST|OFFLINE"
+    ["Slubban"] = {"PRIEST", false}
 }
 
 -- Version 2 format example data that follows the structured format
