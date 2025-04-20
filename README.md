@@ -13,7 +13,7 @@ TWRA is an addon for World of Warcraft that helps raid leaders and participants 
 
 ## Installation
 
-1. Download the latest release from [GitHub](https://github.com/YOUR_USERNAME/TWRA)
+1. Download the latest release from [GitHub](https://github.com/Azzc0/TWRA)
 2. Extract the zip file
 3. Move the `TWRA` folder to your `Interface/AddOns` directory
 4. Restart World of Warcraft or reload your UI (`/reload`)
