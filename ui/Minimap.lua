@@ -10,6 +10,50 @@ function TWRA:InitializeMinimapButton()
         self:CreateMinimapButton()
     end
     
+    -- Register for section changes to update dropdown highlighting
+    if self.RegisterEvent then
+        self:Debug("ui", "Registering minimap section change handler")
+        
+        self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
+            self:Debug("ui", "Minimap received SECTION_CHANGED: " .. sectionName .. " (" .. currentIndex .. ")")
+            
+            -- If dropdown exists and is visible, update the highlighting
+            if self.minimapButton and self.minimapButton.dropdown then
+                -- Always update the selection highlight regardless of visibility
+                if self.minimapButton.dropdown.UpdateVisibleButtons then
+                    -- Calculate appropriate offset to ensure current section is visible
+                    if currentIndex then
+                        local maxVisibleButtons = self.minimapButton.dropdown.MAX_VISIBLE_BUTTONS or 10
+                        
+                        -- Only adjust offset if dropdown is visible
+                        if self.minimapButton.dropdown:IsShown() then
+                            -- Only adjust offset if current section would be outside visible range
+                            if currentIndex <= self.minimapButton.dropdown.offset or 
+                               currentIndex > (self.minimapButton.dropdown.offset + maxVisibleButtons) then
+                                
+                                -- Try to center the current section in the visible window
+                                self.minimapButton.dropdown.offset = math.max(0, currentIndex - math.floor(maxVisibleButtons / 2))
+                                
+                                -- Make sure offset doesn't go past maximum
+                                local maxOffset = math.max(0, table.getn(self.navigation.handlers) - maxVisibleButtons)
+                                self.minimapButton.dropdown.offset = math.min(self.minimapButton.dropdown.offset, maxOffset)
+                                
+                                self:Debug("ui", "Adjusted dropdown offset to " .. self.minimapButton.dropdown.offset .. 
+                                          " for section " .. currentIndex)
+                            end
+                        end
+                        
+                        -- Always update the highlight (regardless of visibility)
+                        selfö
+                        
+                        
+                        self:Debug("ui", "Updated dropdown highlighting for section: " .. sectionName)
+                    end
+                end
+            end
+        end, "MinimapDropdown")
+    end
+    
     self:Debug("ui", "Minimap button initialized")
     return true
 end
@@ -66,275 +110,8 @@ function TWRA:CreateMinimapButton()
     -- Track whether the OSD was already shown before hover
     miniButton.osdWasShown = false
     
-    -- Create dropdown menu for sections
-    miniButton.dropdown = CreateFrame("Frame", "TWRAMinimapDropdown", UIParent) -- Attach to UIParent for better stacking
-    miniButton.dropdown:SetWidth(180) -- Wider dropdown for better visibility
-    miniButton.dropdown:SetFrameStrata("FULLSCREEN_DIALOG") -- Even higher strata to ensure visibility
-    miniButton.dropdown:SetToplevel(true) -- Ensure it stays on top of other UI elements
-    miniButton.dropdown:SetClampedToScreen(true) -- Keep it on screen
-    
-    -- Use GameTooltip style background for better look (reverting to tooltip style)
-    miniButton.dropdown:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 5, right = 5, top = 5, bottom = 5 }
-    })
-    miniButton.dropdown:SetBackdropColor(0, 0, 0, 0.9) -- Darker background for better contrast
-    miniButton.dropdown:SetBackdropBorderColor(1, 1, 1, 0.7) -- White border for tooltip style
-    
-    -- Initial hide
-    miniButton.dropdown:Hide()
-    
-    -- Create dropdown title with larger font
-    miniButton.dropdown.title = miniButton.dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    miniButton.dropdown.title:SetPoint("TOPLEFT", miniButton.dropdown, "TOPLEFT", 10, -10)
-    miniButton.dropdown.title:SetText("Sections:")
-    miniButton.dropdown.title:SetTextColor(1, 0.82, 0) -- Gold text for header
-    
-    -- Create a scroll frame to contain all buttons
-    miniButton.dropdown.scrollFrame = CreateFrame("ScrollFrame", "TWRAMinimapDropdownScrollFrame", miniButton.dropdown)
-    miniButton.dropdown.scrollFrame:SetPoint("TOPLEFT", miniButton.dropdown.title, "BOTTOMLEFT", 0, -5)
-    miniButton.dropdown.scrollFrame:SetPoint("BOTTOMRIGHT", miniButton.dropdown, "BOTTOMRIGHT", -5, 5)
-    
-    -- Create a content frame inside the scroll frame
-    miniButton.dropdown.contentFrame = CreateFrame("Frame", "TWRAMinimapDropdownContent", miniButton.dropdown.scrollFrame)
-    miniButton.dropdown.contentFrame:SetWidth(165) -- Slightly narrower than scrollFrame to account for scrollbar
-    
-    -- Assign the content frame to the scroll frame
-    miniButton.dropdown.scrollFrame:SetScrollChild(miniButton.dropdown.contentFrame)
-    
-    -- Create scroll indicators
-    miniButton.dropdown.scrollUpIndicator = miniButton.dropdown:CreateTexture(nil, "OVERLAY")
-    miniButton.dropdown.scrollUpIndicator:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up")
-    miniButton.dropdown.scrollUpIndicator:SetWidth(16)
-    miniButton.dropdown.scrollUpIndicator:SetHeight(16)
-    miniButton.dropdown.scrollUpIndicator:SetPoint("TOPRIGHT", miniButton.dropdown, "TOPRIGHT", -5, -5)
-    miniButton.dropdown.scrollUpIndicator:Hide()
-    
-    miniButton.dropdown.scrollDownIndicator = miniButton.dropdown:CreateTexture(nil, "OVERLAY")
-    miniButton.dropdown.scrollDownIndicator:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
-    miniButton.dropdown.scrollDownIndicator:SetWidth(16)
-    miniButton.dropdown.scrollDownIndicator:SetHeight(16)
-    miniButton.dropdown.scrollDownIndicator:SetPoint("BOTTOMRIGHT", miniButton.dropdown, "BOTTOMRIGHT", -5, 5)
-    miniButton.dropdown.scrollDownIndicator:Hide()
-    
-    -- Function to update scroll indicators
-    function miniButton.dropdown.UpdateScrollIndicators()
-        local scroll = miniButton.dropdown.scrollFrame:GetVerticalScroll()
-        local maxScroll = miniButton.dropdown.contentFrame:GetHeight() - miniButton.dropdown.scrollFrame:GetHeight()
-        
-        -- Only show indicators if we have scrollable content
-        if maxScroll <= 0 then
-            miniButton.dropdown.scrollUpIndicator:Hide()
-            miniButton.dropdown.scrollDownIndicator:Hide()
-            return
-        end
-        
-        -- Show/hide up indicator based on scroll position
-        if scroll > 0 then -- Changed from 1 to 0 for proper visibility at the top
-            miniButton.dropdown.scrollUpIndicator:Show()
-        else
-            miniButton.dropdown.scrollUpIndicator:Hide()
-        end
-        
-        -- Show/hide down indicator based on scroll position
-        if scroll < maxScroll then -- Removed the -1 threshold to ensure indicator visibility
-            miniButton.dropdown.scrollDownIndicator:Show()
-        else
-            miniButton.dropdown.scrollDownIndicator:Hide()
-        end
-        
-        -- Ensure the content is properly positioned within the scroll frame
-        miniButton.dropdown.contentFrame:ClearAllPoints()
-        miniButton.dropdown.contentFrame:SetPoint("TOPLEFT", miniButton.dropdown.scrollFrame, "TOPLEFT", 0, -scroll)
-        miniButton.dropdown.contentFrame:SetPoint("TOPRIGHT", miniButton.dropdown.scrollFrame, "TOPRIGHT", 0, -scroll)
-    end
-    
-    -- Enable mousewheel scrolling on the dropdown
-    miniButton.dropdown:EnableMouseWheel(true)
-    miniButton.dropdown:SetScript("OnMouseWheel", function()
-        local delta = arg1  -- In WoW 1.12, delta is passed via arg1
-        local scrollFrame = miniButton.dropdown.scrollFrame
-        local scroll = scrollFrame:GetVerticalScroll()
-        local maxScroll = miniButton.dropdown.contentFrame:GetHeight() - scrollFrame:GetHeight()
-        
-        -- Adjust scroll position with smoother steps
-        if delta > 0 then -- Scroll up
-            scroll = math.max(0, scroll - 30)
-        else -- Scroll down
-            scroll = math.min(maxScroll, scroll + 30)
-        end
-        
-        scrollFrame:SetVerticalScroll(scroll)
-        
-        -- Update the scroll indicators and content position
-        miniButton.dropdown.UpdateScrollIndicators()
-    end)
-    
-    -- Also enable mousewheel scrolling directly on the scroll frame itself
-    miniButton.dropdown.scrollFrame:EnableMouseWheel(true)
-    miniButton.dropdown.scrollFrame:SetScript("OnMouseWheel", function()
-        -- Use the function we defined above to ensure consistent behavior
-        miniButton.dropdown:GetScript("OnMouseWheel")()
-    end)
-    
-    -- Enable mousewheel scrolling on the content frame as well to catch more scroll events
-    miniButton.dropdown.contentFrame:EnableMouseWheel(true)
-    miniButton.dropdown.contentFrame:SetScript("OnMouseWheel", function()
-        -- Use the function we defined above to ensure consistent behavior
-        miniButton.dropdown:GetScript("OnMouseWheel")()
-    end)
-    
-    -- Function to position dropdown properly based on screen space
-    function miniButton.PositionDropdown()
-        local x, y = miniButton:GetCenter()
-        if not x or not y then return end
-        
-        local screenWidth = GetScreenWidth()
-        local screenHeight = GetScreenHeight()
-        
-        miniButton.dropdown:ClearAllPoints()
-        
-        -- Determine which part of the screen the minimap button is in
-        local isLeft = (x < screenWidth/2)
-        local isBottom = (y < screenHeight/2)
-        
-        -- Position dropdown based on screen space - with CORRECTED left/right logic
-        if isBottom then
-            -- Bottom half of screen - show dropdown above the minimap button
-            if isLeft then
-                -- Bottom left - dropdown appears above and LEFT (corrected)
-                miniButton.dropdown:SetPoint("BOTTOMLEFT", miniButton, "TOPLEFT", 0, 0)
-            else
-                -- Bottom right - dropdown appears above and RIGHT (corrected)
-                miniButton.dropdown:SetPoint("BOTTOMRIGHT", miniButton, "TOPRIGHT", 0, 0)
-            end
-        else
-            -- Top half of screen - show dropdown below the minimap button
-            if isLeft then
-                -- Top left - dropdown appears below and LEFT (corrected)
-                miniButton.dropdown:SetPoint("TOPLEFT", miniButton, "BOTTOMLEFT", 0, 0)
-            else
-                -- Top right - dropdown appears below and RIGHT (corrected)
-                miniButton.dropdown:SetPoint("TOPRIGHT", miniButton, "BOTTOMRIGHT", 0, 0)
-            end
-        end
-    end
-    
-    -- Function to populate sections dropdown
-    function miniButton.PopulateSections()
-        -- Clear any existing buttons first
-        if miniButton.dropdown.buttons then
-            for _, button in ipairs(miniButton.dropdown.buttons) do
-                button:Hide()
-                button:SetParent(nil)
-            end
-        end
-        
-        miniButton.dropdown.buttons = {}
-        
-        -- Ensure the dropdown is fully updated before adding content
-        miniButton.dropdown:SetFrameLevel(miniButton:GetFrameLevel() + 10)
-        
-        -- Check if we have sections to show
-        if not TWRA.navigation or not TWRA.navigation.handlers or table.getn(TWRA.navigation.handlers) == 0 then
-            local noSections = miniButton.dropdown.contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            noSections:SetPoint("TOP", miniButton.dropdown.title, "BOTTOM", 0, -5)
-            noSections:SetText("No sections available")
-            table.insert(miniButton.dropdown.buttons, noSections)
-            
-            -- Adjust dropdown height
-            miniButton.dropdown:SetHeight(50)
-            return
-        end
-        
-        -- Add section buttons
-        local lastElement = miniButton.dropdown.title
-        local totalHeight = 30 -- Starting height for title and padding
-        
-        for i, sectionName in ipairs(TWRA.navigation.handlers) do
-            local button = CreateFrame("Button", "TWRADropdownButton"..i, miniButton.dropdown.contentFrame)
-            button:SetWidth(160) -- Wider buttons
-            button:SetHeight(22) -- Taller buttons
-            button:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 0, -5)
-            
-            -- Set appropriate frame level
-            button:SetFrameLevel(miniButton.dropdown:GetFrameLevel() + 5)
-            
-            -- Create background texture for highlighting
-            local bg = button:CreateTexture(nil, "BACKGROUND")
-            bg:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight")
-            bg:SetBlendMode("ADD")
-            bg:SetAllPoints(button)
-            bg:SetAlpha(0) -- Start hidden
-            button.bg = bg
-            
-            -- Create selection texture (persistent highlight for current section)
-            local selection = button:CreateTexture(nil, "BACKGROUND")
-            selection:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-            selection:SetBlendMode("ADD")
-            selection:SetAllPoints(button)
-            selection:SetAlpha(0) -- Start hidden
-            button.selection = selection
-            
-            -- Add section text with larger font - ensure it's above backdrop
-            local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            text:SetPoint("LEFT", button, "LEFT", 5, 0)
-            text:SetText(sectionName)
-            text:SetJustifyH("LEFT")
-            button.text = text
-            
-            -- Truncate long section names
-            if string.len(sectionName) > 22 then
-                text:SetText(string.sub(sectionName, 1, 19) .. "...")
-            end
-            
-            -- Set click handler to navigate to this section
-            button:SetScript("OnClick", function()
-                TWRA:NavigateToSection(i)
-                -- If OSD isn't shown permanently, hide it after selection
-                if not TWRA.OSD or not TWRA.OSD.shown then
-                    if TWRA.HideOSD then TWRA:HideOSD() end
-                end
-                miniButton.dropdown:Hide()
-            end)
-            
-            -- Add mouse over highlight
-            button:SetScript("OnEnter", function()
-                button.bg:SetAlpha(1) -- Show hover highlight
-                GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-                GameTooltip:SetText(sectionName)
-                GameTooltip:Show()
-            end)
-            
-            button:SetScript("OnLeave", function()
-                button.bg:SetAlpha(0) -- Hide hover highlight
-                GameTooltip:Hide()
-            end)
-            
-            -- Highlight current section with both text color and background highlight
-            if TWRA.navigation.currentIndex == i then
-                text:SetTextColor(1, 0.82, 0) -- Gold text for current section
-                button.selection:SetAlpha(0.3) -- Show selection highlight with reduced opacity
-            end
-            
-            table.insert(miniButton.dropdown.buttons, button)
-            lastElement = button
-            totalHeight = totalHeight + 27 -- Height of each button + spacing
-        end
-        
-        -- Adjust dropdown height based on content
-        miniButton.dropdown.contentFrame:SetHeight(totalHeight + 15)
-        miniButton.dropdown:SetHeight(math.min(300, totalHeight + 15)) -- Max height of 300
-        
-        -- Force dropdown to render properly
-        miniButton.dropdown:SetAlpha(0.99)
-        miniButton.dropdown:SetAlpha(1)
-        
-        -- Update scroll indicators
-        miniButton.dropdown.UpdateScrollIndicators()
-    end
+    -- Create a simpler dropdown menu implementation
+    self:CreateMinimapDropdown(miniButton)
     
     -- Set up scripts
     miniButton:SetScript("OnEnter", function()
@@ -349,17 +126,37 @@ function TWRA:CreateMinimapButton()
             TWRA:ShowOSD(9999) -- Very long duration effectively makes it permanent
         end
         
-        -- Populate and position dropdown
-        miniButton.PopulateSections()
-        miniButton.PositionDropdown()
-        miniButton.dropdown:Show()
+        -- Debug the navigation state
+        if TWRA.navigation then
+            if TWRA.navigation.handlers and type(TWRA.navigation.handlers) == "table" then
+                local count = table.getn(TWRA.navigation.handlers)
+                TWRA:Debug("ui", "Minimap hover - found " .. count .. " navigation handlers")
+                
+                -- Print the first few section names for debugging
+                if count > 0 then
+                    local debugStr = "First sections: "
+                    for i=1, math.min(3, count) do
+                        debugStr = debugStr .. i .. "=" .. TWRA.navigation.handlers[i] .. ", "
+                    end
+                    TWRA:Debug("ui", debugStr)
+                else
+                    TWRA:Debug("ui", "WARNING: Navigation handlers array is empty!")
+                    -- Force log to chat for visibility
+                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333TWRA:|r No sections found - navigation array is empty")
+                end
+            else
+                TWRA:Debug("ui", "WARNING: Navigation handlers is nil or not a table")
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333TWRA:|r Navigation handlers missing or invalid")
+            end
+        else
+            TWRA:Debug("ui", "WARNING: Navigation object is nil")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333TWRA:|r Navigation object missing")
+        end
         
-        -- Ensure dropdown is above other frames
-        miniButton.dropdown:SetFrameLevel(miniButton:GetFrameLevel() + 10)
-        
-        -- Force immediate rendering update to prevent first-time display issues
-        miniButton.dropdown:SetAlpha(0.999)
-        miniButton.dropdown:SetAlpha(1)
+        -- Display the dropdown
+        if miniButton.dropdown then
+            miniButton:ShowDropdown()
+        end
         
         -- Show tooltip
         GameTooltip:SetOwner(miniButton, "ANCHOR_LEFT")
@@ -392,27 +189,7 @@ function TWRA:CreateMinimapButton()
         end)
     end)
     
-    -- Add mouse leave to dropdown as well
-    miniButton.dropdown:SetScript("OnLeave", function()
-        if not MouseIsOver(miniButton) then
-            miniButton.hideTimer = miniButton.hideTimer or CreateFrame("Frame")
-            miniButton.hideTimer:SetScript("OnUpdate", function()
-                if not MouseIsOver(miniButton.dropdown) and not MouseIsOver(miniButton) then
-                    miniButton.dropdown:Hide()
-                    miniButton.hideTimer:SetScript("OnUpdate", nil)
-                    
-                    -- Hide OSD if it wasn't shown before
-                    if not miniButton.osdWasShown then
-                        if TWRA.HideOSD then
-                            TWRA:HideOSD()
-                        end
-                    end
-                end
-            end)
-        end
-    end)
-    
-    -- Updated click handler to use 'this' instead of 'self' to properly work in WoW 1.12
+    -- Click handler (left/right click)
     miniButton:SetScript("OnClick", function()
         local button = arg1  -- In WoW 1.12, click button is passed via arg1
         TWRA:Debug("ui", button .. "-click on minimap button")
@@ -537,7 +314,9 @@ function TWRA:CreateMinimapButton()
         this:LockHighlight()
         this:StartMoving()
         -- Hide dropdown while dragging
-        miniButton.dropdown:Hide()
+        if miniButton.dropdown then
+            miniButton.dropdown:Hide()
+        end
     end)
     miniButton:SetScript("OnDragStop", function()
         this:StopMovingOrSizing()
@@ -554,11 +333,330 @@ function TWRA:CreateMinimapButton()
         end
     end)
     
+    -- Register for section changes to update the highlight in the dropdown menu
+    if self.RegisterEvent then
+        self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
+            -- Add highly visible debug message to verify event registration
+            TWRA:Debug("ui", "MINIMAP SECTION CHANGE DETECTED: Section " .. currentIndex .. 
+                      " (" .. sectionName .. ") of " .. totalSections)
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00TWRA:|r Minimap detected section change to: " .. sectionName)
+            
+            -- Always update the minimap dropdown if it's showing
+            if miniButton.dropdown and miniButton.dropdown:IsShown() then
+                -- Ensure the current section is visible in the dropdown (auto-scroll)
+                if currentIndex and miniButton.dropdown.UpdateVisibleButtons then
+                    -- Calculate proper offset to ensure current section is visible
+                    local maxVisibleButtons = 10 -- Match the MAX_VISIBLE_BUTTONS constant
+                    
+                    -- Only adjust offset if current section would be outside visible range
+                    if currentIndex <= miniButton.dropdown.offset or 
+                       currentIndex > (miniButton.dropdown.offset + maxVisibleButtons) then
+                        -- Try to center the current section in the visible window
+                        miniButton.dropdown.offset = math.max(0, currentIndex - math.floor(maxVisibleButtons / 2))
+                        
+                        -- Make sure offset doesn't go past maximum
+                        local maxOffset = math.max(0, table.getn(TWRA.navigation.handlers) - maxVisibleButtons)
+                        miniButton.dropdown.offset = math.min(miniButton.dropdown.offset, maxOffset)
+                    end
+                    
+                    -- Update the buttons to reflect the new section highlight
+                    miniButton.dropdown:UpdateVisibleButtons()
+                    
+                    TWRA:Debug("ui", "Updated dropdown highlighting for section change to: " .. sectionName .. 
+                              " (index: " .. currentIndex .. ", offset: " .. miniButton.dropdown.offset .. ")")
+                end
+            end
+        end, "MinimapDropdownHighlight")
+    end
+    
+    -- Position dropdown based on screen position
+    function miniButton:PositionDropdown()
+        if not self.dropdown then return end
+        
+        local x, y = self:GetCenter()
+        if not x or not y then return end
+        
+        local screenWidth = GetScreenWidth()
+        local screenHeight = GetScreenHeight()
+        
+        self.dropdown:ClearAllPoints()
+        
+        -- Determine which part of the screen the minimap button is in
+        local isLeft = (x < screenWidth/2)
+        local isBottom = (y < screenHeight/2)
+        
+        -- Position dropdown based on screen space
+        if isBottom then
+            -- Bottom half of screen - show dropdown above the minimap button
+            if isLeft then
+                -- Bottom left - dropdown appears above and to the left
+                self.dropdown:SetPoint("BOTTOMLEFT", self, "TOPLEFT", 0, 0)
+            else
+                -- Bottom right - dropdown appears above and to the right
+                self.dropdown:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT", 0, 0)
+            end
+        else
+            -- Top half of screen - show dropdown below the minimap button
+            if isLeft then
+                -- Top left - dropdown appears below and to the left
+                self.dropdown:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, 0)
+            else
+                -- Top right - dropdown appears below and to the right
+                self.dropdown:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, 0)
+            end
+        end
+    end
+    
     -- Store reference in addon
     self.minimapButton = miniButton
     
     self:Debug("general", "Minimap button created")
     return miniButton
+end
+
+-- Create a new dropdown menu with simple navigation instead of scrolling
+function TWRA:CreateMinimapDropdown(miniButton)
+    if not miniButton then return end
+    
+    -- Create dropdown main frame
+    local dropdown = CreateFrame("Frame", "TWRAMinimapDropdown", UIParent)
+    dropdown:SetWidth(180)
+    dropdown:SetHeight(300) -- Fixed height
+    dropdown:SetFrameStrata("FULLSCREEN_DIALOG") -- Ensure it's above everything
+    dropdown:SetFrameLevel(100) -- Very high frame level
+    dropdown:SetToplevel(true)
+    dropdown:SetClampedToScreen(true)
+    dropdown:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 5, right = 5, top = 5, bottom = 5 }
+    })
+    dropdown:SetBackdropColor(0, 0, 0, 0.9)
+    dropdown:SetBackdropBorderColor(1, 1, 1, 0.7)
+    dropdown:Hide()
+    
+    -- Create header
+    local title = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 10, -10)
+    title:SetText("Sections:")
+    title:SetTextColor(1, 0.82, 0) -- Gold text for header
+    dropdown.title = title
+    
+    -- Constants for layout
+    local MAX_VISIBLE_BUTTONS = 10
+    local BUTTON_HEIGHT = 22
+    local BUTTON_SPACING = 2
+    local CONTENT_PADDING_TOP = 35
+    local CONTENT_PADDING_BOTTOM = 30
+    
+    -- Navigation state
+    dropdown.offset = 0 -- Starting offset for visible buttons
+    dropdown.buttons = {}
+    
+    -- Create up arrow button
+    local upButton = CreateFrame("Button", nil, dropdown)
+    upButton:SetPoint("BOTTOMLEFT", dropdown, "BOTTOMLEFT", 10, 10)
+    upButton:SetWidth(20)
+    upButton:SetHeight(20)
+    upButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up")
+    upButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Down")
+    upButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    upButton:SetFrameLevel(dropdown:GetFrameLevel() + 5)
+    upButton:Hide() -- Initially hidden
+    dropdown.upButton = upButton
+    
+    -- Create down arrow button
+    local downButton = CreateFrame("Button", nil, dropdown)
+    downButton:SetPoint("BOTTOMRIGHT", dropdown, "BOTTOMRIGHT", -10, 10)
+    downButton:SetWidth(20)
+    downButton:SetHeight(20)
+    downButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
+    downButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down")
+    downButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    downButton:SetFrameLevel(dropdown:GetFrameLevel() + 5)
+    downButton:Hide() -- Initially hidden
+    dropdown.downButton = downButton
+    
+    -- Set click handlers for navigation buttons
+    upButton:SetScript("OnClick", function()
+        if dropdown.offset <= 0 then return end
+        dropdown.offset = dropdown.offset - 1
+        dropdown:UpdateVisibleButtons()
+    end)
+    
+    downButton:SetScript("OnClick", function()
+        local maxOffset = table.getn(TWRA.navigation.handlers) - MAX_VISIBLE_BUTTONS
+        if dropdown.offset >= maxOffset then return end
+        dropdown.offset = dropdown.offset + 1
+        dropdown:UpdateVisibleButtons()
+    end)
+    
+    -- Function to update which buttons are visible based on current offset
+    function dropdown:UpdateVisibleButtons()
+        if not TWRA.navigation or not TWRA.navigation.handlers then return end
+        
+        local numSections = table.getn(TWRA.navigation.handlers)
+        local maxOffset = math.max(0, numSections - MAX_VISIBLE_BUTTONS)
+        
+        -- Clamp offset to valid range
+        self.offset = math.max(0, math.min(self.offset, maxOffset))
+        
+        -- Show/hide up button based on offset
+        if self.offset > 0 then
+            self.upButton:Show()
+        else
+            self.upButton:Hide()
+        end
+        
+        -- Show/hide down button based on offset
+        if self.offset < maxOffset then
+            self.downButton:Show()
+        else
+            self.downButton:Hide()
+        end
+        
+        -- Update button visibility and content
+        for i = 1, MAX_VISIBLE_BUTTONS do
+            local sectionIndex = i + self.offset
+            local button = self.buttons[i]
+            
+            if sectionIndex <= numSections then
+                local sectionName = TWRA.navigation.handlers[sectionIndex]
+                button.text:SetText(sectionIndex .. ". " .. sectionName)
+                button.sectionIndex = sectionIndex
+                
+                -- Highlight current section
+                if sectionIndex == TWRA.navigation.currentIndex then
+                    button.text:SetTextColor(1, 0.82, 0) -- Gold for current section
+                    button.bg:SetTexture(0.2, 0.2, 0.4, 0.5) -- Highlight background
+                else
+                    button.text:SetTextColor(1, 1, 1) -- White for other sections
+                    button.bg:SetTexture(0.1, 0.1, 0.1, 0.7) -- Normal background
+                end
+                
+                button:Show()
+            else
+                button:Hide()
+            end
+        end
+    end
+    
+    -- Create the section buttons (fixed number)
+    for i = 1, MAX_VISIBLE_BUTTONS do
+        local button = CreateFrame("Button", "TWRADropdownButton"..i, dropdown)
+        button:SetWidth(dropdown:GetWidth() - 20)
+        button:SetHeight(BUTTON_HEIGHT)
+        button:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 10, -(CONTENT_PADDING_TOP + ((i-1) * (BUTTON_HEIGHT + BUTTON_SPACING))))
+        button:SetFrameLevel(dropdown:GetFrameLevel() + 5)
+        
+        -- Create visible background
+        local bg = button:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(button)
+        bg:SetTexture(0.1, 0.1, 0.1, 0.7)
+        button.bg = bg
+        
+        -- Create highlight effect
+        button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        
+        -- Create button text
+        local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        text:SetPoint("LEFT", button, "LEFT", 5, 0)
+        text:SetPoint("RIGHT", button, "RIGHT", -5, 0)
+        text:SetJustifyH("LEFT")
+        text:SetText("Empty")
+        button.text = text
+        
+        -- Store button and set hidden initially
+        table.insert(dropdown.buttons, button)
+        button:Hide()
+        
+        -- Click handler added when updating buttons
+        button:SetScript("OnClick", function()
+            if not button.sectionIndex then return end
+            
+            -- Navigate to section
+            TWRA:Debug("ui", "Clicked section " .. button.sectionIndex)
+            TWRA:NavigateToSection(button.sectionIndex, "user")
+            
+            -- Hide dropdown
+            dropdown:Hide()
+        end)
+    end
+    
+    -- Mouse leave handling for dropdown
+    dropdown:SetScript("OnLeave", function()
+        if not MouseIsOver(dropdown) and not MouseIsOver(miniButton) then
+            dropdown.hideTimer = dropdown.hideTimer or CreateFrame("Frame")
+            dropdown.hideTimer:SetScript("OnUpdate", function()
+                if not MouseIsOver(dropdown) and not MouseIsOver(miniButton) then
+                    dropdown:Hide()
+                    dropdown.hideTimer:SetScript("OnUpdate", nil)
+                    
+                    -- Hide OSD if it wasn't shown before
+                    if not miniButton.osdWasShown and TWRA.HideOSD then
+                        TWRA:HideOSD()
+                    end
+                end
+            end)
+        end
+    end)
+    
+    -- Enable mousewheel for navigation
+    dropdown:EnableMouseWheel(true)
+    dropdown:SetScript("OnMouseWheel", function()
+        local delta = arg1 -- In WoW 1.12, delta is passed via arg1
+        
+        if delta > 0 then
+            -- Wheel up = navigate up the list (decrease offset)
+            if dropdown.offset > 0 then
+                dropdown.offset = dropdown.offset - 1
+                dropdown:UpdateVisibleButtons()
+            end
+        else
+            -- Wheel down = navigate down the list (increase offset)
+            local maxOffset = table.getn(TWRA.navigation.handlers) - MAX_VISIBLE_BUTTONS
+            if dropdown.offset < maxOffset then
+                dropdown.offset = dropdown.offset + 1
+                dropdown:UpdateVisibleButtons()
+            end
+        end
+    end)
+    
+    -- Store reference in the minimap button
+    miniButton.dropdown = dropdown
+    
+    -- Function for miniButton to show dropdown
+    function miniButton:ShowDropdown()
+        if not self.dropdown then return end
+        
+        -- Position the dropdown
+        self:PositionDropdown()
+        
+        -- Reset offset to ensure current section is visible
+        if TWRA.navigation and TWRA.navigation.currentIndex then
+            -- Calculate appropriate offset to show current section
+            local currentIndex = TWRA.navigation.currentIndex
+            local maxVisibleIndex = MAX_VISIBLE_BUTTONS
+            
+            -- Make sure current section is visible in the window
+            if currentIndex > maxVisibleIndex then
+                self.dropdown.offset = currentIndex - math.floor(maxVisibleIndex / 2)
+            else
+                self.dropdown.offset = 0
+            end
+        else
+            self.dropdown.offset = 0
+        end
+        
+        -- Update buttons before showing
+        self.dropdown:UpdateVisibleButtons()
+        
+        -- Show the dropdown
+        self.dropdown:Show()
+    end
+    
+    return dropdown
 end
 
 -- Helper function to update the minimap button with current section information
@@ -567,7 +665,7 @@ function TWRA:UpdateMinimapButton()
     
     -- If we have a dropdown and it's shown, update it
     if self.minimapButton.dropdown and self.minimapButton.dropdown:IsShown() then
-        self.minimapButton.PopulateSections()
+        self.minimapButton:ShowDropdown()
     end
     
     self:Debug("ui", "Minimap button updated")
