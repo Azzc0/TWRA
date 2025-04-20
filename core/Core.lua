@@ -476,100 +476,66 @@ end
 
 -- Helper function to rebuild navigation after data updates
 function TWRA:RebuildNavigation()
+    self:Debug("nav", "Building navigation from data")
+    
     -- Initialize or reset navigation
     if not self.navigation then
-        self.navigation = { handlers = {}, currentIndex = 1 }
+        self.navigation = { handlers = {}, currentIndex = 1, sections = {}, sectionNames = {} }
     else
-        -- IMPORTANT CHANGE: Always completely clear handlers array before rebuilding
+        -- Clear all navigation arrays
         self.navigation.handlers = {}
+        self.navigation.sections = {}
+        self.navigation.sectionNames = {}
     end
     
     -- Check if we have data to work with
     if not TWRA_Assignments or not TWRA_Assignments.data then
-        self:Debug("error", "No assignment data available")
+        self:Debug("error", "No data found for rebuilding navigation")
         return false
     end
     
-    -- Special handling for the new format structure (table with numerical indices)
-    if type(TWRA_Assignments.data) == "table" then
-        -- Check if we're dealing with the new format (structured data)
-        local isNewFormat = false
-        for idx, section in pairs(TWRA_Assignments.data) do
-            if type(section) == "table" and section["Section Name"] then
-                isNewFormat = true
-                break
-            end
-        end
-        
-        if isNewFormat then
-            -- Collect section names from our new format structure
-            local sections = {}
-            for idx, section in pairs(TWRA_Assignments.data) do
-                if type(section) == "table" and section["Section Name"] and section["Section Name"] ~= "" then
-                    table.insert(self.navigation.handlers, section["Section Name"])
-                    table.insert(sections, section["Section Name"])
-                end
-            end
-            
-            -- Report what we found
-            local sectionCount = table.getn(self.navigation.handlers)
-            self:Debug("nav", "Built " .. sectionCount .. " sections from new format")
-            
-            if sectionCount > 0 and table.getn(sections) > 0 then
-                self:Debug("nav", "Section names: " .. table.concat(sections, ", "))
-            end
-            
-            return true
+    local data = TWRA_Assignments.data
+    if not data or type(data) ~= "table" then 
+        self:Debug("error", "Data is not a table or is empty for rebuilding navigation")
+        return false
+    end
+    
+    -- Build section information
+    local sections = {}
+    for i, section in pairs(data) do
+        if section and type(section) == "table" and 
+           (section["Section Name"] or section["sn"]) then
+            local sectionName = section["Section Name"] or section["sn"]
+            table.insert(self.navigation.sections, i)
+            table.insert(self.navigation.sectionNames, sectionName)
+            table.insert(self.navigation.handlers, sectionName) -- Keep compatibility with existing code
+            table.insert(sections, sectionName) -- For debug output
         end
     end
     
-    -- Fall back to old format handling
-    if self.fullData then
-        -- Use an ordered list to maintain section order
-        local seenSections = {}
-        
-        -- First pass: collect sections in the order they appear in the data
-        for i = 1, table.getn(self.fullData) do
-            local sectionName = self.fullData[i][1]
-            -- Stricter empty check and whitespace trimming
-            if sectionName and sectionName ~= "" and string.gsub(sectionName, "%s", "") ~= "" and not seenSections[sectionName] then
-                seenSections[sectionName] = true
-                table.insert(self.navigation.handlers, sectionName)
-            end
+    -- Set up current index if needed
+    if not self.navigation.currentIndex or self.navigation.currentIndex < 1 or 
+       self.navigation.currentIndex > table.getn(self.navigation.sections) then
+        if table.getn(self.navigation.sections) > 0 then
+            self.navigation.currentIndex = 1
+            self:Debug("nav", "Reset current section to 1")
+        else
+            self.navigation.currentIndex = nil
+            self:Debug("error", "No valid sections found")
+            return false
         end
-        
-        -- Debug output to verify sections
-        self:Debug("nav", "Built " .. table.getn(self.navigation.handlers) .. " sections from old format")
-        
-        return true
     end
     
-    -- No data found
-    self:Debug("error", "No data found for rebuilding navigation")
-    return false
-end
-
--- Add an internal message system
-TWRA.messageHandlers = {}
-
--- Register a handler for internal messages
-function TWRA:RegisterMessageHandler(message, callback)
-    if not self.messageHandlers[message] then
-        self.messageHandlers[message] = {}
-    end
-    table.insert(self.messageHandlers[message], callback)
-end
-
--- Send an internal message
-function TWRA:SendMessage(message, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
-    if not self.messageHandlers[message] then
-        return -- No handlers registered
+    -- Report what we found
+    local sectionCount = table.getn(self.navigation.sections)
+    self:Debug("nav", "Built " .. sectionCount .. " sections from data")
+    
+    -- Show section names in debug output if available
+    if sectionCount > 0 and table.getn(sections) > 0 then
+        self:Debug("nav", "Section names: " .. table.concat(sections, ", "))
     end
     
-    for _, callback in ipairs(self.messageHandlers[message]) do
-        -- Use explicit arguments instead of ... unpacking
-        callback(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
-    end
+    return true
 end
 
 -- Consolidated NavigateToSection function with messaging system integration
@@ -1011,7 +977,7 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         end
         
         -- Build navigation from the imported sections
-        self:BuildNavigationFromNewFormat()
+        self:RebuildNavigation() -- Updated to use consolidated function
         
         self:Debug("data", "Assigned new format data directly to SavedVariables")
         
@@ -1089,37 +1055,14 @@ end
 
 -- Add helper function for the new format navigation
 function TWRA:BuildNavigationFromNewFormat()
-    self:Debug("nav", "Building navigation from new format data")
-    
-    -- Initialize navigation structure
-    self.navigation = self.navigation or { handlers = {}, currentIndex = 1 }
-    self.navigation.handlers = {}
-    self.navigation.currentIndex = 1
-    
-    -- Check if we have data to work with
-    if not TWRA_Assignments or not TWRA_Assignments.data then
-        self:Debug("error", "No assignment data available")
-        return false
+    -- Forward to the canonical implementation in DataUtility.lua
+    if TWRA.DataUtility and TWRA.DataUtility.BuildNavigationFromNewFormat then
+        return TWRA.DataUtility:BuildNavigationFromNewFormat()
     end
     
-    -- Collect section names from our new format structure
-    local sections = {}
-    for idx, section in pairs(TWRA_Assignments.data) do
-        if type(section) == "table" and section["Section Name"] then
-            table.insert(self.navigation.handlers, section["Section Name"])
-            table.insert(sections, section["Section Name"])
-        end
-    end
-    
-    -- Report what we found
-    local sectionCount = table.getn(self.navigation.handlers)
-    self:Debug("nav", "Built " .. sectionCount .. " sections from new format")
-    
-    if sectionCount > 0 and table.getn(sections) > 0 then
-        self:Debug("nav", "Section names: " .. table.concat(sections, ", "))
-    end
-    
-    return (sectionCount > 0)
+    -- If DataUtility namespace doesn't exist, call directly
+    self:Debug("nav", "Forwarding to canonical BuildNavigationFromNewFormat implementation in DataUtility.lua")
+    return self:DataUtility_BuildNavigationFromNewFormat()
 end
 
 -- Add CreateMinimapButton function - moved from OSD.lua to TWRA.lua as requested

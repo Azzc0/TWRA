@@ -368,11 +368,25 @@ Handles navigation between sections with a given delta.
 - ui/Frame.lua (navigation buttons)
 
 ### TWRA:RebuildNavigation()
-Rebuilds the navigation handlers based on current data.
+Rebuilds the navigation structures (handlers, sections, sectionNames) based on current data. 
+Now exclusively uses the new data format, with all legacy format handling removed.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success or failure
+
+**Notes:**
+- Maintains both `handlers` and `sections`/`sectionNames` arrays for compatibility
+- Preserves the current index if valid
+- Provides detailed logging of section information
+- Only handles the new format structure (legacy format handling removed)
 
 **Used in:**
 - TWRA.lua (LoadSavedAssignments, SaveAssignments)
 - HandleTableAnnounce
+- Previously was called by BuildNavigationFromNewFormat
 
 ### TWRA:UpdateUI()
 Updates all UI elements based on current data.
@@ -903,19 +917,6 @@ Updates the OSD with new player information.
 
 ## core/DataUtility.lua
 
-### TWRA:IsNewDataFormat()
-Checks if the addon is using the new structured data format.
-
-**Arguments:**
-- None
-
-**Returns:**
-- Boolean indicating if new format is being used
-
-**Used in:**
-- Multiple functions that need format-specific handling
-- TWRA:DisplayCurrentSection()
-
 ### TWRA:GetCurrentSectionData()
 Retrieves the data for the current section in the new format.
 
@@ -973,7 +974,7 @@ Refreshes the assignment table in the UI.
 - TWRA.lua (ToggleMainFrame)
 
 ### TWRA:DisplayCurrentSection()
-**Status: Duplicated** (in TWRA.lua and ui/OSD.lua)
+**Status: Duplicated** (in ui/OSD.lua)
 
 Centralized function that displays the current section in all UI components, including the main frame and OSD.
 
@@ -984,10 +985,7 @@ Centralized function that displays the current section in all UI components, inc
 - Multiple places throughout the addon
 
 **Resolution needed:** 
-The function currently exists in both TWRA.lua and ui/OSD.lua with different implementations. 
-The ui/OSD.lua version should be the canonical implementation as it properly coordinates updates
-to both the main UI and OSD components. The TWRA.lua version should be removed or replaced with
-a call to the OSD.lua version.
+The function currently exists in ui/OSD.lua with the canonical implementation. The duplicate implementation in TWRA.lua has been removed.
 
 ### TWRA:CreateOptionsInMainFrame()
 Creates the options interface within the main frame.
@@ -2145,38 +2143,48 @@ Some functions may have multiple implementations across different files. Below a
 ## Current Duplications
 
 ### TWRA:DisplayCurrentSection()
-**Location:** TWRA.lua and ui/OSD.lua
+**Location:** ~~TWRA.lua and~~ ui/OSD.lua
 
-This function exists in both files with different implementations. The ui/OSD.lua version is more comprehensive as it properly coordinates updates to both the main UI and OSD components.
+~~This function exists in both files with different implementations.~~ The duplicate implementation in TWRA.lua has been removed. The ui/OSD.lua version is the canonical implementation as it properly coordinates updates to both the main UI and OSD components.
 
-**Recommendation:** 
+**Status: RESOLVED** ✓
+~~**Recommendation:** 
 - Keep the implementation in ui/OSD.lua as the canonical version
 - Replace the TWRA.lua version with a call to ui/OSD.lua implementation
-- Add proper hooks or event handling to ensure consistent UI updates
-
-**Resolution Plan:**
-1. Update all references to use the ui/OSD.lua implementation
-2. Add an aliasing function in TWRA.lua that calls the ui/OSD.lua version
-3. Add debug assertions to ensure the correct version is being called
+- Add proper hooks or event handling to ensure consistent UI updates~~
 
 ### TWRA:IsNewDataFormat() / TWRA:GetCurrentSectionData()
-**Location:** TWRA.lua and core/DataUtility.lua
+**Location:** ~~TWRA.lua and~~ core/DataUtility.lua
 
-These utility functions exist in both the main file and utility module. Core functionality should be in the utility module with potential wrapper functions in the main file.
+~~These utility functions exist in both the main file and utility module.~~ The duplicate implementations have been removed. The functions in TWRA.lua have been removed, and the core/DataUtility.lua implementation has been simplified to always assume the new format.
 
-**Recommendation:**
+**Status: RESOLVED** ✓
+~~**Recommendation:**
 - Consolidate logic to core/DataUtility.lua
 - Use wrapper functions in TWRA.lua if needed for backward compatibility
-- Add documentation to clearly indicate the canonical implementation
+- Add documentation to clearly indicate the canonical implementation~~
 
 ### TWRA:BuildNavigationFromNewFormat()
-**Location:** TWRA.lua and core/Core.lua
+**Location:** ~~core/Core.lua and~~ core/DataUtility.lua
 
-Multiple implementations of navigation building for the new data format exist.
+~~Multiple implementations of navigation building for the new data format exist. The implementation in DataUtility.lua is more robust, preserving the current index if valid and providing more detailed section tracking.~~
 
-**Recommendation:**
-- Consolidate to core/Core.lua implementation
-- Add proper fallback handling for legacy code paths
+**Status: RESOLVED** ✓
+~~**Recommendation:**
+- Consolidate to core/DataUtility.lua implementation as it provides more robust handling
+- Remove the duplicate implementation in core/Core.lua
+- Add a wrapper in core/Core.lua that calls the DataUtility.lua implementation if needed~~
+
+### TWRA:ShouldShowOSD()
+**Location:** ~~TWRA.lua and~~ ui/OSD.lua
+
+~~This function exists in both files with slightly different implementations.~~ The duplicate implementation in TWRA.lua has been removed. The ui/OSD.lua version is the canonical implementation since it's in the appropriate module and has additional checks for the showOnNavigation setting.
+
+**Status: RESOLVED** ✓
+~~**Recommendation:**
+- Keep the ui/OSD.lua implementation as canonical since it's in the appropriate module
+- Remove or alias the version in TWRA.lua
+- Ensure proper documentation of which one should be used~~
 
 ## Special Function Handling
 

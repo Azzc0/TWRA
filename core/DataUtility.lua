@@ -80,165 +80,59 @@ function TWRA:FixSpecialCharacters(data)
     return result
 end
 
--- Check if we're using the new data format
-function TWRA:IsNewDataFormat()
-    if not TWRA_Assignments or not TWRA_Assignments.data then
-        return false
-    end
-    
-    local data = TWRA_Assignments.data
-    if type(data) ~= "table" then return false end
-    
-    -- Check if data is an object with sections rather than an array
-    if data[1] and data[1]["Section Name"] then
-        return true
-    end
-    
-    return false
-end
-
 -- Build navigation from the new data format
 function TWRA:BuildNavigationFromNewFormat()
-    self:Debug("nav", "Building navigation from new format data")
-    
-    if not TWRA_Assignments or not TWRA_Assignments.data then
-        self:Debug("error", "No data found for rebuilding navigation")
-        return false
-    end
-    
-    local data = TWRA_Assignments.data
-    if not data or type(data) ~= "table" then 
-        self:Debug("error", "Data is not a table or is empty for rebuilding navigation")
-        return false
-    end
-    
-    -- Create or reset navigation object
-    self.navigation = self.navigation or {}
-    self.navigation.sections = {}
-    self.navigation.sectionNames = {}
-    
-    -- Build section information
-    for i, section in pairs(data) do
-        if section and type(section) == "table" and 
-           (section["Section Name"] or section["sn"]) then
-            local sectionName = section["Section Name"] or section["sn"]
-            table.insert(self.navigation.sections, i)
-            table.insert(self.navigation.sectionNames, sectionName)
-        end
-    end
-    
-    -- Set up current index if needed
-    if not self.navigation.currentIndex or self.navigation.currentIndex < 1 or 
-       self.navigation.currentIndex > table.getn(self.navigation.sections) then
-        if table.getn(self.navigation.sections) > 0 then
-            self.navigation.currentIndex = 1
-            self:Debug("nav", "Reset current section to 1")
-        else
-            self.navigation.currentIndex = nil
-            self:Debug("error", "No valid sections found")
-            return false
-        end
-    end
-    
-    self:Debug("nav", "Built " .. table.getn(self.navigation.sections) .. " sections from new format")
-    self:Debug("nav", "Section names: " .. table.concat(self.navigation.sectionNames, ", "))
-    
-    return true
+    -- Forward to the canonical implementation in Core.lua
+    self:Debug("nav", "BuildNavigationFromNewFormat is deprecated - forwarding to RebuildNavigation")
+    return self:RebuildNavigation()
 end
 
 -- Get section by index
 function TWRA:GetNewFormatSection(index)
-    if not self:IsNewDataFormat() then
-        return nil
-    end
-    
     return TWRA_Assignments.data[index]
 end
 
--- Get the section data for the current section in the new format
+-- Simplify GetCurrentSectionData to always assume new format
 function TWRA:GetCurrentSectionData()
-    if not self:IsNewDataFormat() or not self.navigation or not self.navigation.currentIndex then
+    if not self.assignments or not self.assignments.sections or not self.navigation or not self.navigation.currentIndex then
+        return nil
+    end
+
+    local index = self.navigation.currentIndex
+    local sectionName = self.navigation.sections[index]
+    
+    if not sectionName then
         return nil
     end
     
-    local data = TWRA_Assignments.data
-    if not data then return nil end
+    local sectionData = self.assignments.sections[sectionName]
+    if not sectionData then
+        return nil
+    end
     
-    return data[self.navigation.currentIndex]
+    return sectionData
 end
 
--- Display the current section with the new format
+-- Simplify DisplayCurrentSection to always use new format
 function TWRA:DisplayCurrentSection()
-    self:Debug("ui", "DisplayCurrentSection called")
-    
-    -- First check if we're using the new data format
-    if self:IsNewDataFormat() then
-        -- Get the section data for the current section
-        local sectionData = self:GetCurrentSectionData()
-        if not sectionData then
-            self:Debug("ui", "No section data available")
-            return
-        end
-        
-        -- Clear any existing rows
-        if self.ClearRows then
-            self:ClearRows()
-        end
-        
-        -- Create the header row
-        local headerData = sectionData["Section Header"] or sectionData["sh"]
-        if self.CreateRow and headerData then
-            self:Debug("ui", "Creating header row")
-            self:CreateRow(1, headerData, false, true)
-        else
-            self:Debug("error", "Unable to create header row - missing function or data")
-        end
-        
-        -- Create the data rows
-        local rowsData = sectionData["Section Rows"] or sectionData["sr"]
-        if rowsData then
-            -- Prepare relevance info
-            local relevantRows = {}
-            if sectionData["Relevant Rows"] then
-                for _, index in pairs(sectionData["Relevant Rows"]) do
-                    relevantRows[index] = true
-                end
-            else
-                -- If no pre-calculated relevant rows, check each row as we display
-                relevantRows = self:GetRelevantRowsForCurrentSection(sectionData)
-            end
-            
-            -- Display rows
-            local rowNum = 2  -- Start after header
-            for idx, rowData in pairs(rowsData) do
-                if self.CreateRow then
-                    local isRelevant = relevantRows[idx] or false
-                    self:CreateRow(rowNum, rowData, isRelevant)
-                    rowNum = rowNum + 1
-                end
-            end
-            
-            self:Debug("ui", "Created " .. (rowNum - 2) .. " data rows")
-        else
-            self:Debug("error", "No row data available for section")
-        end
-        
-        -- Update UI elements
-        if self.UpdateRowDisplay then
-            self:UpdateRowDisplay()
-        end
-        
-        -- Update OSD if needed
-        if self.ShouldShowOSD and self.ShouldShowOSD() and self.ShowOSD then
-            self:Debug("osd", "Showing OSD for new format section")
-            self:ShowOSD()
-        end
-        
-        return true
-    else
-        -- Legacy format handling - call the original function
-        return self:DisplayLegacySection()
+    local sectionData = self:GetCurrentSectionData()
+    if not sectionData then
+        self:Debug("data", "No data for current section.")
+        return false
     end
+    
+    self:FilterAndDisplayHandler(sectionData)
+    
+    -- Update OSD if enabled
+    if self.db.osd.enabled and self.db.osd.showOnNavigation then
+        local currentName = ""
+        if self.navigation and self.navigation.currentIndex and self.navigation.sections then
+            currentName = self.navigation.sections[self.navigation.currentIndex] or ""
+        end
+        self:UpdateOSDContent(currentName, self.navigation.currentIndex, table.getn(self.navigation.sections))
+    end
+    
+    return true
 end
 
 -- Function to get relevant rows for the current player
