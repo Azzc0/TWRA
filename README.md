@@ -1,4 +1,4 @@
-# TWRA - Tactical WoW Raid Assistant
+# TWRA - Turtle WoW Raid Assistant
 
 TWRA is an addon for World of Warcraft that helps raid leaders and participants manage and optimize raid encounters by providing tactical information and automated features. It is heavily inspired by TWA.
 
