@@ -26,6 +26,7 @@ core\DataUtility.lua
 # UI modules
 ui\UIUtils.lua
 ui\Frame.lua
+ui\Minimap.lua
 ui\OSD.lua
 ui\OSDContent.lua
 ui\Options.lua

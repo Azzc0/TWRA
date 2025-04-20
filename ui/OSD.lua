@@ -417,10 +417,11 @@ function TWRA:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, pla
         -- Update width with tanking text
         rowWidth = rowWidth + 3 + tankingText:GetStringWidth()
             
-        -- Add target raid icon with proper spacing
-        local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+        -- Check if we have an icon for the target
         local iconInfo = self:GetIconInfo(icon)
         if iconInfo then
+            -- Add target raid icon with proper spacing
+            local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
             targetIcon:SetTexture(iconInfo[1])
             targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
             targetIcon:SetWidth(16)
@@ -434,6 +435,14 @@ function TWRA:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, pla
             
             -- Update width with icon and target text
             rowWidth = rowWidth + 5 + 16 + 2 + targetText:GetStringWidth() + 10 -- Extra padding at end
+        else
+            -- No icon, just display the target text directly after "tanking"
+            local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            targetText:SetPoint("LEFT", tankingText, "RIGHT", 5, 0)
+            targetText:SetText(target)
+            
+            -- Update width with just target text
+            rowWidth = rowWidth + 5 + targetText:GetStringWidth() + 10 -- Extra padding at end
         end
     end
     
@@ -448,71 +457,83 @@ function TWRA:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, tar
     -- Start with left padding + role icon + padding + role text
     rowWidth = 5 + 16 + 3 + roleFontString:GetStringWidth()
     
+    -- Create a target icon if icon info exists
     local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
     local iconInfo = self:GetIconInfo(icon)
+    local targetText
+    
     if iconInfo then
+        -- Set up the target icon
         targetIcon:SetTexture(iconInfo[1])
         targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
         targetIcon:SetWidth(16)
         targetIcon:SetHeight(16)
         targetIcon:SetPoint("LEFT", roleFontString, "RIGHT", 0, 0)
         
-        -- Add target text
-        local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        -- Add target text to the right of the icon
+        targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         targetText:SetPoint("LEFT", targetIcon, "RIGHT", 2, 0)
         targetText:SetText(target)
         
-        -- Add target width to calculation
+        -- Add target width to calculation (icon + spacing + text)
         rowWidth = rowWidth + 16 + 2 + targetText:GetStringWidth()
+    else
+        -- No icon, just display the target text directly after the role
+        targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        targetText:SetPoint("LEFT", roleFontString, "RIGHT", 3, 0)
+        targetText:SetText(target)
         
-        if table.getn(tanks) > 0 then
-            -- Add prefix text based on role (no extra spaces)
-            local prefixText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            prefixText:SetPoint("LEFT", targetText, "RIGHT", 3, 0)
-            if roleType == "tank" then
-                prefixText:SetText("with")
-            else
-                prefixText:SetText("tanked by")
+        -- Add target width to calculation (just text with padding)
+        rowWidth = rowWidth + 3 + targetText:GetStringWidth()
+    end
+    
+    if table.getn(tanks) > 0 then
+        -- Add prefix text based on role (no extra spaces)
+        local prefixText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        prefixText:SetPoint("LEFT", targetText, "RIGHT", 3, 0)
+        if roleType == "tank" then
+            prefixText:SetText("with")
+        else
+            prefixText:SetText("tanked by")
+        end
+        prefixText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+        
+        -- Add width of prefix text
+        rowWidth = rowWidth + 3 + prefixText:GetStringWidth() + 5
+        
+        -- Add tank widths
+        for t = 1, table.getn(tanks) do
+            local tankName = tanks[t]
+            
+            -- Get player information from TWRA.PLAYERS table
+            local inRaid = false
+            local isOnline = false
+            local tankClass = nil
+            
+            -- Check if player is in the PLAYERS table
+            if self.PLAYERS and self.PLAYERS[tankName] then
+                -- Format of PLAYERS table entry: [1] = class, [2] = online status
+                tankClass = self.PLAYERS[tankName][1]
+                isOnline = self.PLAYERS[tankName][2]
+                inRaid = true
             end
-            prefixText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
             
-            -- Add width of prefix text
-            rowWidth = rowWidth + 3 + prefixText:GetStringWidth() + 5
+            local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
             
-            -- Add tank widths
-            for t = 1, table.getn(tanks) do
-                local tankName = tanks[t]
+            rowWidth = rowWidth + elementWidth
+            
+            if t < table.getn(tanks) then
+                local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
+                ampText:SetText("&")
+                ampText:SetTextColor(0.82, 0.82, 0.82)
                 
-                -- Get player information from TWRA.PLAYERS table
-                local inRaid = false
-                local isOnline = false
-                local tankClass = nil
-                
-                -- Check if player is in the PLAYERS table
-                if self.PLAYERS and self.PLAYERS[tankName] then
-                    -- Format of PLAYERS table entry: [1] = class, [2] = online status
-                    tankClass = self.PLAYERS[tankName][1]
-                    isOnline = self.PLAYERS[tankName][2]
-                    inRaid = true
-                end
-                
-                local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
-                
-                rowWidth = rowWidth + elementWidth
-                
-                if t < table.getn(tanks) then
-                    local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                    ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
-                    ampText:SetText("&")
-                    ampText:SetTextColor(0.82, 0.82, 0.82)
-                    
-                    rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
-                end
+                rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
             end
         end
-        
-        rowWidth = rowWidth + 10
     end
+    
+    rowWidth = rowWidth + 10
     
     return rowWidth
 end
