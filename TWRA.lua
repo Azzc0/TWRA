@@ -11,11 +11,11 @@ end
 -- Create a frame to periodically check and ensure TWRA_Assignments.data is never nil
 local dataGuardFrame = CreateFrame("Frame")
 dataGuardFrame.sinceLastUpdate = 0
-dataGuardFrame:SetScript("OnUpdate", function(frame, elapsed)
+dataGuardFrame:SetScript("OnUpdate", function(self, elapsed)
     -- Only check every 0.5 seconds to avoid overhead
-    frame.sinceLastUpdate = frame.sinceLastUpdate + elapsed
-    if frame.sinceLastUpdate >= 0.5 then
-        frame.sinceLastUpdate = 0
+    self.sinceLastUpdate = self.sinceLastUpdate + elapsed
+    if self.sinceLastUpdate >= 0.5 then
+        self.sinceLastUpdate = 0
         
         -- Check and repair if needed
         if not TWRA_Assignments then
