@@ -241,13 +241,13 @@ frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- Explicitly register the event he
 frame:SetScript("OnEvent", function() 
     -- Add direct debug output before passing to OnEvent to ensure the event is triggering
     if event == "PLAYER_ENTERING_WORLD" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [event]:|r PLAYER_ENTERING_WORLD triggered")
+        -- DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [event]:|r PLAYER_ENTERING_WORLD triggered")
         
         -- Create the main frame directly here but don't load content yet
         if not TWRA.mainFrame and TWRA.CreateMainFrame then
             TWRA:CreateMainFrame()
             TWRA.mainFrame:Hide() -- Ensure it's hidden by default
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [ui]:|r Main frame created and hidden directly from event handler")
+            -- DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [ui]:|r Main frame created and hidden directly from event handler")
             
             -- Set a flag to indicate we need to load content when user manually shows frame
             TWRA.needsInitialContentLoad = true
