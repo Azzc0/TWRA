@@ -44,8 +44,7 @@ function TWRA:InitializeMinimapButton()
                         end
                         
                         -- Always update the highlight (regardless of visibility)
-                        selfö
-                        
+                        self.minimapButton.dropdown:UpdateVisibleButtons()
                         
                         self:Debug("ui", "Updated dropdown highlighting for section: " .. sectionName)
                     end
@@ -342,30 +341,31 @@ function TWRA:CreateMinimapButton()
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00TWRA:|r Minimap detected section change to: " .. sectionName)
             
             -- Always update the minimap dropdown if it's showing
-            if miniButton.dropdown and miniButton.dropdown:IsShown() then
-                -- Ensure the current section is visible in the dropdown (auto-scroll)
-                if currentIndex and miniButton.dropdown.UpdateVisibleButtons then
-                    -- Calculate proper offset to ensure current section is visible
-                    local maxVisibleButtons = 10 -- Match the MAX_VISIBLE_BUTTONS constant
+            TWRA.minimapButton.dropdown:UpdateVisibleButtons()
+            -- if miniButton.dropdown and miniButton.dropdown:IsShown() then
+            --     -- Ensure the current section is visible in the dropdown (auto-scroll)
+            --     if currentIndex and miniButton.dropdown.UpdateVisibleButtons then
+            --         -- Calculate proper offset to ensure current section is visible
+            --         local maxVisibleButtons = 10 -- Match the MAX_VISIBLE_BUTTONS constant
                     
-                    -- Only adjust offset if current section would be outside visible range
-                    if currentIndex <= miniButton.dropdown.offset or 
-                       currentIndex > (miniButton.dropdown.offset + maxVisibleButtons) then
-                        -- Try to center the current section in the visible window
-                        miniButton.dropdown.offset = math.max(0, currentIndex - math.floor(maxVisibleButtons / 2))
+            --         -- Only adjust offset if current section would be outside visible range
+            --         if currentIndex <= miniButton.dropdown.offset or 
+            --            currentIndex > (miniButton.dropdown.offset + maxVisibleButtons) then
+            --             -- Try to center the current section in the visible window
+            --             miniButton.dropdown.offset = math.max(0, currentIndex - math.floor(maxVisibleButtons / 2))
                         
-                        -- Make sure offset doesn't go past maximum
-                        local maxOffset = math.max(0, table.getn(TWRA.navigation.handlers) - maxVisibleButtons)
-                        miniButton.dropdown.offset = math.min(miniButton.dropdown.offset, maxOffset)
-                    end
+            --             -- Make sure offset doesn't go past maximum
+            --             local maxOffset = math.max(0, table.getn(TWRA.navigation.handlers) - maxVisibleButtons)
+            --             miniButton.dropdown.offset = math.min(miniButton.dropdown.offset, maxOffset)
+            --         end
                     
-                    -- Update the buttons to reflect the new section highlight
-                    miniButton.dropdown:UpdateVisibleButtons()
+            --         -- Update the buttons to reflect the new section highlight
+            --         miniButton.dropdown:UpdateVisibleButtons()
                     
-                    TWRA:Debug("ui", "Updated dropdown highlighting for section change to: " .. sectionName .. 
-                              " (index: " .. currentIndex .. ", offset: " .. miniButton.dropdown.offset .. ")")
-                end
-            end
+            --         TWRA:Debug("ui", "Updated dropdown highlighting for section change to: " .. sectionName .. 
+            --                   " (index: " .. currentIndex .. ", offset: " .. miniButton.dropdown.offset .. ")")
+            --     end
+            -- end
         end, "MinimapDropdownHighlight")
     end
     
