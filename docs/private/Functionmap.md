@@ -118,6 +118,169 @@ Cancels a scheduled timer.
 **Used in:**
 - Various UI components
 
+### TWRA:FormatTime(seconds)
+Formats seconds into a human-readable time string (e.g., "1h 30m 45s").
+
+**Arguments:**
+- seconds: Time in seconds to format
+
+**Returns:**
+- Formatted time string
+
+**Used in:**
+- ui/Frame.lua (display timers)
+- sync/Sync.lua (sync status)
+
+### TWRA:FormatNumber(num)
+Formats a number with comma separators for better readability.
+
+**Arguments:**
+- num: Number to format
+
+**Returns:**
+- Formatted number string with comma separators
+
+**Used in:**
+- ui/Frame.lua (display counts)
+
+### TWRA:TruncateText(text, length)
+Truncates text to a specified length and adds an ellipsis if needed.
+
+**Arguments:**
+- text: Text to truncate
+- length: Maximum length before truncating
+
+**Returns:**
+- Truncated text string
+
+**Used in:**
+- ui/OSD.lua (display names)
+- ui/Frame.lua (tooltips)
+
+### TWRA:GetPlayerClass(name)
+Gets a player's class name.
+
+**Arguments:**
+- name: Player name to check
+
+**Returns:**
+- Class name string or nil if not found
+
+**Used in:**
+- ui/Frame.lua (player highlighting)
+- core/DataProcessing.lua (relevance checks)
+
+### TWRA:HasClassInRaid(className)
+Checks if a specific class is present in the raid.
+
+**Arguments:**
+- className: Class name to check for
+
+**Returns:**
+- Boolean indicating if class exists in raid
+
+**Used in:**
+- core/DataProcessing.lua (class availability)
+
+### TWRA:IsRaidAssist()
+Checks if the player has raid assist permissions.
+
+**Returns:**
+- Boolean indicating if player has raid assist
+
+**Used in:**
+- ui/Frame.lua (announce button)
+- features/AutoTanks.lua (tank assignments)
+
+### TWRA:UpdatePlayerTable()
+Updates the internal player table with current group information.
+
+**Used in:**
+- PLAYER_ENTERING_WORLD event
+- GROUP_ROSTER_UPDATE event
+
+### TWRA:GetTableSize(tbl)
+Gets the number of elements in a table (supporting non-sequential keys).
+
+**Arguments:**
+- tbl: Table to measure
+
+**Returns:**
+- Number of elements in the table
+
+**Used in:**
+- Various utility functions
+
+## core/Compression.lua
+### TWRA:InitializeCompression()
+Initializes the compression system using LibCompress.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- core/Core.lua (initialization)
+
+### TWRA:TestCompression()
+Tests compression functionality with sample data.
+
+**Arguments:**
+- None
+
+**Used in:**
+- Debug commands
+
+### TWRA:PrepareDataForSync()
+Prepares assignment data for synchronization by compressing it.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Compressed data string ready for sync
+
+**Used in:**
+- sync/SyncHandlers.lua (data response)
+
+### TWRA:CompressAssignmentsData()
+Compresses the current assignment data.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Compressed data string
+
+**Used in:**
+- TWRA:PrepareDataForSync()
+
+### TWRA:DecompressAssignmentsData(compressedData)
+Decompresses assignment data.
+
+**Arguments:**
+- compressedData: Compressed data string
+
+**Returns:**
+- Decompressed assignment data table or nil on error
+
+**Used in:**
+- sync/SyncHandlers.lua (data response handler)
+
+### TWRA:StoreCompressedData(compressedData)
+Stores compressed data for later access.
+
+**Arguments:**
+- compressedData: Compressed data string
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:PrepareDataForSync()
+
 ## core/Base64.lua
 ### TWRA:EncodeBase64(data)
 Encodes data to Base64 format.
@@ -1081,6 +1244,137 @@ Updates the footer area of the OSD with warnings and notes.
 **Used in:**
 - TWRA:UpdateOSDWithFormattedData()
 
+### TWRA:CreateContent(contentContainer)
+Creates the main content area of the OSD.
+
+**Arguments:**
+- contentContainer: The container frame to add content to
+
+**Returns:**
+- Height of created content
+
+**Used in:**
+- TWRA:UpdateOSDWithFormattedData()
+
+### TWRA:CreateDefaultContent(contentContainer)
+Creates default content when no specific assignments are found.
+
+**Arguments:**
+- contentContainer: The container frame to add content to
+
+**Returns:**
+- Height of created content
+
+**Used in:**
+- TWRA:UpdateOSDWithFormattedData() (when no assignments available)
+
+### TWRA:CreateWarnings(footerContainer)
+Creates warning messages in the OSD footer.
+
+**Arguments:**
+- footerContainer: The container frame for warnings
+
+**Returns:**
+- Height of created warnings
+
+**Used in:**
+- TWRA:UpdateOSDFooters()
+
+### TWRA:SwitchToProgressMode(sourcePlayer)
+Switches the OSD to show progress information during sync operations.
+
+**Arguments:**
+- sourcePlayer: Name of the player sending sync data
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- sync/SyncHandlers.lua (during data reception)
+
+### TWRA:SwitchToAssignmentMode(sectionName)
+Switches the OSD back to showing assignments after sync completes.
+
+**Arguments:**
+- sectionName: Name of the section to display
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- sync/SyncHandlers.lua (after data reception completes)
+
+### TWRA:UpdateProgressBar(progress, current, total)
+Updates the sync progress bar in the OSD.
+
+**Arguments:**
+- progress: Progress percentage (0-100)
+- current: Current chunk number
+- total: Total number of chunks
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- sync/SyncHandlers.lua (during chunked data reception)
+
+### TWRA:CreateRowBaseElements(rowFrame, role)
+Creates the base elements for an OSD row.
+
+**Arguments:**
+- rowFrame: Frame to contain the elements
+- role: Role name to display
+
+**Returns:**
+- Created text element
+
+**Used in:**
+- TWRA:CreateHealerRow()
+- TWRA:CreateTankOrOtherRow()
+
+### TWRA:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, xPosition)
+Creates a tank element showing name and status.
+
+**Arguments:**
+- rowFrame: Frame to contain the element
+- tankName: Name of the tank
+- tankClass: Class of the tank
+- inRaid: Boolean indicating if in raid
+- isOnline: Boolean indicating if online
+- xPosition: Horizontal position in the row
+
+**Returns:**
+- Width of the created element
+
+**Used in:**
+- TWRA:CreateHealerRow()
+- TWRA:CreateTankOrOtherRow()
+
+### TWRA:GetIconInfo(iconName)
+Gets texture information for an icon.
+
+**Arguments:**
+- iconName: Name of the icon to look up
+
+**Returns:**
+- Texture path, coordinates, and size information
+
+**Used in:**
+- TWRA:CreateHealerRow()
+- TWRA:CreateTankOrOtherRow()
+
+### TWRA:CreateProgressBar(progressBarContainer)
+Creates a progress bar for sync operations.
+
+**Arguments:**
+- progressBarContainer: Container frame for the progress bar
+
+**Returns:**
+- Created progress bar frame
+
+**Used in:**
+- TWRA:GetOSDFrame()
+
 ## ui/OSDContent.lua
 ### TWRA:PrepOSD(sectionData)
 Prepares OSD data from section data.
@@ -1194,20 +1488,8 @@ Checks if oRA2 addon is available.
 - TWRA.lua (UpdateTanks)
 
 ## features/AutoNavigate.lua
-### TWRA:InitializeAutoNavigate()
-Initializes auto-navigation feature.
-
-**Used in:**
-- TWRA.lua (Initialize)
-
-### TWRA:CheckTargetGUID()
-Checks current target GUID for auto-navigation.
-
-**Used in:**
-- core/Debug.lua (debug command)
-
 ### TWRA:CheckSuperWoWSupport(quiet)
-Checks if SuperWoW features are available.
+Checks if SuperWoW features are available for enhanced functionality.
 
 **Arguments:**
 - quiet: Boolean to suppress debug messages
@@ -1218,8 +1500,8 @@ Checks if SuperWoW features are available.
 **Used in:**
 - TWRA:InitializeAutoNavigate()
 
-### TWRA:StartAutoNavigateScan()
-Starts periodic scanning for marked targets.
+### TWRA:RegisterAutoNavigateEvents()
+Registers events needed for the auto-navigation feature.
 
 **Arguments:**
 - None
@@ -1229,10 +1511,47 @@ Starts periodic scanning for marked targets.
 
 **Used in:**
 - TWRA:InitializeAutoNavigate()
+
+### TWRA:InitializeAutoNavigate()
+Initializes the auto-navigation system for automatically switching sections based on encounter targets.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
 - core/Core.lua (initialization)
 
+### TWRA:ToggleAutoNavigate(state)
+Enables or disables the auto-navigation feature.
+
+**Arguments:**
+- state: Optional boolean to explicitly enable/disable
+
+**Returns:**
+- Current state after toggle
+
+**Used in:**
+- ui/Options.lua (navigation options)
+- Slash commands
+
+### TWRA:StartAutoNavigateScan()
+Starts periodic scanning for marked targets that match configured GUIDs.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating if scan was started
+
+**Used in:**
+- TWRA:InitializeAutoNavigate()
+- TWRA:ToggleAutoNavigate()
+
 ### TWRA:StopAutoNavigateScan()
-Stops periodic scanning for marked targets.
+Stops the periodic target scanning.
 
 **Arguments:**
 - None
@@ -1243,20 +1562,58 @@ Stops periodic scanning for marked targets.
 **Used in:**
 - TWRA:ToggleAutoNavigate()
 
-### TWRA:ToggleAutoNavigate(enable)
-Toggles auto-navigation functionality.
+### TWRA:ScanMarkedTargets()
+Scans for raid-marked targets and attempts to match with known section GUIDs.
 
 **Arguments:**
-- enable: Optional boolean to explicitly enable/disable
+- None
 
 **Returns:**
-- Current state after toggle
+- Boolean indicating if any matches were found
 
 **Used in:**
-- ui/Options.lua (checkbox)
+- Timer callback from StartAutoNavigateScan
 
-### TWRA:ScanForMarkedTarget()
-Scans for marked targets and attempts to match with GUIDs.
+### TWRA:ProcessMarkedMob(mobName, mobId)
+Processes a marked mob to see if it matches any known section.
+
+**Arguments:**
+- mobName: Name of the mob
+- mobId: GUID of the mob
+
+**Returns:**
+- Boolean indicating if a match was found
+
+**Used in:**
+- TWRA:ScanMarkedTargets()
+
+### TWRA:FindSectionByGuid(guid)
+Attempts to find a section associated with a specific mob GUID.
+
+**Arguments:**
+- guid: GUID to search for
+
+**Returns:**
+- Section index if found, nil otherwise
+
+**Used in:**
+- TWRA:ProcessMarkedMob()
+- TWRA:CheckCurrentTarget()
+
+### TWRA:GetSectionIndex(sectionName)
+Gets the index of a section by name.
+
+**Arguments:**
+- sectionName: Name of the section to find
+
+**Returns:**
+- Section index if found, nil otherwise
+
+**Used in:**
+- TWRA:FindSectionByGuid()
+
+### TWRA:TestCurrentTarget()
+Tests if the current target matches any known section for debugging.
 
 **Arguments:**
 - None
@@ -1265,7 +1622,43 @@ Scans for marked targets and attempts to match with GUIDs.
 - Boolean indicating if a match was found
 
 **Used in:**
-- Timer callback during scanning
+- Debug commands
+
+### TWRA:CheckCurrentTarget()
+Checks if the current target matches any known section.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating if a match was found
+
+**Used in:**
+- PLAYER_TARGET_CHANGED event
+
+### TWRA:ToggleAutoNavigateDebug()
+Toggles debug output for the auto-navigation system.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Current debug state
+
+**Used in:**
+- Debug commands
+
+### TWRA:ListAllGuids()
+Lists all known GUIDs associated with sections.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None (prints to chat)
+
+**Used in:**
+- Debug commands
 
 ## core/ItemLink.lua
 ### TWRA.Items:ProcessText(text)
@@ -1327,45 +1720,83 @@ Handles incoming addon messages.
 **Used in:**
 - TWRA.lua (event handler)
 
-### TWRA:HandleAnnounceCommand(args, sender)
-Handles announcement commands.
+### TWRA:HandleSectionCommand(message, sender)
+Handles section change commands received from other players.
 
 **Arguments:**
-- args: Command arguments
-- sender: Command sender
+- message: The message containing section change data
+- sender: Name of the player who sent the message
+
+**Returns:**
+- Boolean indicating success
 
 **Used in:**
-- sync/SyncHandlers.lua
+- TWRA:HandleAddonMessage()
 
-### TWRA:HandleVersionCommand(args, sender)
-Handles version check commands.
+### TWRA:HandleAnnounceCommand(message, sender)
+Handles announcement commands from sync operations.
 
 **Arguments:**
-- args: Command arguments
-- sender: Command sender
+- message: The message containing the announcement data
+- sender: Name of the player who sent the message
+
+**Returns:**
+- Boolean indicating success
 
 **Used in:**
-- sync/SyncHandlers.lua
+- TWRA:HandleAddonMessage()
 
-### TWRA:HandleDataRequestCommand(args, sender)
-Handles data request commands.
+### TWRA:HandleDataRequestCommand(message, sender)
+Processes data request commands, responding with appropriate data.
 
 **Arguments:**
-- args: Command arguments
-- sender: Command sender
+- message: The message containing the request details
+- sender: Name of the player requesting data
+
+**Returns:**
+- Boolean indicating success
 
 **Used in:**
-- sync/SyncHandlers.lua
+- TWRA:HandleAddonMessage()
 
-### TWRA:HandleDataResponseCommand(args, sender)
-Handles data response commands.
+### TWRA:HandleDataResponseCommand(message, sender)
+Processes data response commands containing compressed assignment data.
 
 **Arguments:**
-- args: Command arguments
-- sender: Command sender
+- message: The message containing the compressed data
+- sender: Name of the player sending the data
+
+**Returns:**
+- Boolean indicating success
 
 **Used in:**
-- sync/SyncHandlers.lua
+- TWRA:HandleAddonMessage()
+
+### TWRA:ProcessCompressedData(compressedData, timestamp, sender)
+Processes compressed assignment data received from another player.
+
+**Arguments:**
+- compressedData: The compressed data to process
+- timestamp: Timestamp of the data
+- sender: Name of the player who sent the data
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:HandleDataResponseCommand()
+
+### TWRA:InitializeSyncHandlers()
+Initializes the synchronization handlers system.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- core/Core.lua (initialization)
 
 ### TWRA:StartSync()
 Begins synchronization with the group.
@@ -1459,37 +1890,254 @@ Reassembles string chunks into the original string.
 - TWRA:HandleDataResponseCommand()
 
 ## sync/Sync.lua
-### TWRA:SendAddonMessage(message, target)
-Sends an addon message.
+### TWRA:RegisterSyncEvents()
+Registers events related to synchronization functionality.
 
 **Arguments:**
-- message: Message to send
-- target: Optional target player
+- None
+
+**Returns:**
+- Boolean indicating success
 
 **Used in:**
-- Multiple sync functions
+- TWRA:InitializeSync()
+
+### TWRA:CheckAndActivateLiveSync()
+Checks if conditions are met to activate live sync and does so if appropriate.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating if live sync was activated
+
+**Used in:**
+- TWRA:OnGroupChanged()
+- TWRA:ApplyInitialSettings()
+
+### TWRA:ActivateLiveSync()
+Activates live synchronization functionality.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:CheckAndActivateLiveSync()
+- ui/Options.lua (sync button)
+
+### TWRA:DeactivateLiveSync()
+Deactivates live synchronization functionality.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:OnGroupChanged() (when leaving group)
+- ui/Options.lua (sync button)
 
 ### TWRA:BroadcastSectionChange(sectionIndex, timestamp)
-Broadcasts section change to group.
+Broadcasts section change to the group.
 
 **Arguments:**
 - sectionIndex: New section index
 - timestamp: Timestamp of the data for sync comparison
 
-**Notes:**
-- Formats message with section name, index and timestamp
-- Only broadcasts if in a group (raid or party)
-- Enhanced to include timestamp for sync comparison
-- Returns true/false indicating success
+**Returns:**
+- Boolean indicating success
 
 **Used in:**
-- core/Core.lua (NavigateToSection)
+- TWRA:NavigateToSection()
+
+### TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
+Handles incoming addon messages.
+
+**Arguments:**
+- prefix: Message prefix
+- message: Message content
+- distribution: Distribution channel
+- sender: Sender name
+
+**Used in:**
+- CHAT_MSG_ADDON event
+
+### TWRA:SendDataResponse(encodedData, timestamp)
+Sends a data response message with compressed data.
+
+**Arguments:**
+- encodedData: The encoded data to send
+- timestamp: Timestamp of the data
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:HandleDataRequestCommand()
+
+### TWRA:CHAT_MSG_ADDON(prefix, message, distribution, sender)
+Alias handler for CHAT_MSG_ADDON event.
+
+**Arguments:**
+- prefix: Message prefix
+- message: Message content
+- distribution: Distribution channel
+- sender: Sender name
+
+**Used in:**
+- Event registration
+
+### TWRA:ToggleMessageMonitoring(enable)
+Toggles displaying all addon messages in chat for debugging.
+
+**Arguments:**
+- enable: Optional boolean to explicitly enable/disable
+
+**Returns:**
+- Current monitoring state
+
+**Used in:**
+- Debug commands
 
 ### TWRA:OnGroupChanged()
 Handles group composition changes.
 
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
 **Used in:**
-- TWRA.lua (event handler)
+- GROUP_ROSTER_UPDATE event
+- RAID_ROSTER_UPDATE event
+
+### TWRA:ShowSyncStatus()
+Shows synchronization status in chat.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- Debug commands
+- ui/Options.lua (status button)
+
+### TWRA:InitializeSync()
+Initializes the synchronization system.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- core/Core.lua (initialization)
+
+### TWRA:RequestDataSync(timestamp)
+Requests data synchronization from other group members.
+
+**Arguments:**
+- timestamp: Optional timestamp to include in request
+
+**Returns:**
+- Boolean indicating if request was sent
+
+**Used in:**
+- TWRA:ActivateLiveSync()
+- ui/Options.lua (sync button)
+
+### TWRA:AnnounceDataImport()
+Announces to the group that data has been imported.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:SaveAssignments()
+
+### TWRA:RegisterSectionChangeHandler()
+Registers handlers for section change events.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- TWRA:InitializeSync()
+
+## ui/Minimap.lua
+### TWRA:InitializeMinimapButton()
+Initializes the minimap functionality, creating the button and registering it for section change events.
+
+**Arguments:**
+- None
+
+**Returns:**
+- Boolean indicating success
+
+**Used in:**
+- core/Core.lua (initialization)
+
+### TWRA:CreateMinimapButton()
+Creates the minimap button with appropriate textures and behaviors.
+
+**Arguments:**
+- None
+
+**Returns:**
+- The created minimap button frame
+
+**Used in:**
+- TWRA:InitializeMinimapButton()
+
+### TWRA:CreateMinimapDropdown(miniButton)
+Creates a dropdown menu for the minimap button that displays available sections.
+
+**Arguments:**
+- miniButton: The minimap button frame to attach the dropdown to
+
+**Returns:**
+- The created dropdown frame
+
+**Used in:**
+- TWRA:CreateMinimapButton()
+
+### TWRA:UpdateMinimapButton()
+Updates the minimap button with current section information.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- TWRA:NavigateToSection() (after section changes)
+
+### TWRA:ToggleMinimapButton()
+Toggles the visibility of the minimap button.
+
+**Arguments:**
+- None
+
+**Returns:**
+- None
+
+**Used in:**
+- ui/Options.lua (minimap toggle option)
 
 # Duplicate functions
 Some functions may have multiple implementations across different files. Below are functions that need attention regarding their duplication or special handling.
