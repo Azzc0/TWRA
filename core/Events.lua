@@ -164,9 +164,3 @@ function TWRA:ListRegisteredEvents(includeDetails)
     
     DEFAULT_CHAT_FRAME:AddMessage("Total: " .. eventCount .. " events with " .. totalListeners .. " listeners")
 end
-
--- Provide slash command to list registered events
-SLASH_TWRAEVENTS1 = "/twraevents"
-SlashCmdList["TWRAEVENTS"] = function(msg)
-    TWRA:ListRegisteredEvents(msg == "details")
-end

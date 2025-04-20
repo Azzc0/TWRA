@@ -311,6 +311,17 @@ SlashCmdList["TWRA"] = function(msg)
         return
     end
     
+    -- Command to toggle OSD visibility
+    if msg == "osd" then
+        if TWRA.ToggleOSD then
+            local visible = TWRA:ToggleOSD()
+            TWRA:Debug("osd", "OSD visibility toggled: " .. (visible and "shown" or "hidden"))
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD system not initialized")
+        end
+        return
+    end
+    
     -- Command to explicitly show options
     if msg == "options" then
         if not TWRA.mainFrame then
@@ -356,6 +367,7 @@ SlashCmdList["TWRA"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /twra - Toggle main window")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra show - Show main window")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra hide - Hide main window")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra osd - Toggle on-screen display")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra options - Open options panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra resetview - Reset to main view")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Access debug commands")
@@ -1079,21 +1091,3 @@ function TWRA:CreateMinimapButton()
 end
 
 -- Add this function to your Core.lua file to handle slash command registration
-
--- Register a custom slash command
-function TWRA:RegisterSlashCommand(command, handler)
-    if not command or not handler then return end
-    
-    -- Create a unique global name for this command
-    local cmdName = "TWRA_CMD_" .. string.upper(command)
-    
-    -- Register the slash command
-    _G["SLASH_" .. cmdName .. "1"] = "/" .. command
-    _G[cmdName] = handler
-    
-    SlashCmdList[cmdName] = function(msg)
-        handler(msg)
-    end
-    
-    self:Debug("general", "Registered slash command: /" .. command)
-end

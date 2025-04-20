@@ -84,19 +84,5 @@ function TWRA:VerifyImportString(importText)
     return sectionsWithCorrectFormat > 0
 end
 
--- Register diagnostic command
-SLASH_TWRAIMPORT1 = "/twraimport"
-SlashCmdList["TWRAIMPORT"] = function(msg)
-    -- Extract arguments
-    local command, arg = string.match(msg or "", "^(%S*)%s*(.-)$")
-    
-    if command == "verify" and arg and arg ~= "" then
-        TWRA:VerifyImportString(arg)
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Import Commands:|r")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twraimport verify <base64string> - Verify an import string")
-    end
-end
-
 -- Log that we've added the import diagnostic commands
 TWRA:Debug("general", "Import diagnostic commands loaded")

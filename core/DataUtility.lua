@@ -408,20 +408,7 @@ function TWRA:VerifyNewDataStructure()
     
     self:Debug("data", "Found " .. count .. " sections in TWRA_Assignments.data")
     
-    -- Register diagnostic command
-    if SLASH_TWRA1 and not self.diagCommandAdded then
-        local originalHandler = SlashCmdList["TWRA"]
-        SlashCmdList["TWRA"] = function(msg)
-            if msg == "diag" then
-                TWRA:VerifyNewDataStructure()
-            else
-                originalHandler(msg)
-            end
-        end
-        self.diagCommandAdded = true
-        self:Debug("data", "Added 'diag' command - use /twra diag to verify structure")
-    end
-    
+   
     return true
 end
 

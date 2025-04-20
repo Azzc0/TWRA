@@ -14,6 +14,8 @@ function TWRA:InitOSD()
     -- Create OSD namespace with default settings
     self.OSD = self.OSD or {
         isVisible = false,      -- Current visibility state
+        isPermanent = false,    -- Whether OSD is in permanent display mode
+        lastSectionIndex = nil, -- Last section index to detect same-section navigation
         autoHideTimer = nil,    -- Timer for auto-hiding
         duration = 2,           -- Duration in seconds before auto-hide (user configurable)
         scale = 1.0,            -- Scale factor for the OSD (user configurable)
@@ -48,6 +50,21 @@ function TWRA:InitOSD()
         self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
             self:Debug("osd", "SECTION_CHANGED event received: " .. sectionName)
             
+            -- Check if we're navigating to the same section
+            if self.OSD.lastSectionIndex and self.OSD.lastSectionIndex == currentIndex then
+                self:Debug("osd", "Skipping OSD display - navigating to same section")
+                
+                -- Still update content if OSD is already visible
+                if self.OSD.isVisible and self.OSDFrame and self.OSDFrame:IsShown() then
+                    self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+                end
+                
+                return
+            end
+            
+            -- Store the current section index for future comparison
+            self.OSD.lastSectionIndex = currentIndex
+            
             -- Always update the OSD content if it's currently visible
             if self.OSD.isVisible and self.OSDFrame and self.OSDFrame:IsShown() then
                 self:Debug("osd", "OSD is visible, updating content regardless of view state")
@@ -58,8 +75,14 @@ function TWRA:InitOSD()
             if self.ShouldShowOSD and self:ShouldShowOSD() then
                 -- Update content (in case OSD wasn't already visible)
                 self:UpdateOSDContent(sectionName, currentIndex, totalSections)
-                -- Show the OSD
-                self:ShowOSD()
+                
+                -- If OSD is already visible in permanent mode, don't change its state
+                if self.OSD.isVisible and self.OSD.isPermanent then
+                    self:Debug("osd", "OSD already in permanent display mode, leaving as is")
+                else
+                    -- Show the OSD with auto-hide (non-permanent mode)
+                    self:ShowOSD()
+                end
             end
         end, "OSD")
         
@@ -1116,6 +1139,7 @@ function TWRA:ShowOSDPermanent()
     
     -- Mark as visible
     self.OSD.isVisible = true
+    self.OSD.isPermanent = true
     self:Debug("osd", "OSD shown permanently")
     return true
 end
@@ -1158,6 +1182,7 @@ function TWRA:ShowOSD(duration)
     
     -- Mark as visible
     self.OSD.isVisible = true
+    self.OSD.isPermanent = false
     return true
 end
 
@@ -1172,6 +1197,7 @@ function TWRA:HideOSD()
     -- Mark as hidden first (even if we can't find the frame)
     if self.OSD then
         self.OSD.isVisible = false
+        self.OSD.isPermanent = false
     end
     
     -- Check if the frame exists and hide it safely

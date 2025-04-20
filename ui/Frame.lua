@@ -723,10 +723,10 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
         end
     end
     
-    if not sectionData then
-        self:Debug("error", "No section data found for handler: " .. (currentHandler or "nil"))
-        return
-    end
+    -- if not sectionData then
+    --     self:Debug("error", "No section data found for handler: " .. (currentHandler or "nil"))
+    --     return
+    -- end
     
     -- Create filtered data structure
     local filteredData = {}
