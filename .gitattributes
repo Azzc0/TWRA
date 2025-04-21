@@ -1,11 +1,11 @@
 # Set default behavior to automatically normalize line endings
 * text=auto
 
-# Explicitly declare text files to be normalized
-*.lua text eol=lf
-*.toc text eol=lf
-*.xml text eol=lf
-*.md text eol=lf
+# Explicitly declare text files to use Windows CRLF line endings
+*.lua text eol=crlf
+*.toc text eol=crlf
+*.xml text eol=crlf
+*.md text eol=crlf
 
 # Denote binary files (these should not be modified)
 *.jpg binary
