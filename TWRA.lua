@@ -11,7 +11,14 @@ end
 -- Create a frame to periodically check and ensure TWRA_Assignments.data is never nil
 local dataGuardFrame = CreateFrame("Frame")
 dataGuardFrame.sinceLastUpdate = 0
-dataGuardFrame:SetScript("OnUpdate", function(self, elapsed)
+dataGuardFrame:SetScript("OnUpdate", function(frameOrSelf, elapsed)
+    -- Support both parameter styles (frame,elapsed) and (self,elapsed)
+    local self = frameOrSelf or dataGuardFrame
+    if type(self) ~= "table" or not self.sinceLastUpdate then
+        -- If parameter is wrong, use the dataGuardFrame directly
+        self = dataGuardFrame
+    end
+    
     -- Only check every 0.5 seconds to avoid overhead
     self.sinceLastUpdate = self.sinceLastUpdate + elapsed
     if self.sinceLastUpdate >= 0.5 then
@@ -149,68 +156,71 @@ function TWRA:Initialize()
     frame:RegisterEvent("UPDATE_BINDINGS")
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")  -- Add this to catch UI reloads
     
+    -- Store a reference to TWRA for the event handler to use
+    local addon = self
+    
     frame:SetScript("OnEvent", function()
         if event == "VARIABLES_LOADED" then
             -- Initialize compression system early
-            if self.InitializeCompression then
-                self:Debug("general", "Initializing compression system")
-                self:InitializeCompression()
+            if addon.InitializeCompression then
+                addon:Debug("general", "Initializing compression system")
+                addon:InitializeCompression()
             else
-                self:Debug("error", "InitializeCompression function not found - sync may not work properly!")
+                addon:Debug("error", "InitializeCompression function not found - sync may not work properly!")
             end
             
             -- Load saved assignments
-            self:LoadSavedAssignments()
+            addon:LoadSavedAssignments()
             
             -- Initialize debug system
-            if self.InitializeDebug then
-                self:InitializeDebug()
+            if addon.InitializeDebug then
+                addon:InitializeDebug()
             end
             
-            self:Debug("general", "Variables loaded")
+            addon:Debug("general", "Variables loaded")
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- This fires on initial load and UI reload
-            self:Debug("general", "Player entering world - checking for UI reload")
+            addon:Debug("general", "Player entering world - checking for UI reload")
             
             -- Delay slightly to ensure other systems are ready
-            self:ScheduleTimer(function()
+            addon:ScheduleTimer(function()
                 -- If main frame exists and is shown, force refresh content
-                if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
-                    self:Debug("ui", "UI reload detected with visible frame - refreshing content")
+                if addon.mainFrame and addon.mainFrame:IsShown() and addon.currentView == "main" then
+                    addon:Debug("ui", "UI reload detected with visible frame - refreshing content")
                     
                     -- Ensure navigation is restored first
-                    if not self.navigation or not self.navigation.handlers or 
-                       not self.navigation.currentIndex then
-                        self:Debug("ui", "Rebuilding navigation after UI reload")
-                        self:RebuildNavigation()
+                    if not addon.navigation or not addon.navigation.handlers or 
+                       not addon.navigation.currentIndex then
+                        addon:Debug("ui", "Rebuilding navigation after UI reload")
+                        addon:RebuildNavigation()
                     end
                     
                     -- Force display current section
-                    if self.navigation and self.navigation.handlers and 
-                       self.navigation.currentIndex and 
-                       self.navigation.handlers[self.navigation.currentIndex] then
-                        local currentSection = self.navigation.handlers[self.navigation.currentIndex]
-                        self:Debug("ui", "Refreshing to section: " .. currentSection)
-                        self:FilterAndDisplayHandler(currentSection)
+                    if addon.navigation and addon.navigation.handlers and 
+                       addon.navigation.currentIndex and 
+                       addon.navigation.handlers[addon.navigation.currentIndex] then
+                        local currentSection = addon.navigation.handlers[addon.navigation.currentIndex]
+                        addon:Debug("ui", "Refreshing to section: " .. currentSection)
+                        addon:FilterAndDisplayHandler(currentSection)
                     end
                 end
             end, 0.5)  -- Half second delay to ensure everything is loaded
         elseif event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
             -- Handle group changes
-            if self.OnGroupChanged then
-                self:OnGroupChanged()
+            if addon.OnGroupChanged then
+                addon:OnGroupChanged()
             end
         elseif event == "CHAT_MSG_ADDON" then
             -- Critical fix: properly route addon messages to our handler
-            if self.OnChatMsgAddon then
-                self:OnChatMsgAddon(arg1, arg2, arg3, arg4)
+            if addon.OnChatMsgAddon then
+                addon:OnChatMsgAddon(arg1, arg2, arg3, arg4)
             else
-                self:Debug("error", "OnChatMsgAddon handler not available")
+                addon:Debug("error", "OnChatMsgAddon handler not available")
             end
         elseif event == "UPDATE_BINDINGS" then
             -- Handle keybinding updates
-            if self.UpdateBindings then
-                self:UpdateBindings()
+            if addon.UpdateBindings then
+                addon:UpdateBindings()
             end
         end
     end)

@@ -14,5 +14,5 @@
 *.tga binary
 *.blp binary
 
-# Handle WoW specific files
+# Handle WoW specific fileConsider TWRA local copy read only.
 *.ttf binary
