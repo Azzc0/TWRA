@@ -67,6 +67,22 @@ TWRA_SavedVariables = TWRA_SavedVariables or {
     }
 }
 
+-- Create OSD namespace with default settings
+TWRA.OSD = TWRA.OSD or {
+    isVisible = false,      -- Current visibility state
+    isPermanent = false,    -- Whether OSD is in permanent display mode
+    lastSectionIndex = nil, -- Last section index to detect same-section navigation
+    autoHideTimer = nil,    -- Timer for auto-hiding
+    duration = 3,           -- Duration in seconds before auto-hide (user configurable)
+    scale = 1.0,            -- Scale factor for the OSD (user configurable)
+    locked = false,         -- Whether frame position is locked (user configurable)
+    enabled = true,         -- Whether OSD is enabled at all (user configurable)
+    showOnNavigation = true, -- Show OSD when navigating sections (user configurable)
+    point = "CENTER",       -- Frame position anchor point (saved between sessions)
+    xOffset = 0,            -- X position offset (saved between sessions)
+    yOffset = 100,          -- Y position offset (saved between sessions),
+    displayMode = "assignments" -- Current display mode: "assignments" or "progress"
+}
 -- TWRA Constants Module
 -- Stores all configuration constants
 

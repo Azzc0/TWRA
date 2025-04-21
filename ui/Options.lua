@@ -394,11 +394,28 @@ function TWRA:CreateOptionsInMainFrame()
     testOSDBtn:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -15)
     testOSDBtn:SetText("Show OSD")
     testOSDBtn:SetScript("OnClick", function()
-        if TWRA.ToggleOSD then
-            TWRA:ToggleOSD()
+        -- Use ToggleOSD to properly toggle visibility
+        local isVisible = TWRA:ToggleOSD()
+        
+        -- Update button text to reflect current state
+        if isVisible then
+            testOSDBtn:SetText("Hide OSD")
+            
+            -- Update current section content if available
+            if TWRA.navigation and TWRA.navigation.currentIndex and TWRA.navigation.handlers then
+                local sectionName = TWRA.navigation.handlers[TWRA.navigation.currentIndex]
+                local currentIndex = TWRA.navigation.currentIndex
+                local totalSections = table.getn(TWRA.navigation.handlers)
+                
+                -- Update OSD content with current section data
+                TWRA:UpdateOSDContent(sectionName, currentIndex, totalSections)
+            end
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD toggle function not found")
+            testOSDBtn:SetText("Show OSD")
         end
+        
+        -- Debug output
+        TWRA:Debug("osd", "OSD " .. (isVisible and "shown" or "hidden") .. " from options panel")
     end)
     table.insert(self.optionsElements, testOSDBtn)
     
@@ -826,13 +843,6 @@ function TWRA:CreateOptionsInMainFrame()
         -- Update OSD frame if needed
         if self.UpdateOSDSettings then
             self:UpdateOSDSettings()
-        end
-    end)
-    
-    -- Test OSD button behavior
-    testOSDBtn:SetScript("OnClick", function()
-        if self.TestOSD then
-            self:TestOSD()
         end
     end)
     

@@ -2,6 +2,7 @@
 -- Phase 0: Visual Prototype based on the OSD-plan.md document
 
 TWRA = TWRA or {}
+TWRA.OSD = TWRA.OSD or {}
 
 -- Initialize OSD settings and structure
 function TWRA:InitOSD()
@@ -10,23 +11,6 @@ function TWRA:InitOSD()
         self:Debug("osd", "OSD already initialized")
         return true
     end
-
-    -- Create OSD namespace with default settings
-    self.OSD = self.OSD or {
-        isVisible = false,      -- Current visibility state
-        isPermanent = false,    -- Whether OSD is in permanent display mode
-        lastSectionIndex = nil, -- Last section index to detect same-section navigation
-        autoHideTimer = nil,    -- Timer for auto-hiding
-        duration = 2,           -- Duration in seconds before auto-hide (user configurable)
-        scale = 1.0,            -- Scale factor for the OSD (user configurable)
-        locked = false,         -- Whether frame position is locked (user configurable)
-        enabled = true,         -- Whether OSD is enabled at all (user configurable)
-        showOnNavigation = true, -- Show OSD when navigating sections (user configurable)
-        point = "CENTER",       -- Frame position anchor point (saved between sessions)
-        xOffset = 0,            -- X position offset (saved between sessions)
-        yOffset = 100,          -- Y position offset (saved between sessions),
-        displayMode = "assignments" -- Current display mode: "assignments" or "progress"
-    }
 
     -- Load saved settings if available
     if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.osd then
@@ -160,9 +144,13 @@ function TWRA:GetOSDFrame()
 
     -- Make the frame movable if not locked
     frame:SetMovable(not self.OSD.locked)
-    frame:EnableMouse(not self.OSD.locked)
+    frame:EnableMouse(true) -- Always enable mouse so we can detect hover, even when locked
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function() this:StartMoving() end)
+    frame:SetScript("OnDragStart", function() 
+        if not TWRA.OSD.locked then
+            this:StartMoving()
+        end 
+    end)
     frame:SetScript("OnDragStop", function()
         this:StopMovingOrSizing()
         -- Save position
@@ -177,6 +165,75 @@ function TWRA:GetOSDFrame()
             TWRA_SavedVariables.options.osd.xOffset = xOffset
             TWRA_SavedVariables.options.osd.yOffset = yOffset
         end
+    end)
+    
+    -- Add mouse enter/leave scripts to pause/resume timer
+    frame:SetScript("OnEnter", function()
+        TWRA:Debug("osd", "Mouse entered OSD frame")
+        
+        -- Debug current timer state
+        TWRA:Debug("osd", "Timer state: autoHideTimer=" .. 
+                  (TWRA.OSD.autoHideTimer and "exists" or "nil") .. 
+                  ", isPermanent=" .. tostring(TWRA.OSD.isPermanent or false) .. 
+                  ", isVisible=" .. tostring(TWRA.OSD.isVisible or false))
+        
+        -- Cancel any active timer and store that this was originally not permanent
+        if TWRA.OSD.isVisible and not TWRA.OSD.isPermanent and TWRA.OSD.autoHideTimer then
+            -- Store original state to know we need to restore the timer when mouse leaves
+            TWRA.OSD.wasTemporary = true
+            
+            -- Cancel the timer
+            TWRA:CancelTimer(TWRA.OSD.autoHideTimer)
+            TWRA.OSD.autoHideTimer = nil
+            
+            -- Make OSD permanent while mouse is over
+            TWRA.OSD.isPermanent = true
+            
+            TWRA:Debug("osd", "Paused auto-hide timer by setting OSD to permanent mode")
+        end
+        
+        -- Display cursor position for debugging
+        local x, y = GetCursorPosition()
+        local scale = UIParent:GetEffectiveScale()
+        TWRA:Debug("osd", "Mouse position: " .. math.floor(x/scale) .. ", " .. math.floor(y/scale))
+    end)
+    
+    frame:SetScript("OnLeave", function()
+        TWRA:Debug("osd", "Mouse left OSD frame")
+        
+        -- Only restore timer if we previously set it to permanent (wasTemporary flag)
+        if TWRA.OSD.isVisible and TWRA.OSD.wasTemporary and TWRA.OSD.isPermanent then
+            -- Restore non-permanent state
+            TWRA.OSD.isPermanent = false
+            TWRA.OSD.wasTemporary = nil
+            
+            -- Create a new timer with the default duration
+            TWRA.OSD.autoHideTimer = TWRA:ScheduleTimer(function()
+                -- Only hide if the OSD is still in temporary mode
+                if TWRA.OSD.isVisible and not TWRA.OSD.isPermanent then
+                    TWRA:Debug("osd", "Auto-hide timer completed after resuming")
+                    TWRA:HideOSD()
+                end
+                TWRA.OSD.autoHideTimer = nil
+            end, TWRA.OSD.duration or 6)
+            
+            TWRA:Debug("osd", "Restored auto-hide timer with " .. 
+                      (TWRA.OSD.duration or 6) .. "s delay")
+        else
+            -- Debug why we're not resuming
+            if not TWRA.OSD.isVisible then
+                TWRA:Debug("osd", "OSD is not visible, no timer to resume")
+            elseif not TWRA.OSD.wasTemporary then
+                TWRA:Debug("osd", "OSD was not temporarily set to permanent, not changing state")
+            elseif not TWRA.OSD.isPermanent then
+                TWRA:Debug("osd", "OSD is not in permanent mode, no state to restore")
+            end
+        end
+        
+        -- Display cursor position for debugging
+        local x, y = GetCursorPosition()
+        local scale = UIParent:GetEffectiveScale()
+        TWRA:Debug("osd", "Mouse position: " .. math.floor(x/scale) .. ", " .. math.floor(y/scale))
     end)
 
     -- Create header container (for title)
@@ -790,7 +847,7 @@ function TWRA:CreateContent(contentContainer)
         neededWidth = math.max(neededWidth, 400)
         
         parentFrame:SetWidth(neededWidth)
-        self:Debug("osd", "Set OSD width to " .. neededWidth .. " pixels (content width: " .. maxContentWidth .. ")")
+        self:Debug("osd", "Set OSD width to " .. neededWidth)
         
         -- Store the calculated max content width for later reuse when switching modes
         self.OSD.maxContentWidth = neededWidth

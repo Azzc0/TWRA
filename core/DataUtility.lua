@@ -94,23 +94,39 @@ end
 
 -- Simplify GetCurrentSectionData to always assume new format
 function TWRA:GetCurrentSectionData()
-    if not self.assignments or not self.assignments.sections or not self.navigation or not self.navigation.currentIndex then
+    -- Check if we have assignment data
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("error", "No assignment data available")
         return nil
     end
 
-    local index = self.navigation.currentIndex
-    local sectionName = self.navigation.sections[index]
+    -- Get the current section name
+    local currentSectionName = nil
     
-    if not sectionName then
+    -- First try to get from navigation if it exists
+    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+        currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
+    end
+    
+    -- If not found in navigation, try saved currentSectionName
+    if not currentSectionName and TWRA_Assignments.currentSectionName then
+        currentSectionName = TWRA_Assignments.currentSectionName
+    end
+    
+    if not currentSectionName then
+        self:Debug("error", "No current section name found")
         return nil
     end
     
-    local sectionData = self.assignments.sections[sectionName]
-    if not sectionData then
-        return nil
+    -- Find the section data in TWRA_Assignments.data
+    for _, sectionData in pairs(TWRA_Assignments.data) do
+        if type(sectionData) == "table" and sectionData["Section Name"] == currentSectionName then
+            return sectionData
+        end
     end
     
-    return sectionData
+    self:Debug("error", "Failed to get section data for " .. currentSectionName)
+    return nil
 end
 
 -- Simplify DisplayCurrentSection to always use new format

@@ -76,6 +76,19 @@ function TWRA:CancelTimer(timer)
     end
 end
 
+-- Get remaining time on a timer (needed for OSD pause functionality)
+function TWRA:TimeLeft(timer)
+    if not timer or not timer.start or not timer.delay then
+        return 0
+    end
+    
+    local elapsed = GetTime() - timer.start
+    local remaining = timer.delay - elapsed
+    
+    -- Return 0 if timer has already expired
+    return remaining > 0 and remaining or 0
+end
+
 -- Player status utility functions
 -- These were previously in Frame.lua but are more appropriate in a utils file
 
