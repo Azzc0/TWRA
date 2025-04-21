@@ -392,13 +392,12 @@ function TWRA:CreateOptionsInMainFrame()
     testOSDBtn:SetWidth(80)
     testOSDBtn:SetHeight(22)
     testOSDBtn:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -15)
-    testOSDBtn:SetText("Anchor")
+    testOSDBtn:SetText("Show OSD")
     testOSDBtn:SetScript("OnClick", function()
-        -- Show OSD with anchor buttons
-        if TWRA.ShowOSDAnchorPoints then
-            TWRA:ShowOSDAnchorPoints()
+        if TWRA.ToggleOSD then
+            TWRA:ToggleOSD()
         else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD anchor points function not found")
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD toggle function not found")
         end
     end)
     table.insert(self.optionsElements, testOSDBtn)

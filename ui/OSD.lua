@@ -1027,7 +1027,7 @@ function TWRA:CreateWarnings(footerContainer)
             -- Visual feedback
             warningBg:SetTexture(0.7, 0.1, 0.1, 0.7)
             self:ScheduleTimer(function()
-                if clickArea:IsMouseOver() then
+                if MouseIsOver(clickArea) then
                     warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Hover color
                 else
                     warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Original color
@@ -1634,6 +1634,35 @@ function TWRA:SetOSDAnchor(anchor)
     
     self:Debug("osd", string.format("OSD anchor changed to %s at offsets x=%.2f, y=%.2f", 
                                     newPoint, newXOffset, newYOffset))
+    
+    return true
+end
+
+-- Reset the OSD position to default center values
+function TWRA:ResetOSDPosition()
+    -- Default position values
+    local defaultPoint = "CENTER"
+    local defaultXOffset = 0
+    local defaultYOffset = 100
+    
+    -- Update OSD settings
+    self.OSD.point = defaultPoint
+    self.OSD.xOffset = defaultXOffset
+    self.OSD.yOffset = defaultYOffset
+    
+    -- Save to saved variables
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.osd then
+        TWRA_SavedVariables.options.osd.point = defaultPoint
+        TWRA_SavedVariables.options.osd.xOffset = defaultXOffset
+        TWRA_SavedVariables.options.osd.yOffset = defaultYOffset
+    end
+    
+    -- Apply new position if frame exists
+    if self.OSDFrame then
+        self.OSDFrame:ClearAllPoints()
+        self.OSDFrame:SetPoint(defaultPoint, UIParent, defaultPoint, defaultXOffset, defaultYOffset)
+        self:Debug("osd", "OSD position reset to default center position")
+    end
     
     return true
 end

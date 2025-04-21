@@ -338,7 +338,7 @@ function TWRA:CreateMinimapButton()
             -- Add highly visible debug message to verify event registration
             TWRA:Debug("ui", "MINIMAP SECTION CHANGE DETECTED: Section " .. currentIndex .. 
                       " (" .. sectionName .. ") of " .. totalSections)
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00TWRA:|r Minimap detected section change to: " .. sectionName)
+            -- DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00TWRA:|r Minimap detected section change to: " .. sectionName)
             
             -- Always update the minimap dropdown if it's showing
             TWRA.minimapButton.dropdown:UpdateVisibleButtons()
