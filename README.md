@@ -53,7 +53,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 5. Open a Pull Request
 
 ## Acknowledgments
-Created by Azzco of Nordanaar Turtle WoW for <Fika>.
+Created by Azzco of Nordanaar Turtle WoW for \<Fika\>.
 
 - Thanks to the authors of LibCompress: jjsheets and Galmok of European Stormrage (Horde)
 - LibStub authors: Kaelten, Cladhaire, ckknight, Mikk, Ammo, Nevcairiel, joshborke
