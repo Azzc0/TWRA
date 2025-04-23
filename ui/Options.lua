@@ -38,6 +38,7 @@ function TWRA:InitOptions()
         duration = 2,
         locked = false,
         enabled = true,
+        showNotes = true,
         showOnNavigation = true
     }
     
@@ -344,13 +345,29 @@ function TWRA:CreateOptionsInMainFrame()
     osdTitle:SetText("On-Screen Display")
     table.insert(self.optionsElements, osdTitle)
     
-    -- OSD Enable checkbox
-    local enableOSD, enableOSDText = self:CreateCheckbox(middleColumn, "Enable OSD", "TOPLEFT", osdTitle, "BOTTOMLEFT", 0, -10)
-    table.insert(self.optionsElements, enableOSD)
-    table.insert(self.optionsElements, enableOSDText)
+    -- Show Notes in OSD checkbox (replacing Enable OSD)
+    local showNotesInOSD, showNotesInOSDText = self:CreateCheckbox(middleColumn, "Show Notes in OSD", "TOPLEFT", osdTitle, "BOTTOMLEFT", 0, -10)
+    table.insert(self.optionsElements, showNotesInOSD)
+    table.insert(self.optionsElements, showNotesInOSDText)
+    
+    -- Add info icon for show notes option
+    local notesIcon, notesIconFrame = self.UI:CreateIconWithTooltip(
+        middleColumn,
+        "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",
+        "Show Notes in OSD",
+        "When enabled, notes will be displayed in the OSD alongside warnings. Notes are shown with blue background.",
+        showNotesInOSDText,
+        5, 22, 22
+    )
+    
+    notesIcon:ClearAllPoints()
+    notesIcon:SetPoint("LEFT", showNotesInOSDText, "RIGHT", 5, 0)
+    
+    table.insert(self.optionsElements, notesIcon)
+    table.insert(self.optionsElements, notesIconFrame)
     
     -- OSD on Navigation checkbox
-    local showOnNavOSD, showOnNavOSDText = self:CreateCheckbox(middleColumn, "Show on Navigation", "TOPLEFT", enableOSD, "BOTTOMLEFT", 0, -5)
+    local showOnNavOSD, showOnNavOSDText = self:CreateCheckbox(middleColumn, "Show on Navigation", "TOPLEFT", showNotesInOSD, "BOTTOMLEFT", 0, -5)
     table.insert(self.optionsElements, showOnNavOSD)
     table.insert(self.optionsElements, showOnNavOSDText)
     
@@ -545,14 +562,14 @@ function TWRA:CreateOptionsInMainFrame()
         channelInput:SetTextColor(1, 1, 1)
     end
     
-    -- OSD Enable checkbox
-    local osdEnabled = true
-    if options.osd and options.osd.enabled ~= nil then
-        osdEnabled = options.osd.enabled
-    elseif self.OSD and self.OSD.enabled ~= nil then
-        osdEnabled = self.OSD.enabled
+    -- Show Notes in OSD checkbox
+    local showNotesEnabled = true
+    if options.osd and options.osd.showNotes ~= nil then
+        showNotesEnabled = options.osd.showNotes
+    elseif self.OSD and self.OSD.showNotes ~= nil then
+        showNotesEnabled = self.OSD.showNotes
     end
-    enableOSD:SetChecked(osdEnabled)
+    showNotesInOSD:SetChecked(showNotesEnabled)
     
     -- OSD Navigation checkbox
     local osdNavEnabled = true
@@ -721,8 +738,8 @@ function TWRA:CreateOptionsInMainFrame()
         this:ClearFocus()
     end)
     
-    -- OSD Enable checkbox behavior
-    enableOSD:SetScript("OnClick", function()
+    -- OSD Notes in OSD checkbox behavior
+    showNotesInOSD:SetScript("OnClick", function()
         local isChecked = (this:GetChecked() == 1)
         
         -- Ensure OSD settings structure exists
@@ -731,19 +748,24 @@ function TWRA:CreateOptionsInMainFrame()
         end
         
         -- Save setting
-        TWRA_SavedVariables.options.osd.enabled = isChecked
+        TWRA_SavedVariables.options.osd.showNotes = isChecked
         
         -- Update runtime value
         if self.OSD then
-            self.OSD.enabled = isChecked
+            self.OSD.showNotes = isChecked
         end
         
         -- Debug output
-        self:Debug("osd", "Option 'Enable OSD' set to " .. (isChecked and "ON" or "OFF"))
+        self:Debug("osd", "Option 'Show Notes in OSD' set to " .. (isChecked and "ON" or "OFF"))
         
-        -- Call the toggle function if it exists
-        if self.ToggleOSDEnabled then
-            self:ToggleOSDEnabled(isChecked)
+        -- Update OSD if visible
+        if self.OSD and self.OSD.isVisible and self.UpdateOSDContent then
+            if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                local currentIndex = self.navigation.currentIndex
+                local totalSections = table.getn(self.navigation.handlers)
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+            end
         end
     end)
     
@@ -1033,6 +1055,7 @@ function TWRA:InitializeSavedOptions()
         duration = 2,
         locked = false,
         enabled = true,
+        showNotes = true,
         showOnNavigation = true
     }
     

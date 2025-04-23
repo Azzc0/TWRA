@@ -24,6 +24,7 @@ function TWRA:InitOSD()
         self.OSD.showOnNavigation = (savedOSD.showOnNavigation ~= false) -- Default to true if nil
         self.OSD.duration = savedOSD.duration or self.OSD.duration
         self.OSD.displayMode = savedOSD.displayMode or self.OSD.displayMode
+        self.OSD.showNotes = savedOSD.showNotes ~= false -- Default to true if nil
     end
 
     -- Register for events
@@ -282,7 +283,7 @@ function TWRA:GetOSDFrame()
     footerContainer:SetHeight(25) -- Will be adjusted based on content
     frame.footerContainer = footerContainer
 
-    -- Generate warnings
+    -- Generate warnings and notes
     self:CreateWarnings(footerContainer)
 
     -- Create progress bar container (positioned directly under header for progress mode)
@@ -900,9 +901,9 @@ function TWRA:CreateDefaultContent(contentContainer)
     return true
 end
 
--- Create warnings using real data from the current section
+-- Create warnings and notes using real data from the current section
 function TWRA:CreateWarnings(footerContainer)
-    self:Debug("osd", "Creating warnings from real data")
+    self:Debug("osd", "Creating warnings and notes from real data")
     
     -- Clear existing warnings first
     footerContainer:SetHeight(0)
@@ -947,17 +948,22 @@ function TWRA:CreateWarnings(footerContainer)
     end
     
     -- Get warnings
-    local warnings = metadata["Warning"] or {}
+    local warnings = metadata and metadata["Warning"] or {}
     
-    -- If no warnings, create default warning
-    if table.getn(warnings) == 0 then
-        self:Debug("osd", "No warnings found in section metadata, creating default warning")
+    -- Get notes (adding this part)
+    local notes = metadata and metadata["Note"] or {}
+    
+    -- Check if notes should be displayed in OSD
+    local showNotesInOSD = true
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and 
+       TWRA_SavedVariables.options.osd and TWRA_SavedVariables.options.osd.showNotes ~= nil then
+        showNotesInOSD = TWRA_SavedVariables.options.osd.showNotes
     end
     
-    -- Height of each warning row and spacing
-    local warningRowHeight = 20
-    local rowSpacing = 1 -- 1px spacing between warning rows
-    local totalWarningHeight = 0
+    -- Height of each row and spacing
+    local rowHeight = 20
+    local rowSpacing = 1 -- 1px spacing between rows
+    local totalHeight = 0
     
     -- Create a test font string to calculate text widths accurately
     local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -979,7 +985,7 @@ function TWRA:CreateWarnings(footerContainer)
         warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Red background
         warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
         warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
-        warningBg:SetHeight(warningRowHeight)
+        warningBg:SetHeight(rowHeight)
         
         -- Create warning icon
         local warningIcon = footerContainer:CreateTexture(nil, "OVERLAY")
@@ -1004,7 +1010,7 @@ function TWRA:CreateWarnings(footerContainer)
         local warnText = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         warnText:SetPoint("LEFT", warningIcon, "RIGHT", iconTextGap, 0)
         warnText:SetPoint("RIGHT", warningBg, "RIGHT", -rightPadding, 0)
-        warnText:SetHeight(warningRowHeight)
+        warnText:SetHeight(rowHeight)
         warnText:SetJustifyH("LEFT")
         
         -- Measure text and truncate if needed
@@ -1079,25 +1085,127 @@ function TWRA:CreateWarnings(footerContainer)
             end, 0.2)
         end)
         
-        return warningRowHeight + rowSpacing
+        return rowHeight + rowSpacing
     end
     
-    -- Create all warning rows
+    -- Helper function to create a single note row
+    local function createNoteRow(noteText, yOffset)
+        -- Create background
+        local noteBg = footerContainer:CreateTexture(nil, "BACKGROUND")
+        noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Blue background (similar to Frame.lua)
+        noteBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
+        noteBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
+        noteBg:SetHeight(rowHeight)
+        
+        -- Create note icon (question mark like in Frame.lua)
+        local noteIcon = footerContainer:CreateTexture(nil, "OVERLAY")
+        local iconInfo = {"Interface\\GossipFrame\\ActiveQuestIcon", 0, 1, 0, 1}
+        noteIcon:SetTexture(iconInfo[1])
+        noteIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+        noteIcon:SetWidth(16)
+        noteIcon:SetHeight(16)
+        noteIcon:SetPoint("LEFT", noteBg, "LEFT", leftPadding, 0)
+        
+        -- Process note text for item links
+        local processedText = noteText
+        if self.Items and self.Items.EnhancedProcessText then
+            processedText = self.Items:EnhancedProcessText(noteText)
+        elseif self.Items and self.Items.ProcessText then
+            processedText = self.Items:ProcessText(noteText)
+        end
+        
+        -- Create note text
+        local noteTextElement = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        noteTextElement:SetPoint("LEFT", noteIcon, "RIGHT", iconTextGap, 0)
+        noteTextElement:SetPoint("RIGHT", noteBg, "RIGHT", -rightPadding, 0)
+        noteTextElement:SetHeight(rowHeight)
+        noteTextElement:SetJustifyH("LEFT")
+        
+        -- Measure text and truncate if needed
+        testString:SetText(processedText)
+        local fullTextWidth = testString:GetStringWidth()
+        
+        -- Truncate text if it's too long
+        if fullTextWidth > availableWidth then
+            local avgCharWidth = fullTextWidth / string.len(processedText)
+            local fitChars = math.floor(availableWidth / avgCharWidth) - 3
+            fitChars = math.min(fitChars, string.len(processedText))
+            
+            local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
+            noteTextElement:SetText(truncatedText)
+        else
+            noteTextElement:SetText(processedText)
+        end
+        
+        -- Set text color
+        noteTextElement:SetTextColor(0.85, 0.85, 1) -- Light blue for notes (same as Frame.lua)
+        
+        -- Make the row clickable to announce to raid chat (not raid warning)
+        local clickArea = CreateFrame("Button", nil, footerContainer)
+        clickArea:SetAllPoints(noteBg)
+        clickArea:SetScript("OnEnter", function()
+            noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Highlight on hover
+            GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Click to announce to raid chat")
+            GameTooltip:Show()
+        end)
+        
+        clickArea:SetScript("OnLeave", function()
+            noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Original color
+            GameTooltip:Hide()
+        end)
+        
+        clickArea:SetScript("OnClick", function()
+            -- Process the note text with item links before announcing
+            local announcementText = noteText
+            if self.Items and self.Items.EnhancedProcessText then
+                announcementText = self.Items:EnhancedProcessText(noteText)
+            elseif self.Items and self.Items.ProcessText then
+                announcementText = self.Items:ProcessText(noteText)
+            end
+            
+            -- For notes, always use raid announcement (no raid warning)
+            SendChatMessage(announcementText, "RAID")
+            
+            -- Visual feedback
+            noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Bright blue flash
+            self:ScheduleTimer(function()
+                if MouseIsOver(clickArea) then
+                    noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Hover color
+                else
+                    noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Original color
+                end
+            end, 0.2)
+        end)
+        
+        return rowHeight + rowSpacing
+    end
+    
+    -- Create all warning rows first
     for _, warningText in ipairs(warnings) do
-        local rowHeight = createWarningRow(warningText, totalWarningHeight)
-        totalWarningHeight = totalWarningHeight + rowHeight
+        local rowHeight = createWarningRow(warningText, totalHeight)
+        totalHeight = totalHeight + rowHeight
     end
     
-    -- Set footer height based on all warnings (subtract the last spacing)
-    if totalWarningHeight > 0 then
-        totalWarningHeight = totalWarningHeight - rowSpacing -- Remove the last spacing
+    -- Then create all note rows if enabled
+    if showNotesInOSD then
+        for _, noteText in ipairs(notes) do
+            local rowHeight = createNoteRow(noteText, totalHeight)
+            totalHeight = totalHeight + rowHeight
+        end
     end
-    footerContainer:SetHeight(totalWarningHeight)
+    
+    -- Set footer height based on all rows (subtract the last spacing)
+    if totalHeight > 0 then
+        totalHeight = totalHeight - rowSpacing -- Remove the last spacing
+    end
+    footerContainer:SetHeight(totalHeight)
     
     -- Clean up the test string
     testString:Hide()
     
-    self:Debug("osd", "Created warnings container with " .. table.getn(warnings) .. " warnings")
+    self:Debug("osd", "Created footer container with " .. table.getn(warnings) .. " warnings and " .. 
+               (showNotesInOSD and table.getn(notes) or 0) .. " notes")
     return true
 end
 
@@ -1137,9 +1245,9 @@ function TWRA:UpdateOSDContent(sectionName, currentIndex, totalSections)
         self:CreateContent(frame.contentContainer)
     end
     
-    -- Update warnings with real data
+    -- Update warnings and notes with real data
     if frame.footerContainer then
-        -- Generate new warnings
+        -- Generate new warnings and notes
         self:CreateWarnings(frame.footerContainer)
     end
     
