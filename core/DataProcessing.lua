@@ -302,10 +302,8 @@ function TWRA:FindTankRoleColumns(section)
         return tankColumns
     end
     
-    -- Define known tank role keywords
-    local tankKeywords = {
-        "tank", "offtank", "off-tank", "main tank", "mt", "ot"
-    }
+    -- The standardized tank role name
+    local tankRole = "Tank"
     
     -- Check each header column
     for colIdx, headerText in ipairs(section["Section Header"]) do
@@ -314,13 +312,10 @@ function TWRA:FindTankRoleColumns(section)
             -- Convert to lowercase for case-insensitive matching
             local lcHeader = string.lower(headerText)
             
-            -- Check against tank keywords
-            for _, keyword in ipairs(tankKeywords) do
-                if string.find(lcHeader, keyword) then
-                    table.insert(tankColumns, colIdx)
-                    self:Debug("data", "Found tank column: " .. colIdx .. " (" .. headerText .. ")", false, true)
-                    break
-                end
+            -- Check if this header has a direct mapping to "Tank" in ROLE_MAPPINGS
+            if self.ROLE_MAPPINGS and self.ROLE_MAPPINGS[lcHeader] == tankRole then
+                table.insert(tankColumns, colIdx)
+                self:Debug("data", "Found tank column: " .. colIdx .. " (" .. headerText .. ")", false, true)
             end
         end
     end

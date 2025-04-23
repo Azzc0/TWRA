@@ -249,6 +249,12 @@ TWRA.ROLE_MAPPINGS = {
     ["kiting"] = "Kite",
     ["kiter"] = "Kite",
     
+    ["tranq"] = "Tranq Shot",
+    ["tranq shot"] = "Tranq Shot",
+    ["t. shot"] = "Tranq Shot",
+    
+    ["tranquility"] = "Tranquility",
+    
     ["misc"] = "Misc"
     
 }
@@ -279,6 +285,8 @@ TWRA.ROLE_ICONS = {
     ["Kite"] = "Interface\\Icons\\Ability_Rogue_Sprint",
     ["Bomb"] = "Interface\\Icons\\spell_fire_selfdestruct",
     ["Interrupt"] = "Interface\\Icons\\Ability_Kick",
+    ["Tranq Shot"] = "Interface\\Icons\\Spell_Nature_Drowsy",
+    ["Tranquility"] = "Interface\\Icons\\Spell_Nature_Tranquility",
     ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01"
 }
 
@@ -357,21 +365,28 @@ TWRA.ITEM_DATABASE = {
    
     -- Consumables
     ["Major Healing Potion"] = {id = 13446, quality = "Common"},
-    ["Greater Fire Protection Potion"] = {id = 13457, quality = "Uncommon"},
-    ["Greater Nature Protection Potion"] = {id = 13458, quality = "Uncommon"},
-    ["Greater Shadow Protection Potion"] = {id = 13459, quality = "Uncommon"},
-    ["Greater Frost Protection Potion"] = {id = 13456, quality = "Uncommon"},
-    ["Greater Arcane Protection Potion"] = {id = 13461, quality = "Uncommon"},
-    ["Flask of the Titans"] = {id = 13510, quality = "Uncommon"},
+    ["Greater Fire Protection Potion"] = {id = 13457, quality = "Common"},
+    ["Fire Protection Potion"] = {id = 6049, quality = "Common"},
+    ["Greater Nature Protection Potion"] = {id = 13458, quality = "Common"},
+    ["Nature Protection Potion"] = {id = 6052, quality = "Common"},
+    ["Greater Shadow Protection Potion"] = {id = 13459, quality = "Common"},
+    ["Shadow Protection Potion"] = {id = 6048, quality = "Common"},
+    ["Greater Frost Protection Potion"] = {id = 13456, quality = "Common"},
+    ["Frost Protection Potion"] = {id = 6050, quality = "Common"},
+    ["Greater Arcane Protection Potion"] = {id = 13461, quality = "Common"},
+    ["Greater Holy Protection Potion"] = {id = 13460, quality = "Common"},
+    ["Holy Protection Potion"] = {id = 6051, quality = "Common"},
+    ["Flask of the Titans"] = {id = 13510, quality = "Common"},
     ["Major Mana Potion"] = {id = 13444, quality = "Common"},
     ["Elixir of Poison Resistance"] = {id = 3386, quality = "Common"},
     ["Free Action Potion"] = {id = 5634, quality = "Common"},
-    ["Limited Invulnerability Potion"] = {id = 3387, quality = "Uncommon"},
-    ["Living Action Potion"] = {id = 20008, quality = "Uncommon"},
-    ["Restorative Potion"] = {id = 9030, quality = "Uncommon"},
-    ["Elixir of the Mongoose"] = {id = 13452, quality = "Uncommon"},
-    ["Elixir of Brute Force"] = {id = 13453, quality = "Uncommon"},
-    ["Greater Stoneshield Potion"] = {id = 13455, quality = "Uncommon"},
-    ["Flask of Supreme Power"] = {id = 13512, quality = "Uncommon"},
-    ["Flask of Chromatic Resistance"] = {id = 13513, quality = "Uncommon"},
+    ["Limited Invulnerability Potion"] = {id = 3387, quality = "Common"},
+    ["Living Action Potion"] = {id = 20008, quality = "Common"},
+    ["Restorative Potion"] = {id = 9030, quality = "Common"},
+    ["Elixir of the Mongoose"] = {id = 13452, quality = "Common"},
+    ["Elixir of Brute Force"] = {id = 13453, quality = "Common"},
+    ["Greater Stoneshield Potion"] = {id = 13455, quality = "Common"},
+    ["Flask of Supreme Power"] = {id = 13512, quality = "Common"},
+    ["Flask of Chromatic Resistance"] = {id = 13522, quality = "Common"},
+    ["Nordanaar Herbal Tea"] = {id = 61675, quality = "Uncommon"},
 }

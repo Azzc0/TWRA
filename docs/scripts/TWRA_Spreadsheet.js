@@ -22,7 +22,7 @@ var ABBREVIATION_MAPPINGS = {
   
   // Class and group abbreviations
   "Druids": "D",
-  "Hunters": "H",
+  "Hunters": "Hu",
   "Mages": "M",
   "Paladins": "Pa",
   "Priests": "Pr",

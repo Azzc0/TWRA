@@ -135,6 +135,9 @@ function TWRA:CreateMainFrame()
     self.mainFrame:SetHeight(300)
     self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     
+    -- Store default width for proper resizing
+    self.defaultFrameWidth = 800
+    
     -- Create highlight pool for row highlighting
     self.highlightPool = {}
     local POOL_SIZE = 15  -- Maximum number of highlighted rows we expect
@@ -693,7 +696,7 @@ function TWRA:NavigateToSection(index, source)
     return true
 end
 
--- Replace FilterAndDisplayHandler to use event system and respect view state
+-- Replace FilterAndDisplayHandler to use dynamic column widths
 function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Debug entry
     self:Debug("ui", "FilterAndDisplayHandler called for section: " .. (currentHandler or "nil"))
@@ -758,6 +761,34 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     
     -- Clear existing content
     self:ClearRows()
+    
+    -- Calculate dynamic column widths based on actual content
+    self.dynamicColumnWidths = self:CalculateColumnWidths(filteredData)
+    
+    -- Calculate total required width based on dynamic column widths
+    local totalRequiredWidth = 0
+    for _, width in pairs(self.dynamicColumnWidths) do
+        totalRequiredWidth = totalRequiredWidth + width
+    end
+    
+    -- Standard frame width and padding
+    local standardFrameWidth = self.defaultFrameWidth or 800
+    local framePadding = 40  -- 20px on each side
+    
+    -- Check if we need to expand the frame or can shrink it
+    if self.mainFrame then
+        local currentWidth = self.mainFrame:GetWidth()
+        
+        if totalRequiredWidth + framePadding > standardFrameWidth then
+            -- Need to expand the frame
+            self.mainFrame:SetWidth(totalRequiredWidth + framePadding)
+            self:Debug("ui", "Expanded frame width to " .. (totalRequiredWidth + framePadding) .. " to fit dynamic columns")
+        elseif currentWidth > standardFrameWidth and totalRequiredWidth + framePadding <= standardFrameWidth then
+            -- Frame is expanded but we no longer need it to be - shrink it back
+            self.mainFrame:SetWidth(standardFrameWidth)
+            self:Debug("ui", "Shrinking frame width back to standard size: " .. standardFrameWidth)
+        end
+    end
     
     -- Create new rows
     self:Debug("ui", "Creating " .. table.getn(filteredData) .. " rows from filtered data")
@@ -1191,47 +1222,25 @@ function TWRA:CreateRow(rowNum, data)
     
     local numColumns = self.headerColumns or table.getn(data)
     
-    -- Fixed column widths based on content requirements
-    local iconColumnWidth = 15     -- Fixed width for icon column
-    local targetColumnWidth = 120  -- Wider width for target names like "Grand Widow Fairlina"
-    local playerColumnWidth = 80  -- Width for player names (12 chars + icon)
-    
-    -- Calculate total required width for all columns
-    local totalRequiredWidth = iconColumnWidth + targetColumnWidth + (playerColumnWidth * (numColumns - 2))
-    
-    -- Standard frame width and padding
-    local standardFrameWidth = 800
-    local framePadding = 40  -- 20px on each side
-    
-    -- Check if we need to expand the frame to fit all columns
-    local frameWidth = standardFrameWidth
-    if totalRequiredWidth + framePadding > standardFrameWidth then
-        -- Expand the frame width to fit all columns
-        frameWidth = totalRequiredWidth + framePadding
-        
-        -- Update the main frame width if it exists
-        if self.mainFrame then
-            self.mainFrame:SetWidth(frameWidth)
-            self:Debug("ui", "Expanded frame width to " .. frameWidth .. " to fit " .. numColumns .. " columns")
-        end
-    end
-    
-    -- Calculate available width for content inside frame
-    local totalAvailableWidth = frameWidth - framePadding
-    
+    -- Use dynamic column widths if available, otherwise use defaults
     local xOffset = 20 -- Starting offset
     
     -- Process all columns
     for i = 1, numColumns do
         local cellWidth
         
-        -- Determine column width based on column type
-        if i == 1 then
-            cellWidth = iconColumnWidth      -- Icon column
-        elseif i == 2 then
-            cellWidth = targetColumnWidth    -- Target column
+        -- Determine column width based on dynamic widths or fallback to defaults
+        if self.dynamicColumnWidths and self.dynamicColumnWidths[i] then
+            cellWidth = self.dynamicColumnWidths[i]
         else
-            cellWidth = playerColumnWidth    -- Player/role columns
+            -- Use fixed defaults if no dynamic widths available
+            if i == 1 then
+                cellWidth = 15     -- Icon column
+            elseif i == 2 then
+                cellWidth = 10    -- Target column
+            else
+                cellWidth = 80    -- Player/role columns
+            end
         end
         
         local cellData = data[i] or ""
@@ -1598,4 +1607,82 @@ function TWRA:CreateHeaderCell(cell, cellData, cellWidth, iconPadding)
     end
     
     return cell
+end
+
+-- Calculate optimal column widths based on content
+function TWRA:CalculateColumnWidths(data)
+    -- Define default minimum widths - these are the widths columns should return to when not expanded
+    local defaultColumnWidths = {
+        [1] = 15,   -- Icon column
+        [2] = 80,  -- Target column
+    }
+    
+    -- Set default width for all player columns (columns 3+)
+    local defaultPlayerColumnWidth = 50
+    
+    -- Determine the actual maximum number of columns in the data
+    local maxColumns = 0
+    for _, row in ipairs(data) do
+        maxColumns = math.max(maxColumns, table.getn(row))
+    end
+    
+    self:Debug("ui", "CalculateColumnWidths: Found " .. maxColumns .. " actual columns in the data")
+    
+    -- Start with default widths for all columns
+    local columnWidths = {}
+    for i = 1, maxColumns do -- Only process columns we actually have
+        if i == 1 then
+            columnWidths[i] = defaultColumnWidths[1]
+        elseif i == 2 then
+            columnWidths[i] = defaultColumnWidths[2]
+        else
+            columnWidths[i] = defaultPlayerColumnWidth
+        end
+    end
+    
+    -- Store these default widths globally for reference
+    if not self.defaultColumnWidths then
+        self.defaultColumnWidths = {}
+        for i = 1, maxColumns do
+            self.defaultColumnWidths[i] = columnWidths[i]
+        end
+    end
+    
+    -- Temporary font strings to measure text widths
+    local textMeasure = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local headerMeasure = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    
+    -- Scan all data to find widest content in each column
+    for rowIndex, row in ipairs(data) do
+        local isHeader = (rowIndex == 1)
+        local measure = isHeader and headerMeasure or textMeasure
+        
+        for colIndex, cellData in ipairs(row) do
+            -- Skip icon column width calculation
+            if colIndex > 1 then
+                if cellData and cellData ~= "" then
+                    -- Set the text to measure its width
+                    measure:SetText(cellData)
+                    local textWidth = measure:GetStringWidth()
+                    
+                    -- Add padding:
+                    -- - For column 2 (target): minimal padding
+                    -- - For player columns: space for class icon (18px) + padding
+                    local padding = 24
+                    
+                    -- Update column width if this content is wider than default
+                    if textWidth + padding > columnWidths[colIndex] then
+                        columnWidths[colIndex] = textWidth + padding
+                        self:Debug("ui", "Column " .. colIndex .. " width updated to " .. columnWidths[colIndex] .. " for: " .. cellData)
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Clean up temporary font strings
+    textMeasure:Hide()
+    headerMeasure:Hide()
+    
+    return columnWidths
 end

@@ -499,19 +499,32 @@ function TWRA:AnnounceAssignments()
         return
     end
     
-    -- Create column role mapping from header
+    -- Create column role mapping from header and track the original order of roles
     local columnRoles = {}
+    local roleOrder = {}
+    local seenRoles = {}
+    
     -- In new format: Column 1 = "Icon", Column 2 = "Target", Column 3+ = roles
     for i = 3, table.getn(headerRow) do
-        columnRoles[i] = headerRow[i]
-        self:Debug("ui", "Column " .. i .. " role: " .. (headerRow[i] or "nil"))
+        local roleName = headerRow[i]
+        columnRoles[i] = roleName
+        
+        -- Track the order of unique roles as they first appear
+        if roleName and not seenRoles[roleName] then
+            seenRoles[roleName] = true
+            table.insert(roleOrder, roleName)
+        end
+        
+        self:Debug("ui", "Column " .. i .. " role: " .. (roleName or "nil"))
     end
+    
+    self:Debug("ui", "Role order: " .. table.concat(roleOrder, ", "))
     
     -- Process normal assignment rows
     if sectionData["Section Rows"] then
         for _, rowData in ipairs(sectionData["Section Rows"]) do
             -- Skip special rows
-            if rowData[2] ~= "Note" and rowData[2] ~= "Warning" and rowData[2] ~= "GUID" then
+            if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
                 local icon = rowData[1] -- Icon is now column 1
                 local target = rowData[2] or "" -- Target is now column 2
                 local messageText = ""
@@ -523,7 +536,7 @@ function TWRA:AnnounceAssignments()
                     messageText = target
                 end
                 
-                -- Group roles by type
+                -- Group roles by type, preserving the order from the header
                 local roleGroups = {}
                 
                 -- Process each column for roles (start from column 3)
@@ -543,10 +556,11 @@ function TWRA:AnnounceAssignments()
                     end
                 end
                 
-                -- Add roles grouped by type
+                -- Add roles grouped by type, following the original order in the header
                 local roleAdded = false
-                for roleName, members in pairs(roleGroups) do
-                    if table.getn(members) > 0 then
+                for _, roleName in ipairs(roleOrder) do
+                    local members = roleGroups[roleName]
+                    if members and table.getn(members) > 0 then
                         -- Make Tank/Healer plural if there are multiple members
                         local displayRoleName = roleName
                         if (roleName == "Tank" or roleName == "Healer") and table.getn(members) > 1 then

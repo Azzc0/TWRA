@@ -753,35 +753,22 @@ function TWRA:CreateContent(contentContainer)
         return self:CreateDefaultContent(contentContainer)
     end
     
-    -- Get player status for all players (in raid and online status)
+    -- Use the existing TWRA.PLAYERS table for player info instead of gathering it separately
     local playerData = {}
     local playerStatus = {}
     
-    -- Loop through raid members to get class and status info
-    for i = 1, GetNumRaidMembers() do
-        local name, _, _, _, class, _, _, online = GetRaidRosterInfo(i)
-        if name then
-            playerData[name] = class
-            playerStatus[name] = {inRaid = true, online = online}
-        end
-    end
-    
-    -- Loop through party members if not in a raid
-    if GetNumRaidMembers() == 0 then
-        for i = 1, GetNumPartyMembers() do
-            local name = UnitName("party"..i)
-            local _, class = UnitClass("party"..i)
-            if name then
-                playerData[name] = class
-                playerStatus[name] = {inRaid = true, online = UnitIsConnected("party"..i)}
+    -- Use player data exclusively from the TWRA.PLAYERS table which is maintained elsewhere
+    if self.PLAYERS then
+        for name, data in pairs(self.PLAYERS) do
+            if data and type(data) == "table" and data[1] and data[2] ~= nil then
+                playerData[name] = data[1]  -- Class
+                playerStatus[name] = {inRaid = true, online = data[2]}  -- Online status
             end
         end
-        
-        -- Add player's own info
-        local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        playerData[playerName] = playerClass
-        playerStatus[playerName] = {inRaid = true, online = true}
+    else
+        -- If PLAYERS table is missing, this indicates a more serious problem with the addon
+        self:Debug("error", "PLAYERS table not available - this indicates a serious initialization problem")
+        -- We won't try to gather data directly as fallback - if PLAYERS is failing, we have bigger issues
     end
     
     local yOffset = 0
