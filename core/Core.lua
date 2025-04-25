@@ -973,9 +973,36 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
             self:Debug("data", "Removed obsolete assignments data structure")
         end
         
-        -- IMPORTANT: Generate compressed version for future sync
-        if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
-            self:Debug("data", "Generating compressed data for future sync operations")
+        -- IMPORTANT: Always use segmented compression first
+        if self.StoreSegmentedData and self.InitializeCompression then
+            self:Debug("data", "Generating segmented compressed data for future sync operations")
+            -- Initialize compression if needed
+            if not self.LibCompress then
+                self:InitializeCompression()
+            end
+            
+            -- Store segmented data for all sections
+            if self:StoreSegmentedData() then
+                self:Debug("data", "Generated and stored segmented compressed data successfully")
+            else
+                self:Debug("error", "Failed to generate segmented compressed data")
+                
+                -- Only fall back to legacy compression if segmented fails
+                if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
+                    self:Debug("data", "Falling back to legacy compression after segmented compression failed")
+                    local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
+                    local compressedData = self:CompressAssignmentsData(syncReadyData)
+                    if compressedData then
+                        self:StoreCompressedData(compressedData)
+                        self:Debug("data", "Legacy compressed data generated and stored")
+                    else
+                        self:Debug("error", "Failed to generate legacy compressed version of data")
+                    end
+                end
+            end
+        -- Fall back to legacy compression if segmented not available
+        elseif self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
+            self:Debug("data", "Segmented compression not available, using legacy compression")
             local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
             local compressedData = self:CompressAssignmentsData(syncReadyData)
             if compressedData then
@@ -1040,6 +1067,46 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
         TWRA_SavedVariables.assignments = nil
         self:Debug("data", "Removed obsolete assignments data structure")
+    end
+    
+    -- IMPROVED: Try to generate segmented compressed data even for legacy format
+    if self.StoreSegmentedData and self.InitializeCompression then
+        self:Debug("data", "Attempting to generate segmented compressed data for legacy format")
+        -- Initialize compression if needed
+        if not self.LibCompress then
+            self:InitializeCompression()
+        end
+        
+        -- Store segmented data for all sections
+        if self:StoreSegmentedData() then
+            self:Debug("data", "Generated and stored segmented compressed data for legacy format")
+        else
+            self:Debug("error", "Failed to generate segmented compressed data for legacy format")
+            
+            -- Fall back to legacy compression if segmented fails
+            if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
+                self:Debug("data", "Falling back to legacy compression for legacy format")
+                local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
+                local compressedData = self:CompressAssignmentsData(syncReadyData)
+                if compressedData then
+                    self:StoreCompressedData(compressedData)
+                    self:Debug("data", "Legacy compressed data generated and stored")
+                else
+                    self:Debug("error", "Failed to generate legacy compressed version of data")
+                end
+            end
+        end
+    -- Fall back to legacy compression if segmented not available
+    elseif self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
+        self:Debug("data", "Segmented compression not available for legacy format, using legacy compression")
+        local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
+        local compressedData = self:CompressAssignmentsData(syncReadyData)
+        if compressedData then
+            self:StoreCompressedData(compressedData)
+            self:Debug("data", "Legacy compressed data generated and stored")
+        else
+            self:Debug("error", "Failed to generate legacy compressed version of data")
+        end
     end
     
     self:Debug("nav", "SaveAssignments - Saved with section: " .. 

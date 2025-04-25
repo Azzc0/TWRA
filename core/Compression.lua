@@ -24,6 +24,13 @@ function TWRA:InitializeCompression()
         TWRA_Assignments.compressed = nil
     end
     
+    -- Initialize structure and data tables for segmented sync
+    if TWRA_CompressedAssignments.data and not TWRA_CompressedAssignments.structure then
+        -- Migration from older format to segmented format
+        self:Debug("compress", "Migrating from old compressed format to segmented format")
+        -- We'll handle this during next import or section compression
+    end
+    
     self:Debug("system", "Compression system initialized")
     return true
 end
@@ -159,11 +166,9 @@ function TWRA:PrepareDataForSync()
     
     -- Create a copy of the assignments data without client-specific information
     local syncData = {
-        -- currentSectionName = TWRA_Assignments.currentSectionName,
         isExample = TWRA_Assignments.isExample,
         version = TWRA_Assignments.version,
         timestamp = TWRA_Assignments.timestamp,
-        -- currentSection = TWRA_Assignments.currentSection,
         data = {}
     }
     
@@ -188,7 +193,325 @@ function TWRA:PrepareDataForSync()
     return syncData
 end
 
--- Compress the assignment data for efficient sync
+-- Compress the structure data (section names and indices)
+function TWRA:CompressStructureData()
+    -- Initialize compression system if needed
+    if not self.LibCompress then
+        if not self:InitializeCompression() then
+            return nil, "Failed to initialize compression system"
+        end
+    end
+    
+    -- Extract structure information from TWRA_Assignments
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("error", "No assignments data to extract structure from")
+        return nil, "No assignment data available"
+    end
+    
+    -- Create structure data (minimal with just section names and indices)
+    local structure = {}
+    for i, sectionData in ipairs(TWRA_Assignments.data) do
+        if type(sectionData) == "table" then
+            structure[i] = sectionData["Section Name"] or ("Section " .. i)
+        end
+    end
+    
+    -- Add metadata
+    structure.timestamp = TWRA_Assignments.timestamp or time()
+    structure.version = TWRA_Assignments.version or 2
+    
+    -- Compress structure data
+    local dataString = self.LibCompress:TableToString(structure)
+    if not dataString then
+        self:Debug("error", "Failed to convert structure to string")
+        return nil, "Failed to convert structure to string"
+    end
+    
+    -- Use Huffman compression
+    local compressed = self.LibCompress:CompressHuffman(dataString)
+    if not compressed then
+        self:Debug("error", "Failed to compress structure data")
+        return nil, "Compression failed"
+    end
+    
+    -- Base64 encode
+    compressed = self:EncodeBase64(compressed)
+    
+    -- Add compression marker
+    return "\241" .. compressed
+end
+
+-- Compress individual section data
+function TWRA:CompressSectionData(sectionIndex)
+    -- Initialize compression system if needed
+    if not self.LibCompress then
+        if not self:InitializeCompression() then
+            return nil, "Failed to initialize compression system"
+        end
+    end
+    
+    -- Validate section index
+    if not TWRA_Assignments or not TWRA_Assignments.data or 
+       not TWRA_Assignments.data[sectionIndex] then
+        self:Debug("error", "Invalid section index: " .. tostring(sectionIndex))
+        return nil, "Invalid section index"
+    end
+    
+    -- Create a clean copy of the section data without player info
+    local sectionData = {}
+    for key, value in pairs(TWRA_Assignments.data[sectionIndex]) do
+        if key ~= "Section Player Info" then
+            sectionData[key] = value
+        end
+    end
+    
+    -- Add minimal metadata
+    sectionData.timestamp = TWRA_Assignments.timestamp or time()
+    
+    -- Compress section data
+    local dataString = self.LibCompress:TableToString(sectionData)
+    if not dataString then
+        self:Debug("error", "Failed to convert section to string")
+        return nil, "Failed to convert section to string"
+    end
+    
+    -- Use Huffman compression
+    local compressed = self.LibCompress:CompressHuffman(dataString)
+    if not compressed then
+        self:Debug("error", "Failed to compress section data")
+        return nil, "Compression failed"
+    end
+    
+    -- Base64 encode
+    compressed = self:EncodeBase64(compressed)
+    
+    -- Add compression marker
+    return "\241" .. compressed
+end
+
+-- Decompress structure data
+function TWRA:DecompressStructureData(compressedStructure)
+    if not compressedStructure or type(compressedStructure) ~= "string" then
+        self:Debug("error", "Invalid compressed structure data")
+        return nil, "Invalid compressed structure data"
+    end
+    
+    -- Check compression marker
+    local marker = string.byte(compressedStructure, 1)
+    if marker ~= 241 then
+        self:Debug("error", "Unknown structure compression marker: " .. tostring(marker))
+        return nil, "Unknown compression marker"
+    end
+    
+    -- Remove marker
+    compressedStructure = string.sub(compressedStructure, 2)
+    
+    -- Initialize compression system if needed
+    if not self.LibCompress then
+        if not self:InitializeCompression() then
+            return nil, "Failed to initialize compression system"
+        end
+    end
+    
+    -- Decode Base64
+    local binaryData = self:DecodeBase64Raw(compressedStructure)
+    if not binaryData then
+        self:Debug("error", "Failed to decode Base64 structure data")
+        return nil, "Failed to decode Base64 data"
+    end
+    
+    -- Decompress data
+    local decompressed = self.LibCompress:DecompressHuffman(binaryData)
+    if not decompressed then
+        self:Debug("error", "Failed to decompress structure data")
+        return nil, "Decompression failed"
+    end
+    
+    -- Convert to table
+    local structureTable = self.LibCompress:StringToTable(decompressed)
+    if not structureTable then
+        self:Debug("error", "Failed to convert decompressed structure to table")
+        return nil, "Failed to parse decompressed data"
+    end
+    
+    self:Debug("compress", "Successfully decompressed structure data with timestamp: " .. 
+               tostring(structureTable.timestamp) .. " and " .. 
+               tostring(table.getn(structureTable)) .. " sections")
+    
+    return structureTable
+end
+
+-- Decompress section data
+function TWRA:DecompressSectionData(compressedSection)
+    if not compressedSection or type(compressedSection) ~= "string" then
+        self:Debug("error", "Invalid compressed section data")
+        return nil, "Invalid compressed section data"
+    end
+    
+    -- Check compression marker
+    local marker = string.byte(compressedSection, 1)
+    if marker ~= 241 then
+        self:Debug("error", "Unknown section compression marker: " .. tostring(marker))
+        return nil, "Unknown compression marker"
+    end
+    
+    -- Remove marker
+    compressedSection = string.sub(compressedSection, 2)
+    
+    -- Initialize compression system if needed
+    if not self.LibCompress then
+        if not self:InitializeCompression() then
+            return nil, "Failed to initialize compression system"
+        end
+    end
+    
+    -- Decode Base64
+    local binaryData = self:DecodeBase64Raw(compressedSection)
+    if not binaryData then
+        self:Debug("error", "Failed to decode Base64 section data")
+        return nil, "Failed to decode Base64 data"
+    end
+    
+    -- Decompress data
+    local decompressed = self.LibCompress:DecompressHuffman(binaryData)
+    if not decompressed then
+        self:Debug("error", "Failed to decompress section data")
+        return nil, "Decompression failed"
+    end
+    
+    -- Convert to table
+    local sectionTable = self.LibCompress:StringToTable(decompressed)
+    if not sectionTable then
+        self:Debug("error", "Failed to convert decompressed section to table")
+        return nil, "Failed to parse decompressed data"
+    end
+    
+    self:Debug("compress", "Successfully decompressed section data")
+    
+    return sectionTable
+end
+
+-- Store segmented compressed data
+function TWRA:StoreSegmentedData()
+    -- Ensure our storage exists
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    
+    -- Check if we have assignments to compress
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("error", "No assignments data to compress")
+        return false
+    end
+    
+    -- Compress and store structure data
+    local structureData = self:CompressStructureData()
+    if not structureData then
+        self:Debug("error", "Failed to compress structure data")
+        return false
+    end
+    
+    -- Store structure
+    TWRA_CompressedAssignments.structure = structureData
+    TWRA_CompressedAssignments.timestamp = TWRA_Assignments.timestamp or time()
+    
+    -- IMPORTANT: Reset the data field if using old format
+    if TWRA_CompressedAssignments.data then
+        TWRA_CompressedAssignments.data = nil
+    end
+    
+    -- Initialize the sections table if it doesn't exist
+    TWRA_CompressedAssignments.sections = TWRA_CompressedAssignments.sections or {}
+    
+    -- Compress and store each section
+    local sectionCount = 0
+    for i, section in pairs(TWRA_Assignments.data) do
+        if type(i) == "number" and type(section) == "table" then
+            local sectionData = self:CompressSectionData(i)
+            if sectionData then
+                TWRA_CompressedAssignments.sections[i] = sectionData
+                sectionCount = sectionCount + 1
+                self:Debug("compress", "Compressed section " .. i)
+            else
+                self:Debug("error", "Failed to compress section " .. i)
+            end
+        end
+    end
+    
+    -- Update flag to indicate we're using section compression
+    TWRA_CompressedAssignments.useSectionCompression = true
+    
+    self:Debug("compress", "Stored segmented compressed data for " .. sectionCount .. " sections")
+    return true
+end
+
+-- Get compressed structure data
+function TWRA:GetCompressedStructure()
+    -- Ensure our storage exists
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    
+    -- Check if we have saved assignments
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        return nil, "No saved assignments"
+    end
+    
+    -- Check if structure exists and is current
+    local currentTimestamp = TWRA_Assignments.timestamp or 0
+    
+    if not TWRA_CompressedAssignments.structure or
+       not TWRA_CompressedAssignments.timestamp or
+       TWRA_CompressedAssignments.timestamp ~= currentTimestamp then
+        
+        -- Generate structure data
+        self:Debug("compress", "Generating new structure data")
+        self:StoreSegmentedData()
+    end
+    
+    return TWRA_CompressedAssignments.structure
+end
+
+-- Get compressed section data
+function TWRA:GetCompressedSection(sectionIndex)
+    -- Ensure our storage exists
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    TWRA_CompressedAssignments.sections = TWRA_CompressedAssignments.sections or {}
+    
+    -- Check if we have saved assignments
+    if not TWRA_Assignments or not TWRA_Assignments.data or
+       not TWRA_Assignments.data[sectionIndex] then
+        return nil, "Section not found"
+    end
+    
+    -- Check if section data exists and is current
+    local currentTimestamp = TWRA_Assignments.timestamp or 0
+    
+    if not TWRA_CompressedAssignments.sections[sectionIndex] or
+       not TWRA_CompressedAssignments.timestamp or
+       TWRA_CompressedAssignments.timestamp ~= currentTimestamp then
+        
+        -- Check if we need to store all data
+        if not TWRA_CompressedAssignments.useSectionCompression then
+            -- Full refresh of all compressed data
+            self:Debug("compress", "Initializing segmented compression")
+            self:StoreSegmentedData()
+        else
+            -- Just compress the required section
+            self:Debug("compress", "Generating compressed data for section " .. sectionIndex)
+            local sectionData = self:CompressSectionData(sectionIndex)
+            if sectionData then
+                TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
+                -- Update timestamp if needed
+                if not TWRA_CompressedAssignments.timestamp then
+                    TWRA_CompressedAssignments.timestamp = currentTimestamp
+                end
+            else
+                return nil, "Failed to compress section data"
+            end
+        end
+    end
+    
+    return TWRA_CompressedAssignments.sections[sectionIndex]
+end
+
+-- Compress the assignment data for efficient sync (Legacy method)
 -- Returns compressed string or nil if compression failed
 function TWRA:CompressAssignmentsData()
     -- Prepare the data by removing client-specific information
@@ -313,7 +636,7 @@ function TWRA:StoreCompressedData(compressedData)
     return true
 end
 
--- Get stored compressed data for syncing
+-- Get stored compressed data for syncing (Legacy method)
 function TWRA:GetStoredCompressedData()
     -- Ensure our storage exists
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
@@ -325,6 +648,20 @@ function TWRA:GetStoredCompressedData()
     
     -- Get current timestamp
     local currentTimestamp = TWRA_Assignments.timestamp or 0
+    
+    -- Check if using section compression
+    if TWRA_CompressedAssignments.useSectionCompression then
+        -- For backward compatibility, we'll compress the entire data set
+        self:Debug("compress", "Using segmented compression, generating full data for legacy support")
+        local compressed, err = self:CompressAssignmentsData()
+        if not compressed then
+            return nil, "Failed to generate compressed data: " .. tostring(err)
+        end
+        
+        -- Store for future use but don't overwrite segmented data
+        TWRA_CompressedAssignments.legacyData = compressed
+        return compressed
+    end
     
     -- Check if the compressed data exists and is up to date
     if not TWRA_CompressedAssignments.data or 

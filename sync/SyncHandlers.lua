@@ -2,6 +2,27 @@
 -- Handles all incoming addon communications for synchronization
 TWRA = TWRA or {}
 
+-- Initialize SYNC namespace with new segmented sync commands
+if not TWRA.SYNC then
+    TWRA.SYNC = {
+        PREFIX = "TWRA",
+        COMMANDS = {
+            SECTION = "SEC",
+            DATA_REQUEST = "REQ",
+            DATA_RESPONSE = "RESP",
+            ANNOUNCE = "ANC",
+            VERSION = "VER",
+            -- New commands for segmented sync
+            STRUCTURE_REQUEST = "SREQ",
+            STRUCTURE_RESPONSE = "SRESP",
+            SECTION_REQUEST = "SECREQ",
+            SECTION_RESPONSE = "SECRESP"
+        },
+        useSegmentedSync = true, -- Enable segmented sync by default
+        pendingSection = nil     -- Section to navigate to after sync
+    }
+end
+
 -- Main addon message handler - routes messages to appropriate handlers
 function TWRA:HandleAddonMessage(message, distribution, sender)
     -- Skip processing if message is empty
@@ -43,7 +64,7 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
         self:HandleSectionCommand(rest, sender)
     elseif command == self.SYNC.COMMANDS.DATA_REQUEST then
         -- Data request
-        self:HandleDataRequestCommand(message, sender)
+        self:HandleDataRequestCommand(rest, sender)
     elseif command == self.SYNC.COMMANDS.DATA_RESPONSE then
         -- Data response
         self:HandleDataResponseCommand(message, sender)
@@ -53,6 +74,19 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
     elseif command == self.SYNC.COMMANDS.VERSION then
         -- Version check (to be implemented)
         self:Debug("sync", "Version check from " .. sender .. " (not yet implemented)")
+    -- New handlers for segmented sync
+    elseif command == self.SYNC.COMMANDS.STRUCTURE_REQUEST then
+        -- Structure request
+        self:HandleStructureRequestCommand(rest, sender)
+    elseif command == self.SYNC.COMMANDS.STRUCTURE_RESPONSE then
+        -- Structure response
+        self:HandleStructureResponseCommand(message, sender)
+    elseif command == self.SYNC.COMMANDS.SECTION_REQUEST then
+        -- Section request
+        self:HandleSectionRequestCommand(rest, sender)
+    elseif command == self.SYNC.COMMANDS.SECTION_RESPONSE then
+        -- Section response
+        self:HandleSectionResponseCommand(message, sender)
     else
         -- Unknown command
         self:Debug("sync", "Unknown command from " .. sender .. ": " .. command)
@@ -162,7 +196,15 @@ function TWRA:HandleAnnounceCommand(message, sender)
     if timestamp > ourTimestamp then
         self:Debug("sync", "Requesting newer data from import announcement")
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r New data import detected from " .. importerName .. ", requesting sync...")
-        self:RequestDataSync(timestamp)
+        
+        -- Use segmented sync if available, otherwise fall back to legacy sync
+        if self.SYNC.useSegmentedSync and self.RequestStructureSync then
+            self:Debug("sync", "Using segmented sync for announced data")
+            self:RequestStructureSync(timestamp)
+        else
+            self:Debug("sync", "Falling back to legacy sync for announced data")
+            self:RequestDataSync(timestamp)
+        end
     else
         self:Debug("sync", "Ignoring import announcement (we have newer or same data)")
     end
@@ -575,6 +617,520 @@ function TWRA:SendAddonMessage(message, target)
     return true
 end
 
+-- NEW FUNCTIONS FOR SEGMENTED SYNC
+
+-- Request structure data from the group
+function TWRA:RequestStructureSync(timestamp)
+    self:Debug("sync", "Requesting structure data, timestamp: " .. timestamp)
+    
+    -- Format: SREQ:timestamp
+    local message = string.format("%s:%d", self.SYNC.COMMANDS.STRUCTURE_REQUEST, timestamp)
+    
+    -- Store pending timestamp for validation
+    self.SYNC.pendingTimestamp = timestamp
+    
+    -- Send the request
+    self:SendAddonMessage(message)
+    
+    -- Initialize our section cache if needed
+    self.SYNC.sectionCache = self.SYNC.sectionCache or {}
+    
+    -- Clear any previous cache with different timestamp
+    if self.SYNC.cachedTimestamp ~= timestamp then
+        self.SYNC.sectionCache = {}
+        self.SYNC.cachedTimestamp = timestamp
+    end
+    
+    return true
+end
+
+-- Handle structure request from other users
+function TWRA:HandleStructureRequestCommand(message, sender)
+    self:Debug("sync", "Received structure request from: " .. sender)
+    
+    -- Parse the timestamp
+    local timestamp = tonumber(message) or 0
+    
+    -- Check if we have data to share
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("sync", "No assignments data available to send to " .. sender)
+        return
+    end
+    
+    -- Get our current timestamp
+    local ourTimestamp = TWRA_Assignments.timestamp or 0
+    
+    -- Only respond if our data is newer or matches the request
+    if ourTimestamp >= timestamp then
+        self:Debug("sync", "Our timestamp (" .. ourTimestamp .. ") matches or is newer than requested (" 
+                   .. timestamp .. "), sending structure to " .. sender)
+        
+        -- Get compressed structure data
+        local structureData = nil
+        
+        -- Try to get from segmented compression first
+        if self.GetCompressedStructure then
+            structureData = self:GetCompressedStructure()
+            self:Debug("sync", "Using compressed structure data")
+        else
+            self:Debug("sync", "GetCompressedStructure not available")
+        end
+        
+        -- Send the response if we have data
+        if structureData then
+            self:Debug("sync", "Sending structure response to " .. sender .. " with timestamp " .. ourTimestamp)
+            self:SendStructureResponse(structureData, ourTimestamp)
+        else
+            self:Debug("error", "Failed to get compressed structure data for " .. sender)
+        end
+    else
+        self:Debug("sync", "Our timestamp (" .. ourTimestamp .. ") is older than requested (" 
+                   .. timestamp .. "), not sending data to " .. sender)
+    end
+end
+
+-- Send structure response to group
+function TWRA:SendStructureResponse(structureData, timestamp)
+    self:Debug("sync", "Sending structure response with timestamp: " .. timestamp)
+    
+    -- Format: SRESP:timestamp:compressedStructure
+    local message = string.format("%s:%d:%s", 
+        self.SYNC.COMMANDS.STRUCTURE_RESPONSE,
+        timestamp,
+        structureData)
+        
+    -- Check message length
+    if string.len(message) <= 254 then  -- Safe limit for addon messages
+        self:Debug("sync", "Sending structure response (" .. 
+                  string.len(structureData) .. " bytes)")
+        self:SendAddonMessage(message)
+        return true
+    else
+        self:Debug("error", "Structure data too large (" .. 
+                  string.len(message) .. " bytes)")
+        
+        -- Try to use chunk manager if available
+        if self.chunkManager then
+            self:Debug("sync", "Using ChunkManager to send structure data")
+            local prefix = string.format("%s:%d:", 
+                self.SYNC.COMMANDS.STRUCTURE_RESPONSE, timestamp)
+            
+            self.chunkManager:SendChunkedMessage(structureData, prefix)
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Handle structure response from other users
+function TWRA:HandleStructureResponseCommand(message, sender)
+    self:Debug("sync", "Received structure response from: " .. sender)
+    
+    -- Extract timestamp and data
+    local parts = self:SplitString(message, ":")
+    if table.getn(parts) < 3 then
+        self:Debug("sync", "Malformed structure response from " .. sender)
+        return
+    end
+    
+    -- Extract timestamp
+    local timestamp = tonumber(parts[2])
+    
+    -- Check for chunked data
+    if parts[3] == "CHUNKED" then
+        -- Only handle if chunk manager is available
+        if self.chunkManager then
+            self:Debug("sync", "Using chunk manager for chunked structure response")
+            self.chunkManager:ProcessChunkHeader(message, sender)
+        else
+            self:Debug("error", "Cannot process chunked structure without chunk manager")
+        end
+        return
+    end
+    
+    -- Extract structure data (everything after SRESP:timestamp:)
+    local prefix = parts[1] .. ":" .. parts[2] .. ":"
+    local prefixLen = string.len(prefix)
+    local structureData = string.sub(message, prefixLen + 1)
+    
+    -- Debug
+    self:Debug("sync", "Processing structure data (" .. string.len(structureData) .. " bytes)")
+    
+    -- Validate timestamp
+    if timestamp ~= self.SYNC.pendingTimestamp then
+        self:Debug("sync", "Timestamp mismatch: expected " .. (self.SYNC.pendingTimestamp or "nil") ..
+                  ", got " .. timestamp)
+        return
+    end
+    
+    -- Process structure data
+    self:ProcessStructureData(structureData, timestamp, sender)
+end
+
+-- Process structure data received via sync
+function TWRA:ProcessStructureData(structureData, timestamp, sender)
+    self:Debug("sync", "Processing structure data from " .. sender)
+    
+    -- Initialize compression if needed
+    if not self.LibCompress and self.InitializeCompression then
+        self:InitializeCompression()
+    end
+    
+    -- Decompress structure data
+    local structureTable = nil
+    if self.DecompressStructureData then
+        structureTable = self:DecompressStructureData(structureData)
+    else
+        self:Debug("error", "DecompressStructureData function not available")
+        return false
+    end
+    
+    if not structureTable then
+        self:Debug("error", "Failed to decompress structure data from " .. sender)
+        return false
+    end
+    
+    -- Process the structure table
+    local sectionCount = 0
+    for i, sectionName in pairs(structureTable) do
+        if type(i) == "number" and type(sectionName) == "string" then
+            sectionCount = sectionCount + 1
+        end
+    end
+    
+    self:Debug("sync", "Processed structure with " .. sectionCount .. " sections")
+    
+    -- Store structure in cache
+    self.SYNC.structureTable = structureTable
+    self.SYNC.cachedTimestamp = timestamp
+    self.SYNC.sectionCache = self.SYNC.sectionCache or {}
+    
+    -- Request each section
+    local sectionsRequested = 0
+    for i, _ in pairs(structureTable) do
+        if type(i) == "number" then
+            -- Add delay based on section index to prevent flooding
+            local delay = (i - 1) * 0.2 -- 200ms between requests
+            self:ScheduleTimer(function()
+                self:RequestSectionSync(i, timestamp)
+            end, delay)
+            sectionsRequested = sectionsRequested + 1
+        end
+    end
+    
+    self:Debug("sync", "Scheduled requests for " .. sectionsRequested .. " sections")
+    
+    -- Notify user
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Receiving raid assignments from " .. sender .. 
+                                 " (" .. sectionCount .. " sections)")
+    
+    return true
+end
+
+-- Request a specific section from the group
+function TWRA:RequestSectionSync(sectionIndex, timestamp)
+    self:Debug("sync", "Requesting section " .. sectionIndex .. ", timestamp: " .. timestamp)
+    
+    -- Format: SECREQ:timestamp:sectionIndex
+    local message = string.format("%s:%d:%d", 
+                                 self.SYNC.COMMANDS.SECTION_REQUEST,
+                                 timestamp,
+                                 sectionIndex)
+    
+    -- Send the request
+    self:SendAddonMessage(message)
+    
+    return true
+end
+
+-- Handle section request from other users
+function TWRA:HandleSectionRequestCommand(message, sender)
+    self:Debug("sync", "Received section request from: " .. sender)
+    
+    -- Parse the message: timestamp:sectionIndex
+    local parts = self:SplitString(message, ":")
+    if table.getn(parts) < 2 then
+        self:Debug("sync", "Malformed section request from " .. sender)
+        return
+    end
+    
+    -- Extract data
+    local timestamp = tonumber(parts[1])
+    local sectionIndex = tonumber(parts[2])
+    
+    if not timestamp or not sectionIndex then
+        self:Debug("sync", "Invalid section request parameters from " .. sender)
+        return
+    end
+    
+    -- Check if we have data to share
+    if not TWRA_Assignments or not TWRA_Assignments.data or
+       not TWRA_Assignments.data[sectionIndex] then
+        self:Debug("sync", "Section " .. sectionIndex .. " not available to send to " .. sender)
+        return
+    end
+    
+    -- Get our current timestamp
+    local ourTimestamp = TWRA_Assignments.timestamp or 0
+    
+    -- Only respond if our data is newer or matches the request
+    if ourTimestamp >= timestamp then
+        self:Debug("sync", "Our timestamp (" .. ourTimestamp .. ") matches or is newer than requested (" 
+                   .. timestamp .. "), sending section " .. sectionIndex .. " to " .. sender)
+        
+        -- Get compressed section data
+        local sectionData = nil
+        
+        -- Try to get from segmented compression
+        if self.GetCompressedSection then
+            sectionData = self:GetCompressedSection(sectionIndex)
+            self:Debug("sync", "Using compressed section data")
+        else
+            self:Debug("sync", "GetCompressedSection not available")
+        end
+        
+        -- Send the response if we have data
+        if sectionData then
+            self:Debug("sync", "Sending section response to " .. sender .. " for section " .. sectionIndex)
+            self:SendSectionResponse(sectionData, timestamp, sectionIndex)
+        else
+            self:Debug("error", "Failed to get compressed section data for " .. sender)
+        end
+    else
+        self:Debug("sync", "Our timestamp (" .. ourTimestamp .. ") is older than requested (" 
+                   .. timestamp .. "), not sending data to " .. sender)
+    end
+end
+
+-- Send section response to group
+function TWRA:SendSectionResponse(sectionData, timestamp, sectionIndex)
+    self:Debug("sync", "Sending section " .. sectionIndex .. " response with timestamp: " .. timestamp)
+    
+    -- Format: SECRESP:timestamp:sectionIndex:compressedSection
+    local message = string.format("%s:%d:%d:%s", 
+        self.SYNC.COMMANDS.SECTION_RESPONSE,
+        timestamp,
+        sectionIndex,
+        sectionData)
+        
+    -- Check message length
+    if string.len(message) <= 254 then  -- Safe limit for addon messages
+        self:Debug("sync", "Sending section response (" .. 
+                  string.len(sectionData) .. " bytes)")
+        self:SendAddonMessage(message)
+        return true
+    else
+        self:Debug("error", "Section data too large (" .. 
+                  string.len(message) .. " bytes)")
+        
+        -- Try to use chunk manager if available
+        if self.chunkManager then
+            self:Debug("sync", "Using ChunkManager to send section data")
+            local prefix = string.format("%s:%d:%d:", 
+                self.SYNC.COMMANDS.SECTION_RESPONSE, timestamp, sectionIndex)
+            
+            self.chunkManager:SendChunkedMessage(sectionData, prefix)
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Handle section response from other users
+function TWRA:HandleSectionResponseCommand(message, sender)
+    self:Debug("sync", "Received section response from: " .. sender)
+    
+    -- Extract data
+    local parts = self:SplitString(message, ":")
+    if table.getn(parts) < 4 then
+        self:Debug("sync", "Malformed section response from " .. sender)
+        return
+    end
+    
+    -- Extract timestamp and section index
+    local timestamp = tonumber(parts[2])
+    local sectionIndex = tonumber(parts[3])
+    
+    if not timestamp or not sectionIndex then
+        self:Debug("sync", "Invalid section response parameters from " .. sender)
+        return
+    end
+    
+    -- Check for chunked data
+    if parts[4] == "CHUNKED" then
+        -- Only handle if chunk manager is available
+        if self.chunkManager then
+            self:Debug("sync", "Using chunk manager for chunked section response")
+            self.chunkManager:ProcessChunkHeader(message, sender)
+        else
+            self:Debug("error", "Cannot process chunked section without chunk manager")
+        end
+        return
+    end
+    
+    -- Extract section data (everything after SECRESP:timestamp:sectionIndex:)
+    local prefix = parts[1] .. ":" .. parts[2] .. ":" .. parts[3] .. ":"
+    local prefixLen = string.len(prefix)
+    local sectionData = string.sub(message, prefixLen + 1)
+    
+    -- Debug
+    self:Debug("sync", "Processing section data for section " .. sectionIndex .. 
+               " (" .. string.len(sectionData) .. " bytes)")
+    
+    -- Validate timestamp
+    if timestamp ~= self.SYNC.cachedTimestamp then
+        self:Debug("sync", "Timestamp mismatch: expected " .. (self.SYNC.cachedTimestamp or "nil") ..
+                  ", got " .. timestamp)
+        return
+    end
+    
+    -- Process section data
+    self:ProcessSectionData(sectionData, timestamp, sectionIndex, sender)
+end
+
+-- Process section data received via sync
+function TWRA:ProcessSectionData(sectionData, timestamp, sectionIndex, sender)
+    self:Debug("sync", "Processing section " .. sectionIndex .. " data from " .. sender)
+    
+    -- Initialize compression if needed
+    if not self.LibCompress and self.InitializeCompression then
+        self:InitializeCompression()
+    end
+    
+    -- Decompress section data
+    local sectionTable = nil
+    if self.DecompressSectionData then
+        sectionTable = self:DecompressSectionData(sectionData)
+    else
+        self:Debug("error", "DecompressSectionData function not available")
+        return false
+    end
+    
+    if not sectionTable then
+        self:Debug("sync", "Failed to decompress section " .. sectionIndex .. " data from " .. sender)
+        return false
+    end
+    
+    -- Store section in cache
+    self.SYNC.sectionCache = self.SYNC.sectionCache or {}
+    self.SYNC.sectionCache[sectionIndex] = sectionTable
+    
+    -- Check if we have all sections
+    local missingAnySection = false
+    local sectionCount = 0
+    
+    -- Count expected sections from structure
+    if self.SYNC.structureTable then
+        for i, _ in pairs(self.SYNC.structureTable) do
+            if type(i) == "number" then
+                sectionCount = sectionCount + 1
+                if not self.SYNC.sectionCache[i] then
+                    missingAnySection = true
+                    break
+                end
+            end
+        end
+    else
+        self:Debug("error", "Missing structure table in section processor")
+        return false
+    end
+    
+    -- If we have all sections, build the complete data
+    if not missingAnySection and sectionCount > 0 then
+        self:Debug("sync", "All sections received (" .. sectionCount .. "), reassembling data")
+        self:ReassembleDataFromSections(timestamp, sender)
+    else
+        self:Debug("sync", "Still missing sections (received: " .. 
+                  self:GetTableSize(self.SYNC.sectionCache) .. "/" .. sectionCount .. ")")
+    end
+    
+    return true
+end
+
+-- Reassemble complete data from cached sections
+function TWRA:ReassembleDataFromSections(timestamp, sender)
+    self:Debug("sync", "Reassembling complete data from sections")
+    
+    -- Create the new assignments structure
+    local newAssignments = {
+        data = {},
+        timestamp = timestamp,
+        version = 2
+    }
+    
+    -- Add all sections
+    for sectionIndex, sectionData in pairs(self.SYNC.sectionCache) do
+        newAssignments.data[sectionIndex] = sectionData
+    end
+    
+    -- Get pending section for navigation
+    local pendingSection = self.SYNC.pendingSection
+    
+    -- Apply the new data
+    TWRA_Assignments = newAssignments
+    
+    -- Store in segmented format for future sync
+    if self.StoreSegmentedData then
+        self:Debug("sync", "Storing reassembled data in segmented format")
+        self:StoreSegmentedData()
+    end
+    
+    -- Important: rebuild navigation with new data
+    self:Debug("sync", "Rebuilding navigation with new data")
+    if self.RebuildNavigation then
+        self:RebuildNavigation()
+    else
+        self:Debug("error", "RebuildNavigation function not found")
+    end
+    
+    -- Process player information
+    self:Debug("sync", "Processing player information")
+    if self.RefreshPlayerInfo then
+        self:RefreshPlayerInfo()
+    elseif self.ProcessPlayerInfo then
+        self:ProcessPlayerInfo()
+    else
+        self:Debug("error", "Neither RefreshPlayerInfo nor ProcessPlayerInfo function found")
+    end
+    
+    -- Navigate to the pending section or first section
+    local sectionToUse = pendingSection or 1
+    self:Debug("sync", "Navigating to section " .. sectionToUse)
+    
+    if self.NavigateToSection then
+        self:NavigateToSection(sectionToUse, "fromSync")
+    else
+        self:Debug("error", "NavigateToSection function not found")
+    end
+    
+    -- Clear section data cache
+    self.SYNC.sectionCache = {}
+    self.SYNC.structureTable = nil
+    self.SYNC.cachedTimestamp = nil
+    self.SYNC.pendingSection = nil
+    
+    -- Notify user
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Synchronized raid assignments from " .. sender)
+    
+    return true
+end
+
+-- Legacy function to request full data sync (for backward compatibility)
+function TWRA:RequestDataSync(timestamp)
+    self:Debug("sync", "Requesting data sync with timestamp: " .. timestamp)
+    
+    -- Store the pending timestamp
+    self.SYNC.pendingTimestamp = timestamp
+    
+    -- Format message
+    local message = string.format("%s:%d", self.SYNC.COMMANDS.DATA_REQUEST, timestamp)
+    
+    -- Send the request
+    return self:SendAddonMessage(message)
+end
+
 -- Add initialization of the chunk manager at addon load
 function TWRA:InitializeSyncHandlers()
     -- Initialize the chunk manager if needed
@@ -604,6 +1160,10 @@ function TWRA:InitializeSyncHandlers()
             end
         end
     end, 60) -- Check every 60 seconds
+    
+    -- Initialize segmented sync flag based on compressed storage availability
+    self.SYNC.useSegmentedSync = (self.StoreSegmentedData ~= nil and self.GetCompressedSection ~= nil)
+    self:Debug("sync", "Segmented sync " .. (self.SYNC.useSegmentedSync and "enabled" or "disabled"))
     
     self:Debug("sync", "Sync handlers initialized")
     return true
