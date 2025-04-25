@@ -204,11 +204,20 @@ TWRA.ROLE_MAPPINGS = {
     ["r.tank"] = "Tank",
     
     ["heal"] = "Heal",
+    ["heal[1]"] = "Heal",
+    ["heal[2]"] = "Heal",
+    ["heal[3]"] = "Heal",
+    ["heal[4]"] = "Heal",
     ["healer"] = "Heal",
     ["tank heal"] = "Heal",
     
     ["mc"] = "MC",
     ["mind control"] = "MC",
+
+    ["cor"] = "CoR",
+    ["c.o.r"] = "CoR",
+    ["curse of recklessness"] = "CoR",
+ 
     
     ["kick"] = "Kick",
     ["interrupt"] = "Kick",
@@ -287,6 +296,8 @@ TWRA.ROLE_ICONS = {
     ["Interrupt"] = "Interface\\Icons\\Ability_Kick",
     ["Tranq Shot"] = "Interface\\Icons\\Spell_Nature_Drowsy",
     ["Tranquility"] = "Interface\\Icons\\Spell_Nature_Tranquility",
+    ["CoR"] = "Interface\\Icons\\Spell_Shadow_UnholyStrength",
+    
     ["Misc"] = "Interface\\Icons\\INV_Misc_Gear_01"
 }
 
