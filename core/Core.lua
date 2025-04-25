@@ -322,6 +322,22 @@ SlashCmdList["TWRA"] = function(msg)
         return
     end
     
+    -- Navigation commands
+    if msg == "next" then
+        TWRA:Debug("nav", "Next section command received")
+        TWRA:NavigateHandler(1)
+        return
+    elseif msg == "prev" then
+        TWRA:Debug("nav", "Previous section command received")
+        TWRA:NavigateHandler(-1)
+        return
+    elseif tonumber(msg) then
+        local sectionNum = tonumber(msg)
+        TWRA:Debug("nav", "Navigate to section " .. sectionNum .. " command received")
+        TWRA:NavigateToSection(sectionNum)
+        return
+    end
+    
     -- Command to explicitly show options
     if msg == "options" then
         if not TWRA.mainFrame then
@@ -370,6 +386,9 @@ SlashCmdList["TWRA"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /twra osd - Toggle on-screen display")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra options - Open options panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra resetview - Reset to main view")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra next - Go to next section")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra prev - Go to previous section")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra # - Go to specific section number")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Access debug commands")
         DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra debug' for detailed debug options")
     end
