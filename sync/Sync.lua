@@ -383,11 +383,11 @@ function TWRA:RequestStructureSync(timestamp)
     
     -- Make sure we have a valid timestamp to request
     if not timestamp or timestamp == 0 then
-        self:Debug("sync", "No specific timestamp provided, using our current timestamp")
+        self:Debug("sync", "No specific timestamp provided, ~~using our current timestamp~~")
         if TWRA_Assignments and TWRA_Assignments.timestamp then
             timestamp = TWRA_Assignments.timestamp
-        else
-            timestamp = 0
+        -- else  -- we should most definitely SREQ:0 at any point.
+        --     timestamp = 0
         end
     end
     
@@ -399,7 +399,7 @@ function TWRA:RequestStructureSync(timestamp)
     self:Debug("sync", "Requested structure sync with timestamp " .. timestamp)
     
     -- Show a message to the user
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Requesting raid structure from group...")
+    self:Debug("sync", "Requesting raid structure from group...", true)
     
     return true
 end

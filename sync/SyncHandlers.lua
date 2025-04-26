@@ -85,6 +85,33 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
     end
 end
 
+-- Helper function to extract timestamp from a message
+function TWRA:ExtractTimestampFromMessage(message)
+    if not message or type(message) ~= "string" then
+        self:Debug("sync", "Failed to extract timestamp - invalid message")
+        return nil, message
+    end
+    
+    -- For SECTION, format is timestamp:sectionIndex
+    local colonPos = string.find(message, ":", 1, true)
+    if not colonPos then
+        self:Debug("sync", "Failed to extract timestamp - no colons found")
+        return nil, message
+    end
+    
+    local timestampStr = string.sub(message, 1, colonPos - 1)
+    local timestamp = tonumber(timestampStr)
+    
+    if not timestamp then
+        self:Debug("sync", "Failed to extract timestamp - invalid format")
+        return nil, message
+    end
+    
+    -- Return both timestamp and remaining content (sectionIndex)
+    local remainingContent = string.sub(message, colonPos + 1)
+    return timestamp, remainingContent
+end
+
 function TWRA:CompareTimestamps(remoteTimestamp)
     -- Get our current timestamp from assignments
     local localTimestamp = 0
@@ -164,18 +191,13 @@ function TWRA:HandleSectionCommand(message, sender)
         self:Debug("sync", "Received invalid section command from " .. sender)
         return false
     end
-    
+    self:Debug("sync", "Welcome to the Section Coammand HAndler")
     -- The message format is "timestamp:sectionIndex" 
     -- Parse the timestamp and sectionIndex directly from the message
-    local parts = self:SplitString(message, ":")
-    if not parts or table.getn(parts) ~= 2 then
-        self:Debug("sync", "Malformed section command from " .. sender .. ": " .. message)
-        return false
-    end
-    
+    local timestamp, sectionIndex = self:ExtractTimestampFromMessage(message)
+
     -- Extract parts
-    local timestampComparison = self:CompareTimestamps(parts[1])
-    local sectionIndex = tonumber(parts[2])
+    local timestampComparison = self:CompareTimestamps(timestamp)
     
     if not sectionIndex then
         self:Debug("sync", "Invalid section index in command from " .. sender)
@@ -190,7 +212,7 @@ function TWRA:HandleSectionCommand(message, sender)
     -- Compare timestamps - simplified comparison for now
     if timestampComparison == 0 then
         -- Our timestamp is equal - navigate to the section
-        self:NavigateToSection(sectionIndex, fromSync)  -- suppressSync=true
+        self:NavigateToSection(tonumber(sectionIndex), fromSync)  -- suppressSync=true
         self:Debug("sync", "Navigated to section " .. sectionIndex .. " from sync command by " .. sender)
     else 
         -- timestamp mismatch. CompareTimestamp should already be trying to get us on the same timestamp
@@ -745,44 +767,3 @@ function TWRA:InitializeSyncHandlers()
     return true
 end
 
--- Helper function to extract timestamp from a message
-function TWRA:ExtractTimestampFromMessage(message)
-    if not message or type(message) ~= "string" then
-        self:Debug("sync", "Failed to extract timestamp - invalid message")
-        return nil, message
-    end
-    
-    -- Try to extract timestamp between first and second colon
-    local firstColon = string.find(message, ":", 1, true)
-    if not firstColon then
-        self:Debug("sync", "Failed to extract timestamp - no colons found")
-        return nil, message
-    end
-    
-    local secondColon = string.find(message, ":", firstColon + 1, true)
-    if not secondColon then
-        -- Only one colon, assume everything after it is timestamp
-        local timestampStr = string.sub(message, firstColon + 1)
-        local timestamp = tonumber(timestampStr)
-        
-        if not timestamp then
-            self:Debug("sync", "Failed to extract timestamp - invalid format after single colon")
-            return nil, message
-        end
-        
-        return timestamp, "" -- No remaining content
-    end
-    
-    -- Extract timestamp between the colons
-    local timestampStr = string.sub(message, firstColon + 1, secondColon - 1)
-    local timestamp = tonumber(timestampStr)
-    
-    if not timestamp then
-        self:Debug("sync", "Failed to extract timestamp - invalid format between colons")
-        return nil, message
-    end
-    
-    -- Return both timestamp and remaining content
-    local remainingContent = string.sub(message, secondColon + 1)
-    return timestamp, remainingContent
-end
