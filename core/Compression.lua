@@ -15,21 +15,12 @@ function TWRA:InitializeCompression()
     -- Initialize the TWRA_CompressedAssignments if it doesn't exist
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     
-    -- Handle migration from old format (if compressed data exists in old location)
-    if TWRA_Assignments and TWRA_Assignments.compressed then
-        self:Debug("compress", "Migrating compressed data to new location")
-        TWRA_CompressedAssignments.data = TWRA_Assignments.compressed
-        TWRA_CompressedAssignments.timestamp = TWRA_Assignments.timestamp or 0
-        -- Remove from old location
-        TWRA_Assignments.compressed = nil
-    end
+    -- Ensure we have structure and sections tables
+    TWRA_CompressedAssignments.structure = TWRA_CompressedAssignments.structure or nil
+    TWRA_CompressedAssignments.sections = TWRA_CompressedAssignments.sections or {}
     
-    -- Initialize structure and data tables for segmented sync
-    if TWRA_CompressedAssignments.data and not TWRA_CompressedAssignments.structure then
-        -- Migration from older format to segmented format
-        self:Debug("compress", "Migrating from old compressed format to segmented format")
-        -- We'll handle this during next import or section compression
-    end
+    -- Set flag to indicate we only use section compression
+    TWRA_CompressedAssignments.useSectionCompression = true
     
     self:Debug("system", "Compression system initialized")
     return true
@@ -614,72 +605,53 @@ function TWRA:DecompressAssignmentsData(compressedData)
 end
 
 -- Store compressed data for later use
--- This replaces storing the source string
+-- This is a legacy function that redirects to the consolidated implementation
 function TWRA:StoreCompressedData(compressedData)
+    -- Forward to the consolidated implementation in DataProcessing.lua
     if not compressedData then
-        self:Debug("error", "No compressed data to store")
+        self:Debug("error", "StoreCompressedData: No compressed data to store")
         return false
     end
     
-    -- Ensure our storage exists
-    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    self:Debug("compress", "Redirecting to consolidated StoreCompressedData implementation")
     
-    -- Store the compressed data in our dedicated variable
-    TWRA_CompressedAssignments.data = compressedData
-    
-    -- Also store the timestamp for validation
-    if TWRA_Assignments then
-        TWRA_CompressedAssignments.timestamp = TWRA_Assignments.timestamp or 0
+    -- Call the consolidated implementation directly if loaded
+    if self.ProcessImportedData then  -- This check ensures DataProcessing.lua is loaded
+        return self:StoreCompressedData(compressedData)
+    else
+        -- Fallback implementation to avoid redundancy in case DataProcessing.lua is not loaded
+        self:Debug("compress", "DataProcessing.lua not loaded, using local fallback")
+        
+        -- Log that we received compressed data but are not storing it
+        self:Debug("compress", "Legacy compressed data received (" .. string.len(compressedData) .. " bytes) - not storing complete data")
+        
+        -- IMPORTANT: We don't store any data here anymore, including timestamps
+        -- This prevents redundant storage of complete compressed data
     end
     
-    self:Debug("compress", "Stored compressed data (" .. string.len(compressedData) .. " bytes) in TWRA_CompressedAssignments")
     return true
 end
 
 -- Get stored compressed data for syncing (Legacy method)
+-- Perhaps completely irrelevant - Let's return to this function later and see if we can completely remove it.
+-- I am not ready to get rid of it at this point.
 function TWRA:GetStoredCompressedData()
-    -- Ensure our storage exists
-    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
-    
     -- Check if we have saved assignments
     if not TWRA_Assignments then
         return nil, "No saved assignments"
     end
     
-    -- Get current timestamp
-    local currentTimestamp = TWRA_Assignments.timestamp or 0
-    
-    -- Check if using section compression
-    if TWRA_CompressedAssignments.useSectionCompression then
-        -- For backward compatibility, we'll compress the entire data set
-        self:Debug("compress", "Using segmented compression, generating full data for legacy support")
-        local compressed, err = self:CompressAssignmentsData()
-        if not compressed then
-            return nil, "Failed to generate compressed data: " .. tostring(err)
-        end
-        
-        -- Store for future use but don't overwrite segmented data
-        TWRA_CompressedAssignments.legacyData = compressed
-        return compressed
+    -- Always generate new compressed data instead of retrieving stored data
+    self:Debug("compress", "Generating new compressed data")
+    local compressed, err = self:CompressAssignmentsData()
+    if not compressed then
+        return nil, "Failed to generate compressed data: " .. tostring(err)
     end
     
-    -- Check if the compressed data exists and is up to date
-    if not TWRA_CompressedAssignments.data or 
-       not TWRA_CompressedAssignments.timestamp or 
-       TWRA_CompressedAssignments.timestamp ~= currentTimestamp then
-        
-        -- If compressed data doesn't exist or is outdated, create it
-        self:Debug("compress", "Generating new compressed data (missing or outdated)")
-        local compressed, err = self:CompressAssignmentsData()
-        if not compressed then
-            return nil, "Failed to generate compressed data: " .. tostring(err)
-        end
-        
-        -- Store for future use
-        self:StoreCompressedData(compressed)
-    end
+    -- Log but don't store
+    self:Debug("compress", "Generated " .. string.len(compressed) .. " bytes of compressed data")
     
-    return TWRA_CompressedAssignments.data
+    return compressed
 end
 
 -- Benchmark various compression methods using real assignment data
@@ -795,8 +767,9 @@ function TWRA:ProcessCompressedData(compressedData, timestamp, sender)
         TWRA_Assignments.timestamp = decompressedData.timestamp
         TWRA_Assignments.version = 2 -- Use new data format
         
-        -- Also store the compressed version for future sync
-        self:StoreCompressedData(compressedData)
+        -- IMPORTANT: Use the segmented approach instead of storing complete compressed data
+        self:Debug("sync", "ProcessCompressedData: Storing segmented data for future sync")
+        self:StoreSegmentedData()
         
         -- Rebuild navigation with the new data
         self:Debug("sync", "ProcessCompressedData: Rebuilding navigation with new data")

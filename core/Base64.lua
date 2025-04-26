@@ -253,19 +253,23 @@ function TWRA:PrepareDataForSync(data)
 end
 
 -- Function to store compressed data for later reuse
+-- Redirects to the central implementation in DataProcessing.lua
 function TWRA:StoreCompressedData(compressedData)
+    -- Forward to the consolidated implementation in DataProcessing.lua
     if not compressedData then
         self:Debug("error", "StoreCompressedData: nil data provided", true)
         return false
     end
     
-    if not TWRA_Assignments then
-        TWRA_Assignments = {}
-    end
+    self:Debug("data", "Redirecting to consolidated StoreCompressedData implementation")
     
-    TWRA_Assignments.compressed = compressedData
-    self:Debug("data", "Stored compressed data for reuse")
-    return true
+    -- Call the consolidated implementation directly if it exists
+    if TWRA.ProcessImportedData then  -- This check ensures DataProcessing.lua is loaded
+        return TWRA:StoreCompressedData(compressedData)
+    else
+        self:Debug("error", "DataProcessing.lua is not loaded correctly")
+        return false
+    end
 end
 
 -- Function to get stored compressed data or generate it if not available

@@ -234,18 +234,18 @@ function TWRA:HandleDataRequestCommand(message, sender)
         self:Debug("sync", "Our timestamp (" .. ourTimestamp .. ") matches or is newer than requested (" 
                    .. timestamp .. "), sending data to " .. sender)
         
-        -- Get compressed data - first try to get stored compressed data
+        -- Get compressed data
         local compressedData = nil
         
-        -- Try to get from dedicated compressed storage first
-        if TWRA_CompressedAssignments and TWRA_CompressedAssignments.data then
-            compressedData = TWRA_CompressedAssignments.data
-            self:Debug("sync", "Using stored compressed data for response")
-        -- Fall back to our GetStoredCompressedData function if available
-        elseif self.GetStoredCompressedData then
-            compressedData = self:GetStoredCompressedData()
-            self:Debug("sync", "Generated compressed data for response using GetStoredCompressedData")
-        -- Last resort - compress on the fly
+        -- Use segmented sync if available
+        if self.SYNC.useSegmentedSync and self.RequestStructureSync then
+            self:Debug("sync", "Redirecting to segmented sync for response")
+            -- We will redirect to segmented sync by sending structure instead
+            if self.HandleStructureRequestCommand then
+                self:HandleStructureRequestCommand(message, sender)
+            end
+            return
+        -- Otherwise generate compressed data on the fly
         elseif self.CompressAssignmentsData then
             -- Prepare data for sync (strip client-specific info)
             local syncData = nil

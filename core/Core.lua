@@ -3,13 +3,21 @@
 
 TWRA = TWRA or {}
 
-function TWRA:OnLoad()
+function TWRA:OnLoad(eventFrame)
+    -- Store reference to the event frame for future use
+    self.eventFrame = eventFrame or _G["TWRAEventFrame"]
+    
+    if not self.eventFrame then
+        self:Debug("error", "Could not find event frame to register events")
+        return
+    end
+    
     -- Register for events
-    this:RegisterEvent("ADDON_LOADED")
-    this:RegisterEvent("CHAT_MSG_ADDON")
-    this:RegisterEvent("PLAYER_ENTERING_WORLD")
-    this:RegisterEvent("RAID_ROSTER_UPDATE")
-    this:RegisterEvent("PARTY_MEMBERS_CHANGED")
+    self.eventFrame:RegisterEvent("ADDON_LOADED")
+    self.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+    self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self.eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+    self.eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
     
     -- Initialize saved variables if needed
     TWRA_SavedVariables = TWRA_SavedVariables or {}
@@ -32,6 +40,9 @@ function TWRA:OnLoad()
             TWRA_Assignments.currentSection = TWRA_SavedVariables.assignments.currentSection or 1
         end
     end
+    
+    -- IMPORTANT: Ensure we never store full compressed data
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     
     -- Set default for main frame visibility if it doesn't exist
     if TWRA_SavedVariables.options.hideFrameByDefault == nil then
@@ -278,7 +289,7 @@ frame:SetScript("OnEvent", function()
         TWRA:OnEvent(event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
     end
 end)
-frame:SetScript("OnLoad", function() TWRA:OnLoad() end)
+frame:SetScript("OnLoad", function() TWRA:OnLoad(frame) end)
 
 -- Modify the slash command handler to support show/hide commands
 SLASH_TWRA1 = "/twra"

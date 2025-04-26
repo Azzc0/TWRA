@@ -859,3 +859,42 @@ function TWRA:ProcessImportedData(data)
     
     return data
 end
+
+-- Central implementation of StoreCompressedData
+-- This is the consolidated version that all other modules should use
+-- It properly handles segmented compression instead of storing redundant data
+function TWRA:StoreCompressedData(compressedData)
+    if not compressedData then
+        self:Debug("error", "StoreCompressedData: No compressed data to store")
+        return false
+    end
+    
+    self:Debug("data", "StoreCompressedData: Using segmented compression approach")
+    
+    -- Initialize compression if needed
+    if self.InitializeCompression and not self.LibCompress then
+        self:InitializeCompression()
+    end
+    
+    -- Always prefer to use segmented data approach
+    if self.StoreSegmentedData then
+        self:Debug("data", "Storing segmented compressed data instead of complete data")
+        return self:StoreSegmentedData()
+    else
+        -- Only update the timestamp if segmented approach is not available
+        -- This isn't ideal but maintains compatibility with older code
+        TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+        
+        -- Just store the timestamp for version checking
+        if TWRA_Assignments then
+            TWRA_CompressedAssignments.timestamp = TWRA_Assignments.timestamp or time()
+            self:Debug("data", "Stored timestamp but not complete data")
+        end
+        
+        -- Log that we're not storing the full data to avoid redundancy
+        self:Debug("data", "Skipped storing complete compressed data (" .. 
+                  string.len(compressedData) .. " bytes) to avoid redundancy")
+    end
+    
+    return true
+end
