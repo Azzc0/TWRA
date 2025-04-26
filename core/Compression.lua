@@ -282,104 +282,95 @@ end
 
 -- Decompress structure data
 function TWRA:DecompressStructureData(compressedStructure)
+    self:Debug("compress", "Decompressing structure data")
+    
     if not compressedStructure or type(compressedStructure) ~= "string" then
         self:Debug("error", "Invalid compressed structure data")
-        return nil, "Invalid compressed structure data"
+        return nil
     end
     
-    -- Check compression marker
-    local marker = string.byte(compressedStructure, 1)
-    if marker ~= 241 then
-        self:Debug("error", "Unknown structure compression marker: " .. tostring(marker))
-        return nil, "Unknown compression marker"
+    -- Decode from Base64
+    local decodedString = self:DecodeBase64(compressedStructure)
+    if not decodedString then
+        self:Debug("error", "Failed to decode structure data from Base64")
+        return nil
     end
     
-    -- Remove marker
-    compressedStructure = string.sub(compressedStructure, 2)
-    
-    -- Initialize compression system if needed
-    if not self.LibCompress then
-        if not self:InitializeCompression() then
-            return nil, "Failed to initialize compression system"
+    -- Decompress using LibCompress
+    local decompressedString
+    if self.LibCompress then
+        decompressedString = self.LibCompress:DecompressHuffman(decodedString)
+        
+        if not decompressedString then
+            self:Debug("error", "Failed to decompress structure data with Huffman")
+            return nil
         end
+    else
+        -- Fallback if LibCompress not available (shouldn't happen, but just in case)
+        decompressedString = decodedString
+        self:Debug("compress", "Warning: Using uncompressed data, LibCompress not available")
     end
     
-    -- Decode Base64
-    local binaryData = self:DecodeBase64Raw(compressedStructure)
-    if not binaryData then
-        self:Debug("error", "Failed to decode Base64 structure data")
-        return nil, "Failed to decode Base64 data"
+    -- Convert string to table
+    local decompressedTable
+    local func, errorMessage = loadstring("return " .. decompressedString)
+    
+    if func then
+        decompressedTable = func()
+        self:Debug("compress", "Successfully decompressed structure data with " .. 
+                  (self:GetTableSize(decompressedTable) or 0) .. " sections")
+    else
+        self:Debug("error", "Failed to convert decompressed structure string to table: " .. (errorMessage or "unknown error"))
+        return nil
     end
     
-    -- Decompress data
-    local decompressed = self.LibCompress:DecompressHuffman(binaryData)
-    if not decompressed then
-        self:Debug("error", "Failed to decompress structure data")
-        return nil, "Decompression failed"
-    end
-    
-    -- Convert to table
-    local structureTable = self.LibCompress:StringToTable(decompressed)
-    if not structureTable then
-        self:Debug("error", "Failed to convert decompressed structure to table")
-        return nil, "Failed to parse decompressed data"
-    end
-    
-    self:Debug("compress", "Successfully decompressed structure data with timestamp: " .. 
-               tostring(structureTable.timestamp) .. " and " .. 
-               tostring(table.getn(structureTable)) .. " sections")
-    
-    return structureTable
+    return decompressedTable
 end
 
 -- Decompress section data
-function TWRA:DecompressSectionData(compressedSection)
+function TWRA:DecompressSectionData(sectionIndex, compressedSection)
+    self:Debug("compress", "Decompressing section " .. sectionIndex .. " data")
+    
     if not compressedSection or type(compressedSection) ~= "string" then
         self:Debug("error", "Invalid compressed section data")
-        return nil, "Invalid compressed section data"
+        return nil
     end
     
-    -- Check compression marker
-    local marker = string.byte(compressedSection, 1)
-    if marker ~= 241 then
-        self:Debug("error", "Unknown section compression marker: " .. tostring(marker))
-        return nil, "Unknown compression marker"
+    -- Decode from Base64
+    local decodedString = self:DecodeBase64(compressedSection)
+    if not decodedString then
+        self:Debug("error", "Failed to decode section data from Base64")
+        return nil
     end
     
-    -- Remove marker
-    compressedSection = string.sub(compressedSection, 2)
-    
-    -- Initialize compression system if needed
-    if not self.LibCompress then
-        if not self:InitializeCompression() then
-            return nil, "Failed to initialize compression system"
+    -- Decompress using LibCompress
+    local decompressedString
+    if self.LibCompress then
+        decompressedString = self.LibCompress:DecompressHuffman(decodedString)
+        
+        if not decompressedString then
+            self:Debug("error", "Failed to decompress section data with Huffman")
+            return nil
         end
+    else
+        -- Fallback if LibCompress not available
+        decompressedString = decodedString
+        self:Debug("compress", "Warning: Using uncompressed data, LibCompress not available")
     end
     
-    -- Decode Base64
-    local binaryData = self:DecodeBase64Raw(compressedSection)
-    if not binaryData then
-        self:Debug("error", "Failed to decode Base64 section data")
-        return nil, "Failed to decode Base64 data"
+    -- Convert string to table
+    local decompressedTable
+    local func, errorMessage = loadstring("return " .. decompressedString)
+    
+    if func then
+        decompressedTable = func()
+        self:Debug("compress", "Successfully decompressed section " .. sectionIndex .. " data")
+    else
+        self:Debug("error", "Failed to convert decompressed section string to table: " .. (errorMessage or "unknown error"))
+        return nil
     end
     
-    -- Decompress data
-    local decompressed = self.LibCompress:DecompressHuffman(binaryData)
-    if not decompressed then
-        self:Debug("error", "Failed to decompress section data")
-        return nil, "Decompression failed"
-    end
-    
-    -- Convert to table
-    local sectionTable = self.LibCompress:StringToTable(decompressed)
-    if not sectionTable then
-        self:Debug("error", "Failed to convert decompressed section to table")
-        return nil, "Failed to parse decompressed data"
-    end
-    
-    self:Debug("compress", "Successfully decompressed section data")
-    
-    return sectionTable
+    return decompressedTable
 end
 
 -- Store segmented compressed data
@@ -432,6 +423,28 @@ function TWRA:StoreSegmentedData()
     
     self:Debug("compress", "Stored segmented compressed data for " .. sectionCount .. " sections")
     return true
+end
+
+-- Function to get the compressed structure from TWRA_CompressedAssignments
+function TWRA:GetCompressedStructure()
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.structure then
+        self:Debug("compress", "No compressed structure available")
+        return nil
+    end
+    
+    return TWRA_CompressedAssignments.structure
+end
+
+-- Function to get a compressed section from TWRA_CompressedAssignments
+function TWRA:GetCompressedSection(sectionIndex)
+    if not TWRA_CompressedAssignments or 
+       not TWRA_CompressedAssignments.data or 
+       not TWRA_CompressedAssignments.data[sectionIndex] then
+        self:Debug("compress", "No compressed data available for section " .. sectionIndex)
+        return nil
+    end
+    
+    return TWRA_CompressedAssignments.data[sectionIndex]
 end
 
 -- Get compressed structure data
