@@ -15,15 +15,11 @@ TWRA.SYNC.sectionChangeHandlerRegistered = false -- Section change handler regis
 
 -- Command constants for addon messages
 TWRA.SYNC.COMMANDS = {
-    VERSION = "VER",        -- For version checking
-    SECTION = "SECTION",    -- For live section updates
-    DATA_REQUEST = "DREQ",  -- Request full data (legacy)
-    DATA_RESPONSE = "DRES", -- Send full data (legacy)
-    ANNOUNCE = "ANC",        -- Announce new import
-    STRUCTURE_REQUEST = "SREQ",  -- Request structure data
-    STRUCTURE_RESPONSE = "SRES", -- Send structure data
-    SECTION_REQUEST = "SECREQ",   -- Request specific section data
-    SECTION_RESPONSE = "SECRES"  -- Send specific section data
+    VERSION = "VERSION",     -- For version checking
+    SECTION = "SECTION",     -- For live section updates
+    DATA_REQUEST = "DREQ",   -- Request full data
+    DATA_RESPONSE = "DRES",  -- Send full data
+    ANNOUNCE = "ANC"         -- Announce new import
 }
 
 -- Function to register all sync-related events
@@ -138,81 +134,7 @@ function TWRA:DeactivateLiveSync()
     return true
 end
 
--- Helper function to send addon messages
-function TWRA:SendAddonMessage(message, channel)
-    -- Default to RAID if in raid, otherwise PARTY
-    if not channel then
-        channel = GetNumRaidMembers() > 0 and "RAID" or 
-                 (GetNumPartyMembers() > 0 and "PARTY" or nil)
-    end
-    
-    -- Exit if not in a group and no channel specified
-    if not channel then
-        self:Debug("sync", "Cannot send addon message - not in a group")
-        return false
-    end
-    
-    -- Log outgoing message if monitoring is enabled
-    if self.SYNC.monitorMessages then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[ADDON SEND]|r |cFFFFFF00" .. 
-            self.SYNC.PREFIX .. "|r to |cFF33FFFF" .. channel .. "|r: |cFFFFFFFF" .. message .. "|r")
-    end
-    
-    -- Send the message
-    SendAddonMessage(self.SYNC.PREFIX, message, channel)
-    return true
-end
-
--- Message Generation Functions for each command type
-
--- Function to create a section change message (SECTION)
-function TWRA:CreateSectionMessage(timestamp, sectionIndex)
-    return self.SYNC.COMMANDS.SECTION .. ":" .. timestamp .. ":" .. sectionIndex
-end
-
--- Function to create an announcement message (ANC)
-function TWRA:CreateAnnounceMessage(timestamp)
-    return self.SYNC.COMMANDS.ANNOUNCE .. ":" .. timestamp
-end
-
--- Function to create a structure request message (SREQ)
-function TWRA:CreateStructureRequestMessage(timestamp)
-    return self.SYNC.COMMANDS.STRUCTURE_REQUEST .. ":" .. timestamp
-end
-
--- Function to create a structure response message (SRES)
-function TWRA:CreateStructureResponseMessage(timestamp, structureData)
-    return self.SYNC.COMMANDS.STRUCTURE_RESPONSE .. ":" .. timestamp .. ":" .. structureData
-end
-
--- Function to create a section request message (SECREQ)
-function TWRA:CreateSectionRequestMessage(timestamp, sectionIndex)
-    return self.SYNC.COMMANDS.SECTION_REQUEST .. ":" .. timestamp .. ":" .. sectionIndex
-end
-
--- Function to create a section response message (SECRES)
-function TWRA:CreateSectionResponseMessage(timestamp, sectionIndex, sectionData)
-    return self.SYNC.COMMANDS.SECTION_RESPONSE .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
-end
-
--- Legacy function to create a data request message (DREQ) - Deprecated
-function TWRA:CreateDataRequestMessage(timestamp)
-    self:Debug("sync", "WARNING: Using deprecated DREQ message format")
-    return self.SYNC.COMMANDS.DATA_REQUEST .. ":" .. timestamp
-end
-
--- Legacy function to create a data response message (DRES) - Deprecated
-function TWRA:CreateDataResponseMessage(timestamp, data)
-    self:Debug("sync", "WARNING: Using deprecated DRES message format")
-    return self.SYNC.COMMANDS.DATA_RESPONSE .. ":" .. timestamp .. ":" .. data
-end
-
--- Function to create a version check message (VER)
-function TWRA:CreateVersionMessage(versionNumber)
-    return self.SYNC.COMMANDS.VERSION .. ":" .. versionNumber
-end
-
--- Enhanced BroadcastSectionChange function using the message generator
+-- Enhanced BroadcastSectionChange function with timestamp support
 function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
     -- Use provided timestamp or get current timestamp
     local timeToSync = timestamp or 0
@@ -230,11 +152,12 @@ function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
         return false
     end
     
-    self:Debug("sync", "Broadcasting section change with index: " .. tostring(sectionIndex))
+    self:Debug("sync", "Broadcasting section change to index " .. tostring(timeToSync) .. " with timestamp " .. tostring(sectionIndex))
     
-    -- Create and send the message using our generator
-    local message = self:CreateSectionMessage(timeToSync, sectionIndex)
-    return self:SendAddonMessage(message)
+    -- Format and send the message using proper command format
+    -- Send both section index and timestamp
+    local message = self.SYNC.COMMANDS.SECTION .. ":" .. timeToSync .. ":" .. sectionIndex
+    return self:SendAddonMessage(message, "RAID")
 end
 
 -- Process incoming addon communication messages with reduced debugging spam
@@ -272,6 +195,133 @@ function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
     end
 end
 
+-- Helper function to send addon messages
+function TWRA:SendAddonMessage(message, channel)
+    -- Default to RAID if in raid, otherwise PARTY
+    if not channel then
+        channel = GetNumRaidMembers() > 0 and "RAID" or 
+                 (GetNumPartyMembers() > 0 and "PARTY" or nil)
+    end
+    
+    -- Exit if not in a group and no channel specified
+    if not channel then
+        self:Debug("sync", "Cannot send addon message - not in a group")
+        return false
+    end
+    
+    -- Log outgoing message if monitoring is enabled
+    if self.SYNC.monitorMessages then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[ADDON SEND]|r |cFFFFFF00" .. 
+            self.SYNC.PREFIX .. "|r to |cFF33FFFF" .. channel .. "|r: |cFFFFFFFF" .. message .. "|r")
+    end
+    
+    -- Send the message
+    SendAddonMessage(self.SYNC.PREFIX, message, channel)
+    return true
+end
+
+-- Send data response to group
+function TWRA:SendDataResponse(encodedData, timestamp)
+    if not encodedData or encodedData == "" then
+        self:Debug("error", "No data to send in response - source string is empty")
+        return false
+    end
+    
+    -- Debug the data we're about to send
+    self:Debug("sync", "Preparing to send data response with timestamp: " .. timestamp)
+    self:Debug("sync", "Data length: " .. string.len(encodedData) .. " characters")
+    
+    -- Ensure proper Base64 padding before sending
+    local dataLen = string.len(encodedData)
+    local remainder = dataLen - (math.floor(dataLen / 4) * 4)
+    while remainder > 0 and remainder < 4 do
+        encodedData = encodedData .. "="
+        remainder = remainder + 1
+        self:Debug("sync", "Added padding character to Base64 data")
+    end
+    
+    -- Check if data needs to be chunked
+    local maxMsgSize = 2000  -- Increased from 200 to maximize efficiency (close to WoW's 2042 limit)
+    
+    if string.len(encodedData) > maxMsgSize then
+        -- Use chunk manager if available
+        if self.chunkManager then
+            self:Debug("sync", "Using chunk manager for large data response")
+            
+            -- Use proper prefix format for the chunk manager
+            local prefix = string.format("%s:%d:", 
+                self.SYNC.COMMANDS.DATA_RESPONSE,
+                timestamp)
+                
+            -- Call the chunk manager's function directly
+            self.chunkManager:SendChunkedMessage(encodedData, prefix)
+            return true
+        else
+            self:Debug("sync", "Chunk manager not available, using fallback chunking")
+            -- Fallback to basic chunking
+            local message = string.format("%s:%d:CHUNKED:%d", 
+                self.SYNC.COMMANDS.DATA_RESPONSE,
+                timestamp,
+                string.len(encodedData))
+                
+            self:SendAddonMessage(message)
+            
+            -- Break into simple chunks with basic numbering
+            local position = 1
+            local chunkSize = 1900  -- Increased from 180 to match ChunkManager's size
+            local chunkNum = 1
+            local totalChunks = math.ceil(string.len(encodedData) / chunkSize)
+            
+            self:Debug("sync", "Sending data in " .. totalChunks .. " chunks")
+            
+            -- Use scheduled timers to send chunks with delay
+            while position <= string.len(encodedData) do
+                local endPos = math.min(position + chunkSize - 1, string.len(encodedData))
+                local chunk = string.sub(encodedData, position, endPos)
+                
+                -- Use closure to capture current values
+                local currentChunk = chunk
+                local currentChunkNum = chunkNum
+                
+                -- Schedule sends with increasing delay
+                self:ScheduleTimer(function()
+                    local chunkMessage = string.format("%s:%d:CHUNK:%d:%d:%s", 
+                        self.SYNC.COMMANDS.DATA_RESPONSE,
+                        timestamp,
+                        currentChunkNum,
+                        totalChunks,
+                        currentChunk)
+                    
+                    self:SendAddonMessage(chunkMessage)
+                    self:Debug("sync", "Sent chunk " .. currentChunkNum .. "/" .. totalChunks)
+                end, (chunkNum - 1) * 0.2)
+                
+                position = endPos + 1
+                chunkNum = chunkNum + 1
+            end
+            
+            return true
+        end
+    else
+        -- Small enough for single message
+        local message = string.format("%s:%d:%s", 
+            self.SYNC.COMMANDS.DATA_RESPONSE,
+            timestamp,
+            encodedData)
+        
+        self:Debug("sync", "Sending data response in single message (size: " .. string.len(message) .. ")")
+        return self:SendAddonMessage(message)
+    end
+end
+
+-- Handle incoming addon messages - this connects to the CHAT_MSG_ADDON event in Core.lua
+function TWRA:CHAT_MSG_ADDON(prefix, message, distribution, sender)
+    -- Forward to our message handler
+    if self.OnChatMsgAddon then
+        self:OnChatMsgAddon(prefix, message, distribution, sender)
+    end
+end
+
 -- Function to toggle message monitoring
 function TWRA:ToggleMessageMonitoring(enable)
     if enable ~= nil then
@@ -282,6 +332,33 @@ function TWRA:ToggleMessageMonitoring(enable)
     
     DEFAULT_CHAT_FRAME:AddMessage("TWRA Sync Message Monitoring: " .. 
         (self.SYNC.monitorMessages and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"))
+end
+
+-- Handle group composition changes
+function TWRA:OnGroupChanged()
+    self:Debug("sync", "Group composition changed")
+    TWRA:UpdatePlayerTable()
+    -- Check if we went from solo to group (might want to activate sync)
+    local inGroup = (GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0)
+    
+    -- Always refresh player information when group changes as 
+    -- assignments might be group-dependent
+    if self.RefreshPlayerInfo then
+        self:Debug("data", "Refreshing player info after group composition change")
+        self:RefreshPlayerInfo()
+    else
+        self:Debug("error", "RefreshPlayerInfo function not available")
+    end
+    
+    -- Additional sync-related logic
+    if inGroup and self.SYNC.liveSync then
+        -- We joined a group and sync is enabled, make sure it's active
+        self:Debug("sync", "Joined a group with sync enabled")
+        self:ActivateLiveSync()
+    elseif not inGroup then
+        -- We left all groups, could consider deactivating sync
+        -- Not auto-deactivating for now, as the user might join another group soon
+    end
 end
 
 -- Debug function to show sync status information
@@ -307,10 +384,8 @@ function TWRA:ShowSyncStatus()
     DEFAULT_CHAT_FRAME:AddMessage("  Command Handlers:")
     DEFAULT_CHAT_FRAME:AddMessage("    Section: " .. (self.HandleSectionCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
     DEFAULT_CHAT_FRAME:AddMessage("    Announce: " .. (self.HandleAnnounceCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
-    DEFAULT_CHAT_FRAME:AddMessage("    Structure Request: " .. (self.HandleStructureRequestCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
-    DEFAULT_CHAT_FRAME:AddMessage("    Structure Response: " .. (self.HandleStructureResponseCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
-    DEFAULT_CHAT_FRAME:AddMessage("    Section Request: " .. (self.HandleSectionRequestCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
-    DEFAULT_CHAT_FRAME:AddMessage("    Section Response: " .. (self.HandleSectionResponseCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("    Data Request: " .. (self.HandleDataRequestCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("    Data Response: " .. (self.HandleDataResponseCommand and "|cFF00FF00AVAILABLE|r" or "|cFFFF0000MISSING|r"))
     
     DEFAULT_CHAT_FRAME:AddMessage("  Activation Commands:")
     DEFAULT_CHAT_FRAME:AddMessage("    /twra debug sync - Show this status")
@@ -363,12 +438,12 @@ function TWRA:InitializeSync()
     self:RegisterSectionChangeHandler()
 end
 
--- Function to request structure data from group (replacing RequestDataSync)
-function TWRA:RequestStructureSync(timestamp)
+-- Function to request data sync from group members
+function TWRA:RequestDataSync(timestamp)
     -- Throttle requests to prevent spam
     local now = GetTime()
     if now - self.SYNC.lastRequestTime < self.SYNC.requestTimeout then
-        self:Debug("sync", "Structure request throttled - too soon since last request")
+        self:Debug("sync", "Data request throttled - too soon since last request")
         return false
     end
     
@@ -377,11 +452,13 @@ function TWRA:RequestStructureSync(timestamp)
     
     -- Check if we're in a group
     if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        self:Debug("sync", "Not in a group, skipping structure request")
+        self:Debug("sync", "Not in a group, skipping data request")
         return false
     end
     
     -- Make sure we have a valid timestamp to request
+    -- IMPORTANT: We are requesting the timestamp passed to us, NOT our own timestamp
+    -- This is because we want data matching that specific timestamp
     if not timestamp or timestamp == 0 then
         self:Debug("sync", "No specific timestamp provided, using our current timestamp")
         if TWRA_Assignments and TWRA_Assignments.timestamp then
@@ -391,103 +468,23 @@ function TWRA:RequestStructureSync(timestamp)
         end
     end
     
-    -- Create the request message using our generator
-    local message = self:CreateStructureRequestMessage(timestamp)
+    -- Debug timestamp information clearly
+    self:Debug("sync", "RequestDataSync: Requesting timestamp " .. timestamp .. 
+               ", Our timestamp: " .. (TWRA_Assignments and TWRA_Assignments.timestamp or 0))
+    
+    -- Create the request message
+    local message = string.format("%s:%d", 
+        self.SYNC.COMMANDS.DATA_REQUEST,
+        timestamp)
     
     -- Send the request
     self:SendAddonMessage(message)
-    self:Debug("sync", "Requested structure sync with timestamp " .. timestamp)
+    self:Debug("sync", "Requested data sync with timestamp " .. timestamp)
     
     -- Show a message to the user
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Requesting raid structure from group...")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Requesting raid assignments from group...")
     
     return true
-end
-
--- Function to request a specific section from group
-function TWRA:RequestSectionSync(sectionIndex, timestamp)
-    -- Check if we're in a group
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        self:Debug("sync", "Not in a group, skipping section request")
-        return false
-    end
-    
-    -- Make sure we have a valid timestamp
-    if not timestamp or timestamp == 0 then
-        self:Debug("sync", "No specific timestamp provided for section request, using current")
-        if TWRA_Assignments and TWRA_Assignments.timestamp then
-            timestamp = TWRA_Assignments.timestamp
-        else
-            timestamp = 0
-        end
-    end
-    
-    -- Create the request message using our generator
-    local message = self:CreateSectionRequestMessage(timestamp, sectionIndex)
-    
-    -- Send the request
-    self:SendAddonMessage(message)
-    self:Debug("sync", "Requested section " .. sectionIndex .. " with timestamp " .. timestamp)
-    
-    return true
-end
-
--- Function to send structure data in response to a request
-function TWRA:SendStructureResponse(timestamp)
-    -- Get the structure data
-    local structureData = self:GetCompressedStructure()
-    if not structureData then
-        self:Debug("error", "No structure data available to send")
-        return false
-    end
-    
-    -- Create the response message using our generator
-    local message = self:CreateStructureResponseMessage(timestamp, structureData)
-    
-    -- Check if it needs chunking
-    if string.len(message) > 2000 then
-        self:Debug("sync", "Structure data too large, using chunk manager")
-        if self.chunkManager then
-            local prefix = self.SYNC.COMMANDS.STRUCTURE_RESPONSE .. ":" .. timestamp .. ":"
-            self.chunkManager:SendChunkedMessage(structureData, prefix)
-            return true
-        else
-            self:Debug("error", "Chunk manager not available for large structure data")
-            return false
-        end
-    else
-        -- Send the message
-        return self:SendAddonMessage(message)
-    end
-end
-
--- Function to send section data in response to a request
-function TWRA:SendSectionResponse(sectionIndex, timestamp)
-    -- Get the section data
-    local sectionData = self:GetCompressedSection(sectionIndex)
-    if not sectionData then
-        self:Debug("error", "No data available for section " .. sectionIndex)
-        return false
-    end
-    
-    -- Create the response message using our generator
-    local message = self:CreateSectionResponseMessage(timestamp, sectionIndex, sectionData)
-    
-    -- Check if it needs chunking
-    if string.len(message) > 2000 then
-        self:Debug("sync", "Section data too large, using chunk manager")
-        if self.chunkManager then
-            local prefix = self.SYNC.COMMANDS.SECTION_RESPONSE .. ":" .. timestamp .. ":" .. sectionIndex .. ":"
-            self.chunkManager:SendChunkedMessage(sectionData, prefix)
-            return true
-        else
-            self:Debug("error", "Chunk manager not available for large section data")
-            return false
-        end
-    else
-        -- Send the message
-        return self:SendAddonMessage(message)
-    end
 end
 
 -- Function to announce when new data has been imported
@@ -504,8 +501,10 @@ function TWRA:AnnounceDataImport()
         timestamp = TWRA_Assignments.timestamp or 0
     end
     
-    -- Create the announce message using our generator
-    local message = self:CreateAnnounceMessage(timestamp)
+    -- Create the announce message - only send the timestamp as per Phase 2 requirements
+    local message = string.format("%s:%d", 
+        self.SYNC.COMMANDS.ANNOUNCE,
+        timestamp)
     
     -- Add debug for monitoring
     self:Debug("sync", "Announcing data import: timestamp=" .. timestamp)
@@ -561,33 +560,6 @@ function TWRA:RegisterSectionChangeHandler()
     -- Mark as registered
     self.SYNC.sectionChangeHandlerRegistered = true
     self:Debug("sync", "Section change handler registered")
-end
-
--- Stub functions for compressed data retrieval - to be implemented elsewhere
-
--- Function to get compressed structure data
-function TWRA:GetCompressedStructure()
-    -- This stub would be implemented in the core compression module
-    self:Debug("sync", "GetCompressedStructure called - needs implementation")
-    
-    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.structure then
-        return TWRA_CompressedAssignments.structure
-    end
-    
-    return nil
-end
-
--- Function to get compressed section data by index
-function TWRA:GetCompressedSection(sectionIndex)
-    -- This stub would be implemented in the core compression module
-    self:Debug("sync", "GetCompressedSection called for section " .. sectionIndex .. " - needs implementation")
-    
-    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.data and 
-       TWRA_CompressedAssignments.data[sectionIndex] then
-        return TWRA_CompressedAssignments.data[sectionIndex]
-    end
-    
-    return nil
 end
 
 -- Execute registration of sync events immediately
