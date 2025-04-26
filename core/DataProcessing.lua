@@ -898,3 +898,69 @@ function TWRA:StoreCompressedData(compressedData)
     
     return true
 end
+
+-- Helper function to clear data structures when receiving SRES response
+function TWRA:ClearDataForStructureResponse()
+    self:Debug("data", "Clearing data structures for structure response processing")
+    
+    -- Clear TWRA_Assignments data
+    if TWRA_Assignments then
+        -- Preserve timestamp and isExample flag as they'll be properly overwritten
+        local timestamp = TWRA_Assignments.timestamp
+        local isExample = TWRA_Assignments.isExample
+        
+        -- Completely clear the data table
+        TWRA_Assignments.data = nil
+        
+        -- Restore preserved values
+        TWRA_Assignments.timestamp = timestamp
+        TWRA_Assignments.isExample = isExample
+    end
+    
+    -- Clear TWRA_CompressedAssignments sections
+    if TWRA_CompressedAssignments then
+        -- This MUST be completely cleared
+        TWRA_CompressedAssignments.sections = nil
+        
+        -- The structure and timestamp will be overwritten, so no need to clear them
+    end
+    
+    self:Debug("data", "Data structures cleared successfully for structure response")
+    return true
+end
+
+-- Helper function to build skeleton structure from decoded structure data
+function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp)
+    if not decodedStructure or type(decodedStructure) ~= "table" then
+        self:Debug("error", "BuildSkeletonFromStructure: Invalid structure data")
+        return false
+    end
+    
+    self:Debug("data", "Building skeleton structure from decoded structure data")
+    
+    -- Create new TWRA_Assignments skeleton or use existing
+    TWRA_Assignments = TWRA_Assignments or {}
+    TWRA_Assignments.timestamp = timestamp or TWRA_Assignments.timestamp
+    TWRA_Assignments.data = {}
+    
+    -- Build skeleton sections
+    local sectionsCount = 0
+    for index, sectionName in pairs(decodedStructure) do
+        if type(index) == "number" and type(sectionName) == "string" then
+            -- Create skeleton section entry
+            TWRA_Assignments.data[index] = {
+                ["Section Name"] = sectionName,
+                ["Section Rows"] = {},
+                ["Section Header"] = {},
+                ["Section Metadata"] = {
+                    ["Name"] = { sectionName }
+                },
+                ["Section Player Info"] = {}
+            }
+            sectionsCount = sectionsCount + 1
+        end
+    end
+    
+    self:Debug("data", "Built skeleton structure with " .. sectionsCount .. " sections")
+    return true
+end

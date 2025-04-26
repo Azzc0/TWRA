@@ -965,6 +965,14 @@ function TWRA:CreateOptionsInMainFrame()
             self:ProcessPlayerInfo()
         end
         
+        -- Broadcast minimal announcement to alert other clients about the new import
+        if self.AnnounceDataImport then
+            self:Debug("sync", "Broadcasting import announcement with timestamp: " .. timestamp)
+            self:AnnounceDataImport()
+        else
+            self:Debug("error", "AnnounceDataImport function not available - import announcement not sent")
+        end
+        
         -- Success message
         self:Debug("data", "Assignment data imported successfully")
         
