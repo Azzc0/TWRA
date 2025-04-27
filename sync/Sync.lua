@@ -212,6 +212,69 @@ function TWRA:CreateVersionMessage(versionNumber)
     return self.SYNC.COMMANDS.VERSION .. ":" .. versionNumber
 end
 
+-- Compare timestamps and return relationship between them
+-- Returns: 
+--   1 if local timestamp is newer
+--   0 if timestamps are equal
+--   -1 if remote timestamp is newer
+function TWRA:CompareTimestamps(localTimestamp, remoteTimestamp)
+    -- Handle nil values
+    localTimestamp = tonumber(localTimestamp) or 0
+    remoteTimestamp = tonumber(remoteTimestamp) or 0
+    
+    -- Compare and return result
+    if localTimestamp > remoteTimestamp then
+        return 1       -- Local is newer
+    elseif localTimestamp < remoteTimestamp then
+        return -1      -- Remote is newer
+    else
+        return 0       -- Equal timestamps
+    end
+end
+
+-- Request structure from other raid members
+-- @param timestamp (optional) Timestamp to use in the structure request
+-- @return boolean Success flag
+function TWRA:RequestStructureSync(timestamp)
+    -- Throttle requests to prevent spam
+    local now = GetTime()
+    if now - self.SYNC.lastRequestTime < self.SYNC.requestTimeout then
+        self:Debug("sync", "Structure request throttled - too soon since last request")
+        return false
+    end
+    
+    -- Update last request time
+    self.SYNC.lastRequestTime = now
+    
+    -- Check if we're in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("sync", "Not in a group, skipping structure request")
+        return false
+    end
+    
+    -- Make sure we have a valid timestamp to request
+    if not timestamp or timestamp == 0 then
+        self:Debug("sync", "No specific timestamp provided, using our current timestamp")
+        if TWRA_Assignments and TWRA_Assignments.timestamp then
+            timestamp = TWRA_Assignments.timestamp
+        else
+            timestamp = GetTime()
+        end
+    end
+    
+    -- Create the request message using our generator
+    local message = self:CreateStructureRequestMessage(timestamp)
+    
+    -- Send the request
+    self:SendAddonMessage(message)
+    self:Debug("sync", "Requested structure sync with timestamp " .. timestamp)
+    
+    -- Show a message to the user
+    self:Debug("sync", "Requesting raid structure from group...", true)
+    
+    return true
+end
+
 -- Enhanced BroadcastSectionChange function using the message generator
 function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
     -- Use provided timestamp or get current timestamp
@@ -363,45 +426,9 @@ function TWRA:InitializeSync()
     self:RegisterSectionChangeHandler()
 end
 
--- Function to request structure data from group (replacing RequestDataSync)
-function TWRA:RequestStructureSync(timestamp)
-    -- Throttle requests to prevent spam
-    local now = GetTime()
-    if now - self.SYNC.lastRequestTime < self.SYNC.requestTimeout then
-        self:Debug("sync", "Structure request throttled - too soon since last request")
-        return false
-    end
-    
-    -- Update last request time
-    self.SYNC.lastRequestTime = now
-    
-    -- Check if we're in a group
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        self:Debug("sync", "Not in a group, skipping structure request")
-        return false
-    end
-    
-    -- Make sure we have a valid timestamp to request
-    if not timestamp or timestamp == 0 then
-        self:Debug("sync", "No specific timestamp provided, ~~using our current timestamp~~")
-        if TWRA_Assignments and TWRA_Assignments.timestamp then
-            timestamp = TWRA_Assignments.timestamp
-        -- else  -- we should most definitely SREQ:0 at any point.
-        --     timestamp = 0
-        end
-    end
-    
-    -- Create the request message using our generator
-    local message = self:CreateStructureRequestMessage(timestamp)
-    
-    -- Send the request
-    self:SendAddonMessage(message)
-    self:Debug("sync", "Requested structure sync with timestamp " .. timestamp)
-    
-    -- Show a message to the user
-    self:Debug("sync", "Requesting raid structure from group...", true)
-    
-    return true
+-- Function to register with CHAT_MSG_ADDON event
+function TWRA:CHAT_MSG_ADDON(prefix, message, distribution, sender)
+    self:OnChatMsgAddon(prefix, message, distribution, sender)
 end
 
 -- Function to request a specific section from group

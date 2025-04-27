@@ -112,21 +112,21 @@ function TWRA:ExtractTimestampFromMessage(message)
     return timestamp, remainingContent
 end
 
-function TWRA:CompareTimestamps(remoteTimestamp)
+-- Use the centralized timestamp comparison function from Sync.lua
+function TWRA:CheckTimestampAndHandleResponse(remoteTimestamp, sender)
     -- Get our current timestamp from assignments
     local localTimestamp = 0
     if TWRA_Assignments and TWRA_Assignments.timestamp then
         localTimestamp = tonumber(TWRA_Assignments.timestamp) or 0
     end
     
-    -- Handle nil/invalid values for remote timestamp
-    remoteTimestamp = tonumber(remoteTimestamp) or 0
-    
     -- Debug the comparison
-    self:Debug("sync", "CompareTimestamps - Local: " .. localTimestamp .. ", Remote: " .. remoteTimestamp)
+    self:Debug("sync", "CheckTimestampAndHandleResponse - Local: " .. localTimestamp .. ", Remote: " .. remoteTimestamp)
     
-    -- Compare timestamps and take action
-    if localTimestamp > remoteTimestamp then
+    -- Use the centralized function for timestamp comparison
+    local comparison = self:CompareTimestamps(localTimestamp, remoteTimestamp)
+    
+    if comparison > 0 then
         -- Our data is newer - log but don't act
         self:Debug("sync", "Our data is NEWER")
         
@@ -138,50 +138,25 @@ function TWRA:CompareTimestamps(remoteTimestamp)
         
         return -1 -- Caller should not proceed with normal flow
         
-    elseif localTimestamp < remoteTimestamp then
+    elseif comparison < 0 then
         -- Remote data is newer - request structure
-        self:Debug("sync", "Remote data from  is NEWER")
+        self:Debug("sync", "Remote data is NEWER")
         
-        if self.RequestStructureSync then
-            -- Request the structure and handle the response
-            self:Debug("sync", "Requesting newer structure data (timestamp: " .. remoteTimestamp .. ")")
-            self:RequestStructureSync(remoteTimestamp)
+        -- Request the structure sync
+        self:Debug("sync", "Requesting newer structure data (timestamp: " .. remoteTimestamp .. ")")
+        self:RequestStructureSync(remoteTimestamp)
             
-            -- Set a timeout for waiting for the response
-            self.SYNC.structureRequestTimeout = self:ScheduleTimer(function()
-                self:Debug("sync", "Structure request timeout - no response received within 1 second")
-                -- Could implement fallback behavior here
-            end, 1.0)
+        -- Set a timeout for waiting for the response
+        self.SYNC.structureRequestTimeout = self:ScheduleTimer(function()
+            self:Debug("sync", "Structure request timeout - no response received within 1 second")
+            -- Could implement fallback behavior here
+        end, 1.0)
             
-            return 1 -- Caller should not proceed with normal flow
-        end
+        return 1 -- Caller should not proceed with normal flow
     else
         -- Timestamps are equal - proceed normally
         self:Debug("sync", "Timestamps are EQUAL")
-        return 0 -- Caller should proceed with normal flow
-    end
-end
-
--- Send our structure data in response to a section change when we have newer data
-function TWRA:AnnounceStructure(recipient)
-    -- Temporary stub function - to be implemented fully
-    self:Debug("sync", "RespondWithStructure called for " .. recipient)
-    
-    -- If we have structure compression functionality
-    if self.GetCompressedStructure then
-        -- Get our structure data
-        local structureData = self:GetCompressedStructure()
-        if structureData then
-            -- Send structure response
-            self:Debug("sync", "Sending structure response with our newer data")
-            -- This would use the full implementation of SendStructureResponse
-            -- For now we'll just log that we would respond
-            self:Debug("sync", "STUB: Would send SRESP message with structure data")
-        else
-            self:Debug("sync", "Failed to get compressed structure data")
-        end
-    else
-        self:Debug("sync", "GetCompressedStructure not available - cannot respond with structure")
+        return 0 -- Timestamps are equal, caller can proceed with normal flow
     end
 end
 
@@ -197,7 +172,7 @@ function TWRA:HandleSectionCommand(message, sender)
     local timestamp, sectionIndex = self:ExtractTimestampFromMessage(message)
 
     -- Extract parts
-    local timestampComparison = self:CompareTimestamps(timestamp)
+    local timestampComparison = self:CheckTimestampAndHandleResponse(timestamp, sender)
     
     if not sectionIndex then
         self:Debug("sync", "Invalid section index in command from " .. sender)
@@ -215,7 +190,7 @@ function TWRA:HandleSectionCommand(message, sender)
         self:NavigateToSection(tonumber(sectionIndex), fromSync)  -- suppressSync=true
         self:Debug("sync", "Navigated to section " .. sectionIndex .. " from sync command by " .. sender)
     else 
-        -- timestamp mismatch. CompareTimestamp should already be trying to get us on the same timestamp
+        -- timestamp mismatch. CheckTimestampAndHandleResponse should already be trying to get us on the same timestamp
         self:Debug("sync", "Timestamp mismatch, not navigating.")
     end
 end
@@ -234,20 +209,14 @@ function TWRA:HandleAnnounceCommand(message, sender)
         return false
     end
     
-    -- Get our current timestamp
-    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
-    
     -- Compare timestamps
-    local comparison = self:CompareTimestamps(ourTimestamp, timestamp)
+    local comparison = self:CheckTimestampAndHandleResponse(timestamp, sender)
     
     if comparison < 0 then
         -- Their timestamp is newer - request their structure data
-        self:Debug("sync", "Requesting structure data from " .. sender .. " - they have newer data")
-        self:RequestStructureSync(timestamp)
         return true
     else
         -- Our data is newer or the same - ignore
-        self:Debug("sync", "Ignoring announce command from " .. sender .. " - we have same or newer data")
         return true
     end
 end
@@ -256,33 +225,45 @@ function TWRA:UnusedCommand()    -- Placeholder for unused command
     self:Debug("sync", "Unused command handler called")
 end
 
--- Handle structure request commands (SREQ)
+-- Handle incoming structure request messages
 function TWRA:HandleStructureRequestCommand(message, sender)
-    -- Extract timestamp from the message
-    local timestamp = tonumber(message)
-    if not timestamp then
-        self:Debug("sync", "Malformed structure request from " .. sender .. ": Invalid timestamp format")
-        return
+    self:Debug("sync", "Received structure request from " .. sender)
+    
+    -- Extract the requested timestamp from the message (SREQ:timestamp format)
+    local requestedTimestamp = tonumber(message)
+    if not requestedTimestamp then
+        self:Debug("sync", "Invalid structure request format from " .. sender)
+        return false
     end
     
-    self:Debug("sync", "Received structure request from " .. sender .. " with timestamp: " .. timestamp)
-    
-    -- Get our current timestamp
-    local localTimestamp = 0
-    if TWRA_Assignments and TWRA_Assignments.timestamp then
-        localTimestamp = tonumber(TWRA_Assignments.timestamp) or 0
+    -- Check if we have any data to share
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.structure then
+        self:Debug("sync", "No structure data available to share with " .. sender)
+        return false
     end
     
-    -- Only respond if we have a valid timestamp and it matches or is newer than the requested one
-    if localTimestamp > 0 and localTimestamp >= timestamp then
-        self:Debug("sync", "We have matching or newer data (timestamp " .. localTimestamp .. "), preparing structure response")
-        
-        -- Use the request collapse system to prevent flooding
-        -- We'll queue this request and potentially handle it after a short delay
-        self:QueueStructureResponse(timestamp, sender)
-    else
-        self:Debug("sync", "We don't have matching or newer data (our timestamp: " .. localTimestamp .. ")")
+    -- Get our current data timestamp
+    local ourTimestamp = TWRA_CompressedAssignments.timestamp
+    
+    -- Compare timestamps
+    local comparison = self:CheckTimestampAndHandleResponse(requestedTimestamp, sender)
+    
+    self:Debug("sync", "After timestamp check, comparison result: " .. tostring(comparison))
+    
+    -- Changed from comparison < 0 to comparison == -1 to match the return value from CheckTimestampAndHandleResponse
+    if comparison == 1 then
+        -- Our data is older than requested - don't respond
+        self:Debug("sync", "Our data (" .. ourTimestamp .. ") is older than requested (" 
+                 .. requestedTimestamp .. ") - not responding")
+        return false
     end
+    
+    self:Debug("sync", "Proceeding with structure response - our timestamp: " .. ourTimestamp)
+    
+    -- Use the QueueStructureResponse function instead of directly scheduling a timer
+    self:QueueStructureResponse(ourTimestamp, sender)
+    
+    return true
 end
 
 -- Handle structure response commands (SRES)
@@ -322,6 +303,18 @@ function TWRA:HandleStructureResponseCommand(message, sender)
     
     -- Process the structure data
     if shouldProcess then
+        -- Check if the structure data has the compression marker at the beginning (byte 241)
+        -- If not, add it to ensure proper decompression
+        if structureData and string.len(structureData) > 0 then
+            -- Check if data already has the marker
+            local firstByte = string.byte(structureData, 1)
+            -- If it doesn't have our marker (241), add it
+            if firstByte ~= 241 then
+                self:Debug("sync", "Adding compression marker to structure data")
+                structureData = "\241" .. structureData
+            end
+        end
+        
         self:ProcessStructureData(structureData, timestamp, sender)
     end
 end
@@ -412,48 +405,60 @@ function TWRA:HandleSectionResponseCommand(message, sender)
     end
 end
 
--- Request collapse system
-function TWRA:QueueStructureResponse(timestamp, requestingPlayer)
-    -- Check if we already have a pending response timer
-    if self.SYNC.pendingStructureResponse then
-        self:Debug("sync", "Already have a pending structure response, adding requester to list")
-        
-        -- Add this requester to the list
-        self.SYNC.structureRequesters = self.SYNC.structureRequesters or {}
-        self.SYNC.structureRequesters[requestingPlayer] = true
-        return
+-- Queue a structure response with proper coordination
+function TWRA:QueueStructureResponse(timestamp, sender)
+    -- Check if we're already handling a structure response
+    self.SYNC = self.SYNC or {}
+    
+    -- Track when we last sent a structure response to avoid flooding
+    local now = GetTime()
+    if self.SYNC.lastStructureResponseTime and (now - self.SYNC.lastStructureResponseTime < 2) then
+        self:Debug("sync", "Skipping structure response - sent one recently")
+        return false
     end
     
-    -- Calculate a random delay between 0.1 and 0.5 seconds to prevent response flooding
-    local responseDelay = 0.1 + (math.random() * 0.4)
-    self:Debug("sync", "Queueing structure response with delay of " .. responseDelay .. " seconds")
+    -- If we already have a pending timer for structure response, cancel it
+    if self.SYNC.structureResponseTimer then
+        self:CancelTimer(self.SYNC.structureResponseTimer)
+        self.SYNC.structureResponseTimer = nil
+        self:Debug("sync", "Canceled previous structure response timer")
+    end
     
-    -- Set up the delay timer
-    self.SYNC.structureRequesters = self.SYNC.structureRequesters or {}
-    self.SYNC.structureRequesters[requestingPlayer] = true
+    -- Calculate a small random delay (100-400ms) to avoid everyone responding at once
+    local delay = 0.1 + (math.random() * 0.3)
     
-    self.SYNC.pendingStructureResponse = self:ScheduleTimer(function()
-        -- Check if we've received a SRES from someone else during our wait
-        if self.SYNC.receivedStructureResponseForTimestamp == timestamp then
-            self:Debug("sync", "Someone else already sent a structure response, canceling ours")
-        else
-            -- Send our structure response - we use our own timestamp, not the requested one
-            -- as our data might be newer
-            local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
-            
-            -- Use the structured SendStructureResponse from Sync.lua
-            if self.SendStructureResponse then
-                self:Debug("sync", "Sending structure response with timestamp " .. ourTimestamp)
-                self:SendStructureResponse(ourTimestamp)
-            else
-                self:Debug("sync", "SendStructureResponse function not available")
-            end
+    self:Debug("sync", "Queueing structure response with delay: " .. delay)
+    
+    -- Schedule the response after a short delay
+    self.SYNC.structureResponseTimer = self:ScheduleTimer(function()
+        -- Mark that we're preparing a response - one time only
+        self:Debug("sync", "Preparing structure response message")
+        
+        -- Double-check we still have data to send
+        if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.structure then
+            self:Debug("sync", "No structure data available when timer fired")
+            return
         end
         
-        -- Clear state
-        self.SYNC.pendingStructureResponse = nil
-        self.SYNC.structureRequesters = nil
-    end, responseDelay)
+        -- Get the structure data
+        local structureData = TWRA_CompressedAssignments.structure
+        
+        -- Clear the timer reference
+        self.SYNC.structureResponseTimer = nil
+        
+        -- Track when we sent this response
+        self.SYNC.lastStructureResponseTime = GetTime()
+        
+        -- Prepare the response message - SRES:timestamp:structureData
+        local message = "SRES:" .. timestamp .. ":" .. structureData
+        
+        -- Use SendAddonMessage directly to ensure the message is sent
+        SendAddonMessage("TWRA", message, "RAID")
+        
+        self:Debug("sync", "Structure response sent successfully with timestamp " .. timestamp)
+    end, delay)
+    
+    return true
 end
 
 -- Queue section response with collapse system
@@ -511,6 +516,34 @@ end
 function TWRA:ProcessStructureData(structureData, timestamp, sender)
     self:Debug("sync", "Processing structure data from " .. sender .. " with timestamp " .. timestamp)
     
+    -- First let's verify that the structure data is valid
+    if not structureData or type(structureData) ~= "string" then
+        self:Debug("sync", "Invalid structure data received from " .. sender)
+        return false
+    end
+    
+    -- Attempt to decode the structure to get section information
+    local decodedStructure = nil
+    if self.DecompressStructureData then
+        decodedStructure = self:DecompressStructureData(structureData)
+    else
+        self:Debug("sync", "DecompressStructureData function not available")
+        return false
+    end
+    
+    -- Verify the decoded structure is a valid table
+    if not decodedStructure or type(decodedStructure) ~= "table" then
+        self:Debug("sync", "Failed to decode structure data from " .. sender)
+        return false
+    end
+    
+    -- Verify that the timestamp in the structure matches the provided timestamp
+    if decodedStructure.timestamp and tonumber(decodedStructure.timestamp) ~= tonumber(timestamp) then
+        self:Debug("sync", "Timestamp mismatch in structure data. Expected: " .. timestamp .. 
+                   ", Found: " .. tostring(decodedStructure.timestamp))
+        return false
+    end
+    
     -- Store the compressed structure data
     if not TWRA_CompressedAssignments then
         TWRA_CompressedAssignments = {}
@@ -520,107 +553,94 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     TWRA_CompressedAssignments.timestamp = timestamp
     TWRA_CompressedAssignments.structure = structureData
     
+    -- Clear sections completely
+    TWRA_CompressedAssignments.sections = nil
+    
     -- Store the timestamp for section requests
     self.SYNC.cachedTimestamp = timestamp
     
-    -- Attempt to decode the structure to get section information
-    local success = false
+    -- Create skeleton TWRA_Assignments structure with placeholders for sections
+    if not TWRA_Assignments then
+        TWRA_Assignments = {}
+    end
     
-    if self.DecompressStructureData then
-        local decodedStructure = self:DecompressStructureData(structureData)
-        
-        if decodedStructure and type(decodedStructure) == "table" then
-            -- Create skeleton TWRA_Assignments structure with placeholders for sections
-            if not TWRA_Assignments then
-                TWRA_Assignments = {}
-            end
+    -- Update our timestamp
+    TWRA_Assignments.timestamp = timestamp
+    
+    -- Clear existing sections if any
+    TWRA_Assignments.data = {}
+    
+    -- Create skeleton sections
+    for index, sectionName in pairs(decodedStructure) do
+        if type(index) == "number" and type(sectionName) == "string" then
+            -- Add skeleton section entry
+            TWRA_Assignments.data[index] = {
+                ["Section name"] = sectionName
+            }
             
-            -- Update our timestamp
-            TWRA_Assignments.timestamp = timestamp
-            
-            -- Clear existing sections if any
-            TWRA_Assignments.data = {}
-            
-            -- Create skeleton sections
-            for index, sectionName in pairs(decodedStructure) do
-                if type(index) == "number" and type(sectionName) == "string" then
-                    -- Add skeleton section entry
-                    TWRA_Assignments.data[index] = {
-                        ["Section name"] = sectionName
-                    }
-                end
-            end
-            
-            -- Store the structure table for section validation
-            self.SYNC.structureTable = decodedStructure
-            
-            -- Rebuild navigation with the skeleton
-            if self.RebuildNavigation then
-                self:RebuildNavigation()
-                success = true
-                
-                -- Show a message to the user
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received structure from " .. sender .. 
-                    ", requesting " .. table.getn(decodedStructure) .. " sections...")
-            else
-                self:Debug("error", "RebuildNavigation function not available")
-            end
-            
-            -- Request all sections with staggered timing
-            self:RequestAllSectionsWithDelay(timestamp, decodedStructure)
-        else
-            self:Debug("error", "Failed to decode structure data")
+            self:Debug("sync", "Created skeleton for section " .. index .. ": " .. sectionName)
         end
+    end
+    
+    -- Rebuild navigation
+    if self.RebuildNavigation then
+        self:Debug("sync", "Rebuilding navigation with skeleton structure")
+        self:RebuildNavigation()
     else
-        self:Debug("error", "DecompressStructureData function not available")
+        self:Debug("sync", "RebuildNavigation function not available")
     end
     
-    if not success then
-        -- Fall back to legacy sync if structure processing failed
-        self:Debug("sync", "Structure processing failed, falling back to legacy sync")
-        if self.RequestDataSync then
-            self:RequestDataSync(timestamp)
-        end
+    -- Request individual sections if needed
+    if self.RequestSectionData then
+        self:Debug("sync", "Requesting individual section data")
+        self:RequestSectionData(decodedStructure, timestamp)
     end
     
-    return success
+    -- Mark that we've received structure for this timestamp
+    self.SYNC.receivedStructureResponseForTimestamp = timestamp
+    
+    -- Navigate to pending section if one is set
+    if self.SYNC.pendingSection and tonumber(self.SYNC.pendingSection) then
+        self:Debug("sync", "Navigating to pending section " .. self.SYNC.pendingSection)
+        self:NavigateToSection(tonumber(self.SYNC.pendingSection), "fromSync")
+        self.SYNC.pendingSection = nil
+    end
+    
+    return true
 end
 
--- Request all sections with staggered timing
-function TWRA:RequestAllSectionsWithDelay(timestamp, structureTable)
-    -- Track which sections we've received
-    self.SYNC.receivedSections = {}
-    self.SYNC.totalSections = table.getn(structureTable)
-    
-    -- Request sections with increasing delay
-    local requestDelay = 0
-    for index, _ in pairs(structureTable) do
+-- Helper function to request all sections after receiving a structure
+function TWRA:RequestSectionsAfterStructure(decodedStructure, timestamp)
+    -- Calculate the total number of sections to request
+    local sectionCount = 0
+    for index, _ in pairs(decodedStructure) do
         if type(index) == "number" then
-            -- Add increasing delay for each section request to prevent flooding
+            sectionCount = sectionCount + 1
+        end
+    end
+    
+    self:Debug("sync", "Requesting " .. sectionCount .. " sections after structure sync")
+    
+    -- Request each section with staggered timing
+    local requestDelay = 0
+    for index, _ in pairs(decodedStructure) do
+        if type(index) == "number" then
+            -- Schedule each request with increasing delay to prevent network flooding
             self:ScheduleTimer(function()
-                if not self.SYNC.receivedSections or not self.SYNC.receivedSections[index] then
+                -- Check if we've already received this section from someone else
+                if not self.SYNC.receivedSectionResponses or not self.SYNC.receivedSectionResponses[index] then
                     if self.RequestSectionSync then
+                        self:Debug("sync", "Requesting section " .. index .. " with timestamp " .. timestamp)
                         self:RequestSectionSync(index, timestamp)
-                    else
-                        self:Debug("sync", "RequestSectionSync function not available")
                     end
+                else
+                    self:Debug("sync", "Skipping request for section " .. index .. " - already received")
                 end
             end, requestDelay)
+            
             requestDelay = requestDelay + 0.2 -- 200ms between requests
         end
     end
-    
-    -- Set up a timeout to detect incomplete syncs
-    self:ScheduleTimer(function()
-        if not self.SYNC.receivedSections then return end
-        
-        local received = self:GetTableSize(self.SYNC.receivedSections)
-        if received < self.SYNC.totalSections then
-            self:Debug("sync", "Sync incomplete: received " .. received .. " of " .. self.SYNC.totalSections .. " sections")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Sync incomplete! Received " .. 
-                received .. " of " .. self.SYNC.totalSections .. " sections. Try '/twra sync' to retry.")
-        end
-    end, 15) -- 15 second timeout
 end
 
 -- Process section data received from another player
