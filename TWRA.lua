@@ -67,9 +67,22 @@ function TWRA:NavigateToSection(index, source)
     -- Save current section in saved variables for persistence
     local sectionName = self.navigation.handlers[index]
     TWRA_Assignments.currentSection = index
+    -- Also update TWRA.SYNC.pendingSection
     TWRA_Assignments.currentSectionName = sectionName
     self:Debug("nav", "Saved current section: " .. index .. " (" .. sectionName .. ")")
     
+    -- Check if TWRA.SYNC.pendingSection exists and isn't empty in TWRA_CompressedAssignments.section
+    if TWRA_COMPRESSEDAssignments.sections and TWRA.SYNC.pendingSection then
+        local pendingSectionData = TWRA_COMPRESSEDAssignments.sections[TWRA.SYNC.pendingSection]
+        if pendingSectionData and pendingSectionData ~= "" then
+            self:Debug("sync", "Pending section exists and is not empty: " .. pendingSectionData)
+        else
+            self:Debug("sync", "Pending section is empty or nil")
+        end
+    else
+        self:Debug("sync", "TWRA_COMPRESSEDAssignments.sections or TWRA.SYNC.pendingSection is nil")
+    end
+
     -- Update UI if main frame exists and is shown
     if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
         -- Update main frame content

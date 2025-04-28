@@ -325,106 +325,146 @@ end
 
 -- Decompress structure data
 function TWRA:DecompressStructureData(compressedStructure)
-    self:Debug("compress", "Decompressing structure data")
+    self:Debug("compress", "Decompressing structure data of length " .. string.len(compressedStructure))
     
     if not compressedStructure or type(compressedStructure) ~= "string" then
         self:Debug("error", "Invalid compressed structure data")
         return nil
     end
     
-    -- Check for compression marker
-    local decodedString = nil
+    -- More detailed debugging of the first few bytes
+    local firstByte = string.byte(compressedStructure, 1)
+    local secondByte = string.byte(compressedStructure, 2)
+    local prefix = string.sub(compressedStructure, 1, 10)
+    self:Debug("data", "Structure data starts with: " .. prefix)
     
-    -- Check if the first byte is our marker (241)
-    if string.byte(compressedStructure, 1) == 241 then
-        -- Remove the marker and proceed with normal base64 decoding
-        local base64Data = string.sub(compressedStructure, 2)
-        decodedString = self:DecodeBase64(base64Data)
-        
-        if not decodedString then
-            self:Debug("error", "Failed to decode structure data from Base64 (with marker)")
-            return nil
+    -- Debug the actual byte values rather than characters
+    self:Debug("data", "First byte: " .. tostring(firstByte) .. ", Second byte: " .. tostring(secondByte))
+    
+    -- Add pcall around all potentially failing operations
+    local success, decodedString = pcall(function()
+        -- Handle the different encoding formats
+        if firstByte == 63 and secondByte == 66 then
+            -- Format starting with "?B" - skip the "?" character
+            self:Debug("compress", "Found ?B prefix (bytes 63, 66), using special decode path")
+            local base64Data = string.sub(compressedStructure, 2)  -- Skip the "?" character
+            return self:DecodeBase64Raw(base64Data)
+        elseif firstByte == 241 then
+            -- Normal format with marker - remove the marker and decode
+            self:Debug("compress", "Found compression marker (241), using normal decode path")
+            local base64Data = string.sub(compressedStructure, 2)
+            return self:DecodeBase64Raw(base64Data)
+        else
+            -- Try direct base64 decoding (fallback for older format)
+            self:Debug("compress", "No recognized marker found, trying direct Base64 decode")
+            return self:DecodeBase64Raw(compressedStructure)
         end
-    else
-        -- Try direct base64 decoding (fallback for older format)
-        self:Debug("compress", "No compression marker found, trying direct Base64 decode")
-        decodedString = self:DecodeBase64(compressedStructure)
-        
-        if not decodedString then
-            self:Debug("error", "Failed to decode structure data from Base64 (direct decode)")
-            return nil
-        end
-    end
-    
-    -- First try Huffman decompression
-    local decompressedString = nil
-    local success = false
-    
-    -- Make sure LibCompress is available 
-    if not self.LibCompress then 
-        if not self:InitializeCompression() then
-            self:Debug("error", "Failed to initialize LibCompress for decompression")
-            return nil
-        end
-    end
-    
-    -- Try to decompress with Huffman (might fail if data wasn't compressed)
-    success, decompressedString = pcall(function()
-        return self.LibCompress:DecompressHuffman(decodedString)
     end)
     
-    if not success or not decompressedString then
-        -- If Huffman decompression failed, assume the data wasn't compressed
-        self:Debug("compress", "Huffman decompression failed, assuming uncompressed data: " .. (decompressedString or "nil"))
-        decompressedString = decodedString
-    else
-        self:Debug("compress", "Successfully decompressed with Huffman")
+    if not success or not decodedString then
+        self:Debug("error", "Failed to decode Base64 data: " .. tostring(decodedString))
+        return nil
     end
     
-    -- Parse the string into a table of section names
-    -- Format expected: "Section Name 1","Section Name 2",...,"Section Name N"
-    local sections = {}
-    local sectionCount = 0
+    self:Debug("data", "Decoded Base64 successfully, length: " .. string.len(decodedString))
     
-    -- Extract section names wrapped in quotes
-    for sectionName in string.gmatch(decompressedString, "\"([^\"]+)\"") do
-        sectionCount = sectionCount + 1
-        sections[sectionCount] = sectionName
+    -- Check if the decoded string starts with a Huffman marker (byte 3)
+    local huffmanMarker = string.byte(decodedString, 1)
+    self:Debug("data", "Decoded data first byte: " .. tostring(huffmanMarker))
+    
+    -- Wrap all decompression in pcall for safety
+    local success2, decompressedString = pcall(function()
+        -- First try Huffman decompression
+        -- Make sure LibCompress is available 
+        if not self.LibCompress then 
+            if not self:InitializeCompression() then
+                self:Debug("error", "Failed to initialize LibCompress for decompression")
+                return nil
+            end
+        end
+        
+        -- Check if it's uncompressed data with a marker of 1
+        if huffmanMarker == 1 then
+            -- If it starts with byte 1, it might be uncompressed data (LibCompress format)
+            self:Debug("compress", "Found uncompressed marker (1), treating as uncompressed data")
+            return string.sub(decodedString, 2) -- Skip the marker byte
+        else
+            -- Try Huffman decompression
+            local decompressedResult = self.LibCompress:DecompressHuffman(decodedString)
+            if decompressedResult then
+                self:Debug("compress", "Successfully decompressed with Huffman")
+                return decompressedResult
+            else
+                self:Debug("compress", "Huffman decompression failed, assuming raw data")
+                return decodedString
+            end
+        end
+    end)
+    
+    if not success2 then
+        self:Debug("error", "Error during decompression: " .. tostring(decompressedString))
+        return nil
     end
     
-    if sectionCount > 0 then
-        self:Debug("compress", "Successfully parsed " .. sectionCount .. " section names")
+    if not decompressedString then
+        self:Debug("error", "Decompression returned nil result")
+        return nil
+    end
+    
+    -- Debug the decompressed string
+    self:Debug("data", "Decompressed string (first 50 chars): " .. string.sub(decompressedString, 1, 50))
+    self:Debug("data", "Full decompressed string: " .. decompressedString)
+    
+    -- Extract section names with a simple, direct approach
+    local function extractSectionNames(decompressedString)
+        -- Check if the string is valid
+        if not decompressedString or type(decompressedString) ~= "string" then
+            return nil
+        end
+        
+        local sections = {}
+        -- Simple, direct pattern matching with quotation marks
+        local pattern = '"([^"]+)"'
+        local i = 1
+        
+        for name in string.gfind(decompressedString, pattern) do
+            sections[i] = name
+            i = i + 1
+        end
+        
         return sections
     end
+
+    -- Wrap section extraction in pcall
+    local success3, sections = pcall(function()
+        return extractSectionNames(decompressedString)
+    end)
     
-    -- Fallback to the old format parsing if the simple format fails
-    -- Try parsing sections like: 1>"Section 1",2>"Section 2" 
-    local oldFormatSections = {}
-    for index, name in string.gfind(decompressedString, "(%d+)>\"([^\"]+)\"") do
-        oldFormatSections[tonumber(index)] = name
+    if not success3 then
+        self:Debug("error", "Error during section extraction: " .. tostring(sections))
+        return nil
     end
     
-    if next(oldFormatSections) then
-        self:Debug("compress", "Parsed " .. self:GetTableSize(oldFormatSections) .. " sections from old format")
-        return oldFormatSections
+    if not sections or table.getn(sections) == 0 then
+        self:Debug("error", "Failed to extract any sections from decompressed data")
+        self:Debug("data", "Decompressed string for reference: " .. decompressedString)
+        return nil
     end
     
-    -- Last resort - try the loadstring approach
-    local func, errorMessage = loadstring("return " .. decompressedString)
-    if func then
-        local success, result = pcall(func)
-        if success and type(result) == "table" then
-            self:Debug("compress", "Parsed sections using loadstring")
-            return result
+    -- Final validation check
+    self:Debug("compress", "Successfully extracted " .. table.getn(sections) .. " sections")
+    
+    -- List all found sections
+    local sectionList = ""
+    for i, name in pairs(sections) do
+        if i > 1 then
+            sectionList = sectionList .. ", "
         end
+        sectionList = sectionList .. i .. "=" .. name
     end
+    self:Debug("compress", "Extracted sections: " .. sectionList)
     
-    -- If we get here, all parsing attempts have failed
-    self:Debug("error", "Failed to parse structure data. String preview: " .. 
-              string.sub(decompressedString, 1, 100) .. 
-              (string.len(decompressedString) > 100 and "..." or ""))
-    
-    return nil
+    return sections
 end
 
 -- Decompress section data
@@ -615,50 +655,6 @@ function TWRA:GetCompressedSection(sectionIndex)
     return TWRA_CompressedAssignments.sections[sectionIndex]
 end
 
--- Compress the assignment data for efficient sync (Legacy method)
--- Returns compressed string or nil if compression failed
-function TWRA:CompressAssignmentsData()
-    -- Prepare the data by removing client-specific information
-    local syncData = self:PrepareDataForSync()
-    
-    if not syncData then
-        return nil, "No data to compress"
-    end
-    
-    -- Initialize compression system if needed
-    if not self.LibCompress then
-        if not self:InitializeCompression() then
-            return nil, "Failed to initialize compression system"
-        end
-    end
-    
-    -- Convert to string using TableToString
-    local dataString = self.LibCompress:TableToString(syncData)
-    
-    if not dataString then
-        self:Debug("error", "Failed to convert data to string for compression")
-        return nil, "Failed to convert data to string"
-    end
-    
-    -- Use Huffman compression specifically (better for our text data)
-    local compressed = self.LibCompress:CompressHuffman(dataString)
-    
-    if not compressed then
-        self:Debug("error", "Failed to compress data")
-        return nil, "Compression failed"
-    end
-    
-    local compressionRatio = math.floor((string.len(compressed) / string.len(dataString)) * 100)
-    self:Debug("compress", "Compressed " .. string.len(dataString) .. " bytes to " .. 
-               string.len(compressed) .. " bytes (" .. compressionRatio .. "% of original)")
-    
-    -- Base64 encode the compressed data for safe transmission
-    compressed = TWRA:EncodeBase64(compressed)
-    
-    -- Add a marker at the beginning to indicate this is using normal TableToString compression
-    return "\241"..compressed
-end
-
 -- Decompress data received via sync
 -- Returns decompressed table or nil if decompression failed
 function TWRA:DecompressAssignmentsData(compressedData)
@@ -715,56 +711,6 @@ function TWRA:DecompressAssignmentsData(compressedData)
                tostring(table.getn(dataTable.data)) .. " sections")
     
     return dataTable
-end
-
--- Store compressed data for later use
--- This is a legacy function that redirects to the consolidated implementation
-function TWRA:StoreCompressedData(compressedData)
-    -- Forward to the consolidated implementation in DataProcessing.lua
-    if not compressedData then
-        self:Debug("error", "StoreCompressedData: No compressed data to store")
-        return false
-    end
-    
-    self:Debug("compress", "Redirecting to consolidated StoreCompressedData implementation")
-    
-    -- Call the consolidated implementation directly if loaded
-    if self.ProcessImportedData then  -- This check ensures DataProcessing.lua is loaded
-        return self:StoreCompressedData(compressedData)
-    else
-        -- Fallback implementation to avoid redundancy in case DataProcessing.lua is not loaded
-        self:Debug("compress", "DataProcessing.lua not loaded, using local fallback")
-        
-        -- Log that we received compressed data but are not storing it
-        self:Debug("compress", "Legacy compressed data received (" .. string.len(compressedData) .. " bytes) - not storing complete data")
-        
-        -- IMPORTANT: We don't store any data here anymore, including timestamps
-        -- This prevents redundant storage of complete compressed data
-    end
-    
-    return true
-end
-
--- Get stored compressed data for syncing (Legacy method)
--- Perhaps completely irrelevant - Let's return to this function later and see if we can completely remove it.
--- I am not ready to get rid of it at this point.
-function TWRA:GetStoredCompressedData()
-    -- Check if we have saved assignments
-    if not TWRA_Assignments then
-        return nil, "No saved assignments"
-    end
-    
-    -- Always generate new compressed data instead of retrieving stored data
-    self:Debug("compress", "Generating new compressed data")
-    local compressed, err = self:CompressAssignmentsData()
-    if not compressed then
-        return nil, "Failed to generate compressed data: " .. tostring(err)
-    end
-    
-    -- Log but don't store
-    self:Debug("compress", "Generated " .. string.len(compressed) .. " bytes of compressed data")
-    
-    return compressed
 end
 
 -- Benchmark various compression methods using real assignment data

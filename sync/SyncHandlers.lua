@@ -187,7 +187,7 @@ function TWRA:HandleSectionCommand(message, sender)
     -- Compare timestamps - simplified comparison for now
     if timestampComparison == 0 then
         -- Our timestamp is equal - navigate to the section
-        self:NavigateToSection(tonumber(sectionIndex), fromSync)  -- suppressSync=true
+        self:NavigateToSection(tonumber(sectionIndex), "fromSync")  -- suppressSync=true
         self:Debug("sync", "Navigated to section " .. sectionIndex .. " from sync command by " .. sender)
     else 
         -- timestamp mismatch. CheckTimestampAndHandleResponse should already be trying to get us on the same timestamp
@@ -514,7 +514,8 @@ end
 
 -- Process structure data received from another player
 function TWRA:ProcessStructureData(structureData, timestamp, sender)
-    self:Debug("sync", "Processing structure data from " .. sender .. " with timestamp " .. timestamp)
+    self:Debug("sync", "ProcessStructureData: Processing structure data from " .. sender)
+    self:Debug("data", "Structure data length: " .. string.len(structureData))
     
     -- First let's verify that the structure data is valid
     if not structureData or type(structureData) ~= "string" then
@@ -524,8 +525,21 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     
     -- Attempt to decode the structure to get section information
     local decodedStructure = nil
+    self:Debug("sync", "Attempting to decode structure data")
+    
     if self.DecompressStructureData then
-        decodedStructure = self:DecompressStructureData(structureData)
+        -- Use pcall to catch any errors in the decompression process
+        local success, result = pcall(function()
+            return self:DecompressStructureData(structureData)
+        end)
+        
+        if success and result then
+            decodedStructure = result
+            self:Debug("sync", "Successfully decompressed structure data with " .. self:GetTableSize(decodedStructure) .. " sections")
+        else
+            self:Debug("error", "DecompressStructureData failed: " .. tostring(result))
+            return false
+        end
     else
         self:Debug("sync", "DecompressStructureData function not available")
         return false
@@ -537,63 +551,73 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
         return false
     end
     
-    -- Verify that the timestamp in the structure matches the provided timestamp
-    if decodedStructure.timestamp and tonumber(decodedStructure.timestamp) ~= tonumber(timestamp) then
-        self:Debug("sync", "Timestamp mismatch in structure data. Expected: " .. timestamp .. 
-                   ", Found: " .. tostring(decodedStructure.timestamp))
-        return false
-    end
+    -- Success - we have decoded structure data with section names
+    self:Debug("sync", "Structure data decoded successfully with " .. self:GetTableSize(decodedStructure) .. " sections")
     
-    -- Store the compressed structure data
-    if not TWRA_CompressedAssignments then
-        TWRA_CompressedAssignments = {}
-    end
-    
-    -- Update our structure data
+    -- IMPORTANT: Create or update TWRA_CompressedAssignments with proper initialization
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     TWRA_CompressedAssignments.timestamp = timestamp
     TWRA_CompressedAssignments.structure = structureData
-    
-    -- Clear sections completely
-    TWRA_CompressedAssignments.sections = nil
+
+    -- Initialize empty sections for all sections in the structure
+    TWRA_CompressedAssignments.sections = {}
+    for index, sectionName in pairs(decodedStructure) do
+        if type(index) == "number" then
+            -- Create empty placeholders for each section
+            TWRA_CompressedAssignments.sections[index] = ""
+            self:Debug("sync", "Created empty section placeholder for section " .. index)
+        end
+    end
+
+    self:Debug("sync", "Updated TWRA_CompressedAssignments with timestamp " .. timestamp .. " and " .. 
+              self:GetTableSize(TWRA_CompressedAssignments.sections) .. " empty section placeholders")
     
     -- Store the timestamp for section requests
+    self.SYNC = self.SYNC or {}
     self.SYNC.cachedTimestamp = timestamp
     
-    -- Create skeleton TWRA_Assignments structure with placeholders for sections
-    if not TWRA_Assignments then
-        TWRA_Assignments = {}
-    end
-    
-    -- Update our timestamp
+    -- IMPORTANT: Create or update TWRA_Assignments with proper initialization
+    TWRA_Assignments = TWRA_Assignments or {}
     TWRA_Assignments.timestamp = timestamp
-    
-    -- Clear existing sections if any
     TWRA_Assignments.data = {}
     
-    -- Create skeleton sections
+    self:Debug("sync", "Updated TWRA_Assignments with timestamp " .. timestamp)
+    
+    -- Create skeleton sections - IMPORTANT: Use "Section Name" with capital 'N'
+    local sectionCount = 0
     for index, sectionName in pairs(decodedStructure) do
         if type(index) == "number" and type(sectionName) == "string" then
-            -- Add skeleton section entry
+            -- Add skeleton section entry with correct key name "Section Name"
             TWRA_Assignments.data[index] = {
-                ["Section name"] = sectionName
+                ["Section Name"] = sectionName
             }
             
             self:Debug("sync", "Created skeleton for section " .. index .. ": " .. sectionName)
+            sectionCount = sectionCount + 1
+        else
+            self:Debug("error", "Invalid section data format for index " .. tostring(index))
         end
     end
+    
+    -- Log the actual saved sections to verify
+    self:Debug("sync", "TWRA_Assignments.data now contains " .. self:GetTableSize(TWRA_Assignments.data) .. " sections")
+    for idx, section in pairs(TWRA_Assignments.data) do
+        if type(section) == "table" and section["Section Name"] then
+            self:Debug("sync", "Saved section " .. idx .. ": " .. section["Section Name"])
+        end
+    end
+    
+    -- -- Get the total number of sections for progress tracking
+    -- self.SYNC.totalSections = sectionCount
+    -- self:Debug("sync", "Structure has " .. sectionCount .. " total sections")
     
     -- Rebuild navigation
     if self.RebuildNavigation then
         self:Debug("sync", "Rebuilding navigation with skeleton structure")
         self:RebuildNavigation()
+        self:Debug("sync", "Navigation rebuilt successfully")
     else
         self:Debug("sync", "RebuildNavigation function not available")
-    end
-    
-    -- Request individual sections if needed
-    if self.RequestSectionData then
-        self:Debug("sync", "Requesting individual section data")
-        self:RequestSectionData(decodedStructure, timestamp)
     end
     
     -- Mark that we've received structure for this timestamp
@@ -601,11 +625,31 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     
     -- Navigate to pending section if one is set
     if self.SYNC.pendingSection and tonumber(self.SYNC.pendingSection) then
-        self:Debug("sync", "Navigating to pending section " .. self.SYNC.pendingSection)
-        self:NavigateToSection(tonumber(self.SYNC.pendingSection), "fromSync")
+        local pendingSection = tonumber(self.SYNC.pendingSection)
+        self:Debug("sync", "Navigating to pending section " .. pendingSection)
+        
+        if self.NavigateToSection then
+            self:NavigateToSection(pendingSection, fromSync)
+            self:Debug("sync", "Navigation to section " .. pendingSection .. " complete")
+        else
+            self:Debug("error", "NavigateToSection function not available")
+        end
+        
+        -- Clear pending section after use
         self.SYNC.pendingSection = nil
+        self:Debug("sync", "Cleared pendingSection after navigation")
+    else
+        -- If no pending section, navigate to first section
+        if TWRA_Assignments.data[1] and self.NavigateToSection then
+            self:Debug("sync", "No pending section, navigating to section 1")
+            self:NavigateToSection(1, fromSync)
+        end
     end
     
+    -- Notify the user that structure has been updated
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received structure data from " .. sender .. " with " .. sectionCount .. " sections")
+    
+    self:Debug("sync", "ProcessStructureData completed successfully")
     return true
 end
 
