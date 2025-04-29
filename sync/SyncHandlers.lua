@@ -26,6 +26,8 @@ function TWRA:InitializeHandlerMap()
         VER = self.UnusedCommand,
         DREQ = self.UnusedCommand,
         DRES = self.UnusedCommand,
+        BULKREQ = self.HandleBulkRequestCommand,
+        BULKRES = self.HandleBulkResponseCommand,
     }  
     self:Debug("sync", "Initialized message handler map with " .. self:GetTableSize(self.syncHandlers) .. " handlers")
 end
@@ -335,13 +337,28 @@ function TWRA:HandleSectionRequestCommand(message, sender)
     -- Get our current timestamp
     local localTimestamp = 0
     if TWRA_Assignments and TWRA_Assignments.timestamp then
-        localTimestamp = tonumber(TWRA_Assignments.timestamp) or 0
+        localTimestamp = TWRA_Assignments.timestamp or 0
     end
     
     -- Only respond if we have matching data
     if localTimestamp == timestamp then
-        -- Queue the section response with the request collapse system
-        self:QueueSectionResponse(sectionIndex, timestamp, sender)
+        -- IMPORTANT: Check if we actually have the section data before promising to send it
+        local haveSectionData = false
+        if TWRA_CompressedAssignments and 
+           TWRA_CompressedAssignments.sections and 
+           TWRA_CompressedAssignments.sections[sectionIndex] and 
+           TWRA_CompressedAssignments.sections[sectionIndex] ~= "" then
+            haveSectionData = true
+        end
+        
+        if haveSectionData then
+            -- Queue the section response with the request collapse system
+            self:Debug("sync", "We have section " .. sectionIndex .. " data, queueing response")
+            self:QueueSectionResponse(sectionIndex, timestamp, sender)
+        else
+            self:Debug("sync", "Cannot respond to section request - we don't have data for section " .. sectionIndex)
+            -- Optionally notify the sender that we don't have the data they're requesting
+        end
     elseif localTimestamp > timestamp then
         -- We have newer data, send our structure instead
         self:Debug("sync", "We have newer data than requested, sending structure response")
@@ -386,20 +403,34 @@ function TWRA:HandleSectionResponseCommand(message, sender)
     end
     
     -- Compare with our cached structure timestamp
-    local cachedTimestamp = self.SYNC.cachedTimestamp
+    local cachedTimestamp = TWRA_Assignments.timestamp
     if not cachedTimestamp or cachedTimestamp ~= timestamp then
         self:Debug("sync", "Ignoring section response - timestamp mismatch (ours: " .. 
                   (cachedTimestamp or "nil") .. ", received: " .. timestamp .. ")")
         return
     end
     
+    -- Initialize TWRA_CompressedAssignments and sections table if needed
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    TWRA_CompressedAssignments.sections = TWRA_CompressedAssignments.sections or {}
+    TWRA_CompressedAssignments.timestamp = timestamp
+    
+    -- Ensure the compressed data has the marker
+    if string.byte(sectionData, 1) ~= 241 then
+        sectionData = "\241" .. sectionData
+    end
+    
+    -- Simply store the compressed section data
+    TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
+    self:Debug("sync", "Stored compressed data for section " .. sectionIndex)
+    
     -- Process the section data
     if self:ProcessSectionData(sectionIndex, sectionData, timestamp, sender) then
         -- If we have a pending section that we were waiting to navigate to,
         -- and we just received its data, navigate to it now
-        if self.SYNC.pendingSection and self.SYNC.pendingSection == sectionIndex then
-            self:Debug("sync", "Navigating to pending section " .. sectionIndex .. " now that we have its data")
-            self:NavigateToSection(sectionIndex, "fromSync")
+        if self.SYNC.pendingSection then
+            self:Debug("sync", "Navigating to pending section " .. sectionIndex .. " that we have its data")
+            self:NavigateToSection(sectionIndex, self.SYNC.pendingSource)
             self.SYNC.pendingSection = nil
         end
     end
@@ -459,57 +490,6 @@ function TWRA:QueueStructureResponse(timestamp, sender)
     end, delay)
     
     return true
-end
-
--- Queue section response with collapse system
-function TWRA:QueueSectionResponse(sectionIndex, timestamp, requestingPlayer)
-    -- Check if we already have a pending response for this section
-    if self.SYNC.pendingSectionResponses and self.SYNC.pendingSectionResponses[sectionIndex] then
-        self:Debug("sync", "Already have a pending response for section " .. sectionIndex .. ", adding requester to list")
-        
-        -- Add this requester to the list
-        self.SYNC.sectionRequesters = self.SYNC.sectionRequesters or {}
-        self.SYNC.sectionRequesters[sectionIndex] = self.SYNC.sectionRequesters[sectionIndex] or {}
-        self.SYNC.sectionRequesters[sectionIndex][requestingPlayer] = true
-        return
-    end
-    
-    -- Calculate a random delay between 0.1 and 0.5 seconds
-    local responseDelay = 0.1 + (math.random() * 0.4)
-    self:Debug("sync", "Queueing section " .. sectionIndex .. " response with delay of " .. responseDelay .. " seconds")
-    
-    -- Initialize section requesters tracking
-    self.SYNC.sectionRequesters = self.SYNC.sectionRequesters or {}
-    self.SYNC.sectionRequesters[sectionIndex] = self.SYNC.sectionRequesters[sectionIndex] or {}
-    self.SYNC.sectionRequesters[sectionIndex][requestingPlayer] = true
-    
-    -- Initialize pending section responses tracking
-    self.SYNC.pendingSectionResponses = self.SYNC.pendingSectionResponses or {}
-    
-    -- Set up the delay timer
-    self.SYNC.pendingSectionResponses[sectionIndex] = self:ScheduleTimer(function()
-        -- Check if we've received a section response from someone else during our wait
-        if self.SYNC.receivedSectionResponses and self.SYNC.receivedSectionResponses[sectionIndex] then
-            self:Debug("sync", "Someone else already sent section " .. sectionIndex .. ", canceling ours")
-        else
-            -- Send our response using the SendSectionResponse from Sync.lua
-            if self.SendSectionResponse then
-                self:Debug("sync", "Sending response for section " .. sectionIndex .. " with timestamp " .. timestamp)
-                self:SendSectionResponse(sectionIndex, timestamp)
-            else
-                self:Debug("sync", "SendSectionResponse function not available")
-            end
-        end
-        
-        -- Clear state for this section
-        if self.SYNC.pendingSectionResponses then
-            self.SYNC.pendingSectionResponses[sectionIndex] = nil
-        end
-        
-        if self.SYNC.sectionRequesters and self.SYNC.sectionRequesters[sectionIndex] then
-            self.SYNC.sectionRequesters[sectionIndex] = nil
-        end
-    end, responseDelay)
 end
 
 -- Process structure data received from another player
@@ -580,6 +560,7 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     TWRA_Assignments = TWRA_Assignments or {}
     TWRA_Assignments.timestamp = timestamp
     TWRA_Assignments.data = {}
+    TWRA_Assignments.isExample = false
     
     self:Debug("sync", "Updated TWRA_Assignments with timestamp " .. timestamp)
     
@@ -653,7 +634,7 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     return true
 end
 
--- Helper function to request all sections after receiving a structure
+-- Helper function to request all sections after receiving a structure oh no this is definitly something we want to be default.
 function TWRA:RequestSectionsAfterStructure(decodedStructure, timestamp)
     -- Calculate the total number of sections to request
     local sectionCount = 0
@@ -696,12 +677,12 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
         TWRA_CompressedAssignments = {}
     end
     
-    if not TWRA_CompressedAssignments.data then
-        TWRA_CompressedAssignments.data = {}
+    if not TWRA_CompressedAssignments.sections then
+        TWRA_CompressedAssignments.sections = {}
     end
     
     -- Store the compressed section data
-    TWRA_CompressedAssignments.data[sectionIndex] = sectionData
+    TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
     
     -- Track that we've received this section
     self.SYNC.receivedSections = self.SYNC.receivedSections or {}
@@ -788,6 +769,103 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
     end
     
     return success
+end
+
+
+-- Function to process all compressed sections at once
+function TWRA:ProcessAllCompressedSections()
+    self:Debug("sync", "Processing all compressed sections")
+    
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections then
+        self:Debug("error", "No compressed sections to process")
+        return
+    end
+    
+    local startTime = GetTime()
+    local sectionCount = 0
+    
+    -- First pass: Count sections for progress tracking
+    for sectionIndex, sectionData in pairs(TWRA_CompressedAssignments.sections) do
+        if type(sectionIndex) == "number" and sectionData then
+            sectionCount = sectionCount + 1
+        end
+    end
+    
+    self:Debug("sync", "Found " .. sectionCount .. " sections to process")
+    
+    -- Second pass: Process all sections
+    local processedCount = 0
+    for sectionIndex, sectionData in pairs(TWRA_CompressedAssignments.sections) do
+        if type(sectionIndex) == "number" and sectionData then
+            -- Process this section's data
+            if self:ProcessCompressedSection(sectionIndex, sectionData, false, true) then
+                processedCount = processedCount + 1
+                
+                -- Log progress periodically
+                local modResult = processedCount - (math.floor(processedCount / 5) * 5)
+                if modResult == 0 or processedCount == sectionCount then
+                    local percent = math.floor((processedCount / sectionCount) * 100)
+                    self:Debug("sync", "Processing progress: " .. processedCount .. "/" .. sectionCount .. " (" .. percent .. "%)")
+                end
+            else
+                self:Debug("error", "Failed to process section " .. sectionIndex)
+            end
+        end
+    end
+    
+    local processingTime = GetTime() - startTime
+    self:Debug("sync", "Processed " .. processedCount .. "/" .. sectionCount .. " sections in " .. processingTime .. " seconds")
+    
+    -- Perform any additional data processing
+    self:ExtractPlayerRelevantData()
+    
+    -- Update the UI
+    self:ScheduleTimer(function()
+        -- Get the current section from TWRA_Assignments
+        local currentSection = TWRA_Assignments and TWRA_Assignments.currentSection or 1
+        
+        -- Navigate to the current section
+        self:NavigateToSection(currentSection, "bulkSync")
+        
+        -- Refresh UI elements
+        if self.RefreshAssignmentTable then
+            self:RefreshAssignmentTable()
+        end
+        
+        if self.RebuildOSDIfVisible then
+            self:RebuildOSDIfVisible()
+        end
+    end, 0.2)
+end
+
+-- Process compressed data into usable format
+function TWRA:ProcessCompressedData()
+    if not TWRA_CompressedAssignments then
+        self:Debug("error", "No compressed data to process")
+        return false
+    end
+    
+    if not TWRA_CompressedAssignments.structure or not TWRA_CompressedAssignments.sections then
+        self:Debug("error", "Incomplete compressed data - missing structure or sections")
+        return false
+    end
+    
+    self:Debug("sync", "Processing compressed data...")
+    
+    -- Here we would decompress the data in future implementation
+    -- For now, just indicate that we processed it
+    
+    -- Update the UI with the new data
+    if TWRA.RefreshAssignmentTable then
+        TWRA:RefreshAssignmentTable()
+    end
+    
+    -- Update OSD if it's open
+    if TWRA.UpdateOSDContent then
+        TWRA:UpdateOSDContent()
+    end
+    
+    return true
 end
 
 -- Add initialization of the chunk manager at addon load

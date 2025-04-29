@@ -7,6 +7,7 @@ TWRA.SYNC.PREFIX = "TWRA" -- Addon message prefix
 TWRA.SYNC.liveSync = false -- Live sync enabled
 TWRA.SYNC.tankSync = false -- Tank sync enabled
 TWRA.SYNC.pendingSection = nil -- Section to navigate to after sync
+TWRA.SYNC.pendingSource = nil -- When sync handlers navigate they set this to fromSync to supress further sync messages
 TWRA.SYNC.lastRequestTime = 0 -- When we last requested data
 TWRA.SYNC.requestTimeout = 5 -- Seconds to wait between requests
 TWRA.SYNC.monitorMessages = false -- Monitor all addon messages
@@ -23,7 +24,9 @@ TWRA.SYNC.COMMANDS = {
     STRUCTURE_REQUEST = "SREQ",  -- Request structure data
     STRUCTURE_RESPONSE = "SRES", -- Send structure data
     SECTION_REQUEST = "SECREQ",   -- Request specific section data
-    SECTION_RESPONSE = "SECRES"  -- Send specific section data
+    SECTION_RESPONSE = "SECRES",  -- Send specific section data
+    BULK_REQUEST = "BULK_REQ",     -- Request bulk data transfer
+    BULK_RESPONSE = "BULK_RES"     -- Bulk data transfer response
 }
 
 -- Function to register all sync-related events
@@ -210,6 +213,17 @@ end
 -- Function to create a version check message (VER)
 function TWRA:CreateVersionMessage(versionNumber)
     return self.SYNC.COMMANDS.VERSION .. ":" .. versionNumber
+end
+
+-- Create a bulk request message (BULKREQ)
+function TWRA:CreateBulkRequestMessage(timestamp, requestId, dataType)
+    return self.SYNC.COMMANDS.BULK_REQUEST .. ":" .. timestamp .. ":" .. requestId .. ":" .. dataType
+end
+
+-- Create a bulk response message (BULKRES)
+function TWRA:CreateBulkResponseMessage(timestamp, requestId, dataType, chunk, totalChunks, data)
+    return self.SYNC.COMMANDS.BULK_RESPONSE .. ":" .. timestamp .. ":" .. requestId .. ":" .. 
+           dataType .. ":" .. chunk .. ":" .. totalChunks .. ":" .. data
 end
 
 -- Compare timestamps and return relationship between them
@@ -491,7 +505,7 @@ end
 -- Function to send section data in response to a request
 function TWRA:SendSectionResponse(sectionIndex, timestamp)
     -- Get the section data
-    local sectionData = self:GetCompressedSection(sectionIndex)
+    local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
     if not sectionData then
         self:Debug("error", "No data available for section " .. sectionIndex)
         return false
@@ -515,6 +529,57 @@ function TWRA:SendSectionResponse(sectionIndex, timestamp)
         -- Send the message
         return self:SendAddonMessage(message)
     end
+end
+
+-- Queue section response with collapse system
+function TWRA:QueueSectionResponse(sectionIndex, timestamp, requestingPlayer)
+    -- Check if we already have a pending response for this section
+    if self.SYNC.pendingSectionResponses and self.SYNC.pendingSectionResponses[sectionIndex] then
+        self:Debug("sync", "Already have a pending response for section " .. sectionIndex .. ", adding requester to list")
+        
+        -- Add this requester to the list
+        self.SYNC.sectionRequesters = self.SYNC.sectionRequesters or {}
+        self.SYNC.sectionRequesters[sectionIndex] = self.SYNC.sectionRequesters[sectionIndex] or {}
+        self.SYNC.sectionRequesters[sectionIndex][requestingPlayer] = true
+        return
+    end
+    
+    -- Calculate a random delay between 0.1 and 0.5 seconds
+    local responseDelay = 0.1 + (math.random() * 0.4)
+    self:Debug("sync", "Queueing section " .. sectionIndex .. " response with delay of " .. responseDelay .. " seconds")
+    
+    -- Initialize section requesters tracking
+    self.SYNC.sectionRequesters = self.SYNC.sectionRequesters or {}
+    self.SYNC.sectionRequesters[sectionIndex] = self.SYNC.sectionRequesters[sectionIndex] or {}
+    self.SYNC.sectionRequesters[sectionIndex][requestingPlayer] = true
+    
+    -- Initialize pending section responses tracking
+    self.SYNC.pendingSectionResponses = self.SYNC.pendingSectionResponses or {}
+    
+    -- Set up the delay timer
+    self.SYNC.pendingSectionResponses[sectionIndex] = self:ScheduleTimer(function()
+        -- Check if we've received a section response from someone else during our wait
+        if self.SYNC.receivedSectionResponses and self.SYNC.receivedSectionResponses[sectionIndex] then
+            self:Debug("sync", "Someone else already sent section " .. sectionIndex .. ", canceling ours")
+        else
+            -- Send our response using the SendSectionResponse from Sync.lua
+            if self.SendSectionResponse then
+                self:Debug("sync", "Sending response for section " .. sectionIndex .. " with timestamp " .. timestamp)
+                self:SendSectionResponse(sectionIndex, timestamp)
+            else
+                self:Debug("sync", "SendSectionResponse function not available")
+            end
+        end
+        
+        -- Clear state for this section
+        if self.SYNC.pendingSectionResponses then
+            self.SYNC.pendingSectionResponses[sectionIndex] = nil
+        end
+        
+        if self.SYNC.sectionRequesters and self.SYNC.sectionRequesters[sectionIndex] then
+            self.SYNC.sectionRequesters[sectionIndex] = nil
+        end
+    end, responseDelay)
 end
 
 -- Function to announce when new data has been imported
@@ -593,7 +658,7 @@ end
 -- Stub functions for compressed data retrieval - to be implemented elsewhere
 
 -- Function to get compressed structure data
-function TWRA:GetCompressedStructure()
+function TWRA:GetCompressedStructure() -- Probably redundant, structure is readily available from TWRA_CompressedAssignments.structure
     -- This stub would be implemented in the core compression module
     self:Debug("sync", "GetCompressedStructure called - needs implementation")
     
@@ -605,7 +670,7 @@ function TWRA:GetCompressedStructure()
 end
 
 -- Function to get compressed section data by index
-function TWRA:GetCompressedSection(sectionIndex)
+function TWRA:GetCompressedSection(sectionIndex) -- Probably completly redundant, compressed sections are readily available from TWRA_CompressedAssignments.section[index]
     -- This stub would be implemented in the core compression module
     self:Debug("sync", "GetCompressedSection called for section " .. sectionIndex .. " - needs implementation")
     
@@ -617,13 +682,342 @@ function TWRA:GetCompressedSection(sectionIndex)
     return nil
 end
 
--- Execute registration of sync events immediately
-TWRA:RegisterSyncEvents()
-
--- Force initialization after 1 second to handle any load order issues
-TWRA:ScheduleTimer(function()
-    if not TWRA.SYNC.initialized then
-        TWRA:Debug("sync", "Forcing sync initialization via timer")
-        TWRA:InitializeSync()
+-- Send structure data to the group
+function TWRA:SendStructureData()
+    self:Debug("sync", "Sending structure data to group")
+    
+    -- Skip if not in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("error", "Cannot send structure data - not in a group")
+        return false
     end
-end, 1)
+    
+    -- Get current timestamp
+    local timestamp = 0
+    if TWRA_Assignments then
+        timestamp = TWRA_Assignments.timestamp or time()
+    end
+    
+    -- Get the compressed structure data
+    local structureData = self:GetCompressedStructure()
+    if not structureData then
+        self:Debug("error", "No structure data available to send")
+        return false
+    end
+    
+    -- Create the message 
+    local message = self:CreateStructureResponseMessage(timestamp, structureData)
+    
+    -- Determine channel
+    local channel = GetNumRaidMembers() > 0 and "RAID" or 
+                   (GetNumPartyMembers() > 0 and "PARTY" or nil)
+    
+    -- If no valid channel, exit
+    if not channel then
+        self:Debug("error", "Cannot send structure data - not in a group")
+        return false
+    end
+    
+    -- Check if message needs chunking
+    if string.len(message) > 2000 then
+        self:Debug("sync", "Structure data too large (" .. string.len(message) .. " bytes), using chunk manager")
+        if self.chunkManager then
+            local prefix = self.SYNC.COMMANDS.STRUCTURE_RESPONSE .. ":" .. timestamp .. ":"
+            return self.chunkManager:SendChunkedMessage(structureData, prefix, channel)
+        else
+            self:Debug("error", "Chunk manager not available for large structure data")
+            return false
+        end
+    else
+        -- Send the message directly
+        SendAddonMessage(self.SYNC.PREFIX, message, channel)
+        self:Debug("sync", "Sent structure data (" .. string.len(message) .. " bytes) via " .. channel)
+        return true
+    end
+end
+
+-- Send individual section data to the group
+function TWRA:SendSectionData(sectionIndex)
+    self:Debug("sync", "Sending section " .. sectionIndex .. " to group")
+    
+    -- Skip if not in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("error", "Cannot send section data - not in a group")
+        return false
+    end
+    
+    -- Get current timestamp
+    local timestamp = 0
+    if TWRA_Assignments then
+        timestamp = TWRA_Assignments.timestamp or time()
+    end
+    
+    -- Direct access to section data from TWRA_CompressedAssignments.sections
+    local sectionData = nil
+    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
+        sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
+    end
+    
+    -- If still no data, attempt to compress it (if we have a compress function)
+    if not sectionData and TWRA_Assignments and TWRA_Assignments.data and TWRA_Assignments.data[sectionIndex] then
+        if self.CompressSectionData then
+            self:Debug("sync", "Compressing section " .. sectionIndex .. " for sync")
+            sectionData = self:CompressSectionData(sectionIndex)
+            
+            -- Store for future use
+            if sectionData and TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
+                TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
+            end
+        else
+            self:Debug("error", "CompressSectionData function not available")
+        end
+    end
+    
+    if not sectionData then
+        self:Debug("error", "No data available for section " .. sectionIndex)
+        return false
+    end
+    
+    -- Create the message
+    local message = self:CreateSectionResponseMessage(timestamp, sectionIndex, sectionData)
+    
+    -- Determine channel
+    local channel = GetNumRaidMembers() > 0 and "RAID" or 
+                   (GetNumPartyMembers() > 0 and "PARTY" or nil)
+    
+    -- If no valid channel, exit
+    if not channel then
+        self:Debug("error", "Cannot send section data - not in a group")
+        return false
+    end
+    
+    -- Check if message needs chunking
+    if string.len(message) > 2000 then
+        self:Debug("sync", "Section data too large (" .. string.len(message) .. " bytes), using chunk manager")
+        if self.chunkManager then
+            local prefix = self.SYNC.COMMANDS.SECTION_RESPONSE .. ":" .. timestamp .. ":" .. sectionIndex .. ":"
+            return self.chunkManager:SendChunkedMessage(sectionData, prefix, channel)
+        else
+            self:Debug("error", "Chunk manager not available for large section data")
+            return false
+        end
+    else
+        -- Send the message directly
+        SendAddonMessage(self.SYNC.PREFIX, message, channel)
+        self:Debug("sync", "Sent section " .. sectionIndex .. " data (" .. string.len(message) .. " bytes) via " .. channel)
+        return true
+    end
+end
+
+
+-- Helper function to serialize data for transmission
+function TWRA:SerializeData(data) -- How is this different from  TWRA:SerilizeTable(tbl) in Compression.lua?
+    local serialized = ""
+    
+    -- Attempt to serialize using custom serialization if available
+    if type(self.SerializeTableToString) == "function" then
+        local success, result = pcall(self.SerializeTableToString, self, data)
+        if success and result then
+            return result
+        end
+    end
+    
+    -- Fallback to basic serialization
+    -- This is simplified and should be replaced with proper serialization
+    if type(data) == "table" then
+        serialized = self.chunkManager:SerializeTable(data)
+    else
+        serialized = tostring(data)
+    end
+    
+    return serialized
+end
+
+-- Helper function to deserialize received data
+function TWRA:DeserializeData(serialized) -- How is this different from  TWRA:DeserilizeTable(tbl) in Compression.lua?
+    if not serialized or serialized == "" then
+        return false, nil
+    end
+    
+    -- Attempt to deserialize using custom deserialization if available
+    if type(self.DeserializeStringToTable) == "function" then
+        local success, result = pcall(self.DeserializeStringToTable, self, serialized)
+        if success and result then
+            return true, result
+        end
+    end
+    
+    -- Fallback to basic deserialization
+    local success, result = pcall(function()
+        return self.chunkManager:DeserializeTable(serialized)
+    end)
+    
+    return success, result
+end
+
+
+-- Function to send structure data in chunks
+function TWRA:SendStructureDataInChunks(requestId, target)
+    self:Debug("sync", "Preparing to send structure data in chunks")
+    
+    -- Get the compressed structure data
+    local structureData = self:GetCompressedStructure()
+    if not structureData then
+        self:Debug("error", "No structure data available to send")
+        return false
+    end
+    
+    -- Send the data in chunks
+    self:SendDataInChunks(structureData, "STRUCTURE", requestId, target)
+    
+    return true
+end
+
+-- Function to send section data in chunks
+function TWRA:SendSectionDataInChunks(sectionIndex, requestId, target)
+    self:Debug("sync", "Preparing to send section " .. sectionIndex .. " in chunks")
+    
+    -- Get the section data
+    local sectionData = self:GetCompressedSection(sectionIndex)
+    if not sectionData then
+        self:Debug("error", "No data available for section " .. sectionIndex)
+        return false
+    end
+    
+    -- Send the data in chunks
+    self:SendDataInChunks(sectionData, "SECTION_" .. sectionIndex, requestId, target)
+    
+    return true
+end
+
+-- Generic function to split and send large data in chunks
+function TWRA:SendDataInChunks(data, dataType, requestId, target)
+    -- Calculate chunks (max 200 chars per chunk for safety)
+    local chunkSize = 200
+    local totalLength = string.len(data)
+    local totalChunks = math.ceil(totalLength / chunkSize)
+    
+    self:Debug("sync", "Sending " .. dataType .. " data in " .. totalChunks .. " chunks (total size: " .. totalLength .. " bytes)")
+    
+    -- Send each chunk with a small delay
+    for i = 1, totalChunks do
+        local startPos = ((i - 1) * chunkSize) + 1
+        local endPos = math.min(startPos + chunkSize - 1, totalLength)
+        local chunkData = string.sub(data, startPos, endPos)
+        
+        -- Create closure to preserve values
+        local chunkIndex = i
+        
+        -- Schedule sending this chunk
+        self:ScheduleTimer(function()
+            local message = self:CreateBulkResponseMessage(GetTime(), requestId, dataType, chunkIndex, totalChunks, chunkData)
+            self:SendAddonMessage(message, target)
+            
+            -- Debug progress periodically
+            if (math.floor(chunkIndex / 5) * 5 == chunkIndex) or (chunkIndex == totalChunks) then --the modulo operator is not available to use, we need to user a math.floor variant
+                local progress = math.floor((chunkIndex / totalChunks) * 100)
+                self:Debug("sync", "Sent chunk " .. chunkIndex .. "/" .. totalChunks .. 
+                          " (" .. progress .. "%) for " .. dataType)
+            end
+        end, (i - 1) * 0.1) -- 0.1 second delay between chunks
+    end
+    
+    return true
+end
+
+-- Function to process all sections data
+function TWRA:ProcessAllSectionsData(data, sender)
+    self:Debug("sync", "Processing all sections data from " .. sender)
+    
+    -- Parse the data format: numSections;index1:len1:data1;index2:len2:data2;...
+    local parts = self:SplitString(data, ";")
+    local numSections = tonumber(parts[1])
+    
+    if not numSections then
+        self:Debug("error", "Invalid section count in bulk data")
+        return
+    end
+    
+    self:Debug("sync", "Processing " .. numSections .. " sections")
+    
+    -- Process each section
+    local processedCount = 0
+    
+    for i = 2, table.getn(parts) do -- The # length operator is not available to us hence the table.getn approach
+        if parts[i] and parts[i] ~= "" then
+            local sectionParts = self:SplitString(parts[i], ":")
+            if table.getns(ectionParts) >= 3 then
+                local sectionIndex = tonumber(sectionParts[1])
+                local dataLength = tonumber(sectionParts[2])
+                local sectionData = sectionParts[3]
+                
+                if sectionIndex and dataLength and sectionData and string.len(sectionData) == dataLength then
+                    -- Process this section
+                    self:Debug("sync", "Processing section " .. sectionIndex .. " from bulk data")
+                    self:ProcessSectionData(sectionIndex, sectionData, sender)
+                    processedCount = processedCount + 1
+                else
+                    self:Debug("error", "Invalid section data format in bulk response")
+                end
+            end
+        end
+    end
+    
+    self:Debug("sync", "Finished processing " .. processedCount .. " sections from bulk data")
+    
+    -- Notify user of completion
+    if processedCount > 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received and processed " .. 
+                                      processedCount .. " sections from " .. sender)
+    end
+end
+
+-- Function to process structure data
+function TWRA:ProcessStructureData(data, sender)
+    self:Debug("sync", "Processing structure data from " .. sender)
+    
+    -- Store the structure data
+    if TWRA_CompressedAssignments then
+        TWRA_CompressedAssignments.structure = data
+    end
+    
+    -- Decompress and apply the structure
+    if self.DecompressStructure then
+        self:DecompressStructure(data)
+        self:Debug("sync", "Structure data decompressed and applied")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received raid structure from " .. sender)
+    else
+        self:Debug("error", "DecompressStructure function not available")
+    end
+end
+
+-- Function to process section data
+function TWRA:ProcessSectionData(sectionIndex, data, sender)
+    self:Debug("sync", "Processing section " .. sectionIndex .. " data from " .. sender)
+    
+    -- Store the section data
+    if TWRA_CompressedAssignments then
+        if not TWRA_CompressedAssignments.sections then
+            TWRA_CompressedAssignments.sections = {}
+        end
+        TWRA_CompressedAssignments.sections[sectionIndex] = data
+    end
+    
+    -- Decompress and apply the section
+    if self.DecompressSection then
+        self:DecompressSection(sectionIndex, data)
+        self:Debug("sync", "Section " .. sectionIndex .. " data decompressed and applied")
+    else
+        self:Debug("error", "DecompressSection function not available")
+    end
+end
+
+-- Helper function to split a string Already defined in core/Util.lua, that definition seems more complete.
+-- function TWRA:SplitString(inputstr, sep)
+--     if sep == nil then sep = "%s" end
+--     local t = {}
+--     for str in string.gmatch(inputstr, "([^" .. sep .. "]+)") do
+--         table.insert(t, str)
+--     end
+--     return t
+-- end

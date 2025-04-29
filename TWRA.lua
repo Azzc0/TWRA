@@ -8,117 +8,104 @@ if not TWRA_Assignments.data then
     TWRA_Assignments.data = {}
 end
 
--- -- Create a frame to periodically check and ensure TWRA_Assignments.data is never nil
--- local dataGuardFrame = CreateFrame("Frame")
--- dataGuardFrame.sinceLastUpdate = 0
--- dataGuardFrame:SetScript("OnUpdate", function(frameOrSelf, elapsed)
---     -- Support both parameter styles (frame,elapsed) and (self,elapsed)
---     local self = frameOrSelf or dataGuardFrame
---     if type(self) ~= "table" or not self.sinceLastUpdate then
---         -- If parameter is wrong, use the dataGuardFrame directly
---         self = dataGuardFrame
---     end
-    
---     -- Only check every 0.5 seconds to avoid overhead
---     self.sinceLastUpdate = self.sinceLastUpdate + elapsed
---     if self.sinceLastUpdate >= 0.5 then
---         self.sinceLastUpdate = 0
-        
---         -- Check and repair if needed
---         if not TWRA_Assignments then
---             TWRA_Assignments = {}
---             print("|cFFFF3333TWRA Error:|r TWRA_Assignments was nil and has been restored")
---         end
---         if not TWRA_Assignments.data then
---             TWRA_Assignments.data = {}
---             print("|cFFFF3333TWRA Error:|r TWRA_Assignments.data was nil and has been restored")
---         end
---     end
--- end)
-
 -- Addon namespace
 TWRA = TWRA or {}
 
--- Fix NavigateToSection to properly update UI when changing sections
+-- NavigateToSection function for isolation testing
 function TWRA:NavigateToSection(index, source)
-    -- Debug entry
-    self:Debug("nav", "NavigateToSection(" .. tostring(index) .. ", " .. tostring(source) .. ") - " ..
-               "mainFrame:" .. tostring(self.mainFrame) .. 
-               ", isShown:" .. (self.mainFrame and self.mainFrame:IsShown() and "1" or "0") .. 
-               ", currentView:" .. tostring(self.currentView))
+    self:Debug("nav", "NavigateToSection called with index " .. index .. " from " .. (source or "unknown"))
     
     -- Safety checks
     if not self.navigation or not self.navigation.handlers then
         self:Debug("error", "NavigateToSection: No navigation or handlers")
-        return
+        return false
     end
     
-    -- Set the current index with bounds checking
+    -- Validate index
     local maxIndex = table.getn(self.navigation.handlers)
-    if index < 1 then index = 1 end
-    if index > maxIndex then index = maxIndex end
+    if index < 1 or index > maxIndex then
+        self:Debug("error", "NavigateToSection: Invalid index " .. index .. ", resetting to 1")
+        index = 1
+    end
     
-    -- Store the previous index for comparison
-    local previousIndex = self.navigation.currentIndex
-    
-    -- Update the current index
-    self.navigation.currentIndex = index
-    
-    -- Save current section in saved variables for persistence
+    -- Get the section name we're trying to navigate to
     local sectionName = self.navigation.handlers[index]
-    TWRA_Assignments.currentSection = index
-    -- Also update TWRA.SYNC.pendingSection
-    TWRA_Assignments.currentSectionName = sectionName
-    self:Debug("nav", "Saved current section: " .. index .. " (" .. sectionName .. ")")
     
-    -- Check if TWRA.SYNC.pendingSection exists and isn't empty in TWRA_CompressedAssignments.section
-    if TWRA_COMPRESSEDAssignments.sections and TWRA.SYNC.pendingSection then
-        local pendingSectionData = TWRA_COMPRESSEDAssignments.sections[TWRA.SYNC.pendingSection]
-        if pendingSectionData and pendingSectionData ~= "" then
-            self:Debug("sync", "Pending section exists and is not empty: " .. pendingSectionData)
-        else
-            self:Debug("sync", "Pending section is empty or nil")
+    -- Initialize needsSyncRequest properly
+    local needsSyncRequest = false
+    
+    -- Skip sync request check if using example data
+    if not (TWRA_Assignments and TWRA_Assignments.isExample) then
+        -- Check if this section exists in our compressed sections data - using index as requested
+        if TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
+            local sectionData = TWRA_CompressedAssignments.sections[index]
+            if not sectionData or sectionData == "" then
+                self:Debug("sync", "Section data not available locally: " .. sectionName)
+                needsSyncRequest = true
+            end
         end
     else
-        self:Debug("sync", "TWRA_COMPRESSEDAssignments.sections or TWRA.SYNC.pendingSection is nil")
+        self:Debug("nav", "Using example data - skipping sync request check")
     end
-
-    -- Update UI if main frame exists and is shown
-    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
-        -- Update main frame content
-        if previousIndex ~= index or source == "reload" then
-            if self.DisplayCurrentSection then
-                self:DisplayCurrentSection()
-            end
-            self:Debug("nav", "Updated main frame content for section: " .. self.navigation.handlers[index])
+    
+    -- If we need to request section data
+    if needsSyncRequest then
+        self:Debug("sync", "Deferring navigation - requesting section data first")
+        
+        -- Store pending navigation information
+        self.SYNC.pendingSection = index
+        self.SYNC.pendingSource = source
+        
+        -- Request section data
+        if self.RequestSectionSync then
+            -- Add debug statement right before we call RequestSectionSync
+            self:Debug("sync", "Calling RequestSectionSync for section " .. index)
+            self:RequestSectionSync(index, TWRA_Assignments.timestamp)
+            self:Debug("sync", "Sent section request for: " .. sectionName)
+        else
+            self:Debug("error", "RequestSectionSync function not available")
         end
+        
+        -- Add debug statement to verify we're about to return
+        return false
     end
     
-    -- Get the current section name for events
-    local sectionName = self.navigation.handlers[index]
-    local totalSections = maxIndex
+    -- Store old index for comparison
+    local oldIndex = self.navigation.currentIndex
     
-    -- Trigger the section change event for any listeners (like OSD)
+    -- Update current index
+    self.navigation.currentIndex = index
+    
+    -- Update UI text
+    if self.navigation.handlerText then
+        self.navigation.handlerText:SetText(sectionName)
+    end
+    
+    -- Save current section to saved variables
+    if TWRA_Assignments then
+        TWRA_Assignments.currentSection = index
+        TWRA_Assignments.currentSectionName = sectionName
+    end
+    
+    -- Trigger the event before updating display
     if self.TriggerEvent then
         self:Debug("nav", "Triggering SECTION_CHANGED event")
-        self:TriggerEvent("SECTION_CHANGED", index, sectionName, totalSections, source)
+        self:TriggerEvent("SECTION_CHANGED", index, sectionName, maxIndex, source)
+    else
+        self:Debug("error", "TriggerEvent function not available")
     end
     
-    -- NOTE: OSD show/hide logic moved to event system
-    -- OSD module will listen for SECTION_CHANGED events and show itself when appropriate
-    
+    -- Update display with the new section
+    self:FilterAndDisplayHandler(sectionName)
+    self:Debug("sync", "About to broadcast section change to group")
     -- Broadcast section change if not coming from sync
-    if source ~= "fromSync" and source ~= "reload" then
-        -- Broadcast to sync the change to other clients
-        if self.BroadcastSectionChange then
-            self:BroadcastSectionChange(index)
-        end
+    if source ~= "fromSync" and source ~= "reload" and self.BroadcastSectionChange then
+        self:BroadcastSectionChange(index)
     end
     
-    -- Update tank UI if on that section
-    if self.UpdateTanks then
-        self:UpdateTanks()
-    end
+    self:Debug("nav", "Navigation complete: Section " .. index .. " (" .. sectionName .. ")")
+    
+    return true
 end
 
 -- Helper function to rebuild navigation after data updates

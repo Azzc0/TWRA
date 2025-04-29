@@ -44,6 +44,22 @@ function TWRA:InitChunkManager()
     return true
 end
 
+-- Initialize the chunk manager with appropriate settings
+function TWRA.chunkManager:Initialize()
+    -- Maximum message size, leaving room for headers
+    -- Maximum allowed is 2047, but we use 1800 to be safe
+    self.maxChunkSize = 1800
+    
+    -- Initialize tracking tables
+    self.pendingChunks = {}
+    self.receivingChunks = {}
+    
+    -- Debug that we're initialized
+    TWRA:Debug("sync", "ChunkManager initialized with chunk size " .. self.maxChunkSize)
+    
+    return self
+end
+
 -- Function to send chunked message with improved Base64 handling
 function TWRA.chunkManager:SendChunkedMessage(data, prefix)
     if not data then
@@ -53,7 +69,7 @@ function TWRA.chunkManager:SendChunkedMessage(data, prefix)
     
     -- Calculate total size and chunks needed
     local dataLength = string.len(data)
-    local maxChunkSize = 1900  -- Increased from 190 to maximize efficiency while leaving buffer for headers
+    local maxChunkSize = self.maxChunkSize
     local totalChunks = math.ceil(dataLength / maxChunkSize)
     
     TWRA:Debug("sync", "ChunkManager: Sending " .. dataLength .. " bytes in " .. totalChunks .. " chunks")
@@ -100,6 +116,24 @@ function TWRA.chunkManager:SendChunkedMessage(data, prefix)
     end
     
     return true
+end
+
+-- Split a message into appropriate chunks
+function TWRA.chunkManager:SplitIntoChunks(message)
+    local chunks = {}
+    local totalLength = string.len(message)
+    local numChunks = math.ceil(totalLength / self.maxChunkSize)
+    
+    TWRA:Debug("sync", "Splitting message of " .. totalLength .. " bytes into " .. numChunks .. " chunks")
+    
+    for i = 1, numChunks do
+        local startPos = ((i - 1) * self.maxChunkSize) + 1
+        local endPos = math.min(startPos + self.maxChunkSize - 1, totalLength)
+        local chunk = string.sub(message, startPos, endPos)
+        table.insert(chunks, chunk)
+    end
+    
+    return chunks
 end
 
 -- Function to receive and process chunked messages

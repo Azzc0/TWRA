@@ -26,117 +26,88 @@ function TWRA:InitializeCompression()
     return true
 end
 
+-- Simple function to serialize a table to a string using standard Lua syntax
+function TWRA:SerializeTable(tbl)
+    if type(tbl) ~= "table" then
+        return tostring(tbl)
+    end
+    
+    local result = "{"
+    
+    -- Process all keys in the table
+    local isFirst = true
+    for k, v in pairs(tbl) do
+        -- Add comma separator between entries
+        if not isFirst then
+            result = result .. ","
+        end
+        isFirst = false
+        
+        -- Format the key part
+        if type(k) == "number" then
+            result = result .. "[" .. k .. "]="
+        elseif type(k) == "string" then
+            -- Properly escape string keys
+            local escapedKey = string.gsub(k, '(["\\\n\r])', '\\%1')
+            result = result .. '["' .. escapedKey .. '"]='
+        else
+            result = result .. "[" .. tostring(k) .. "]="
+        end
+        
+        -- Format the value part
+        if type(v) == "table" then
+            result = result .. self:SerializeTable(v)
+        elseif type(v) == "string" then
+            -- Properly escape string values including commas and quotes
+            local escapedValue = v
+            escapedValue = string.gsub(escapedValue, '(["\\\n\r])', '\\%1')
+            result = result .. '"' .. escapedValue .. '"'
+        elseif type(v) == "number" or type(v) == "boolean" then
+            result = result .. tostring(v)
+        elseif v == nil then
+            result = result .. "nil"
+        else
+            -- For other types, convert to string and escape
+            local str = tostring(v)
+            local escapedStr = string.gsub(str, '(["\\\n\r])', '\\%1')
+            result = result .. '"' .. escapedStr .. '"'
+        end
+    end
+    
+    result = result .. "}"
+    return result
+end
+
+-- Function to deserialize a table string back to a table
+function TWRA:DeserializeTable(str)
+    if str == nil or str == "" then
+        return nil
+    end
+    
+    local func, err = loadstring("return " .. str)
+    if not func then
+        self:Debug("error", "DeserializeTable error: " .. (err or "Unknown error"))
+        return nil
+    end
+    
+    local success, result = pcall(func)
+    if not success then
+        self:Debug("error", "DeserializeTable execution error: " .. tostring(result))
+        return nil
+    end
+    
+    return result
+end
+
 -- Test compression functionality
 -- This function can be called to verify that compression is working properly
 function TWRA:TestCompression()
     self:Debug("compress", "Starting compression test")
     
-    -- Initialize compression system if not already done
-    if not self.LibCompress then
-        if not self:InitializeCompression() then
-            return false, "Failed to initialize compression system"
-        end
-    end
-    
-    -- Create a simple test table
-    local testData = {
-        currentSectionName = "Test Section",
-        isExample = false,
-        version = 2,
-        timestamp = time(),
-        currentSection = 1,
-        data = {
-            [1] = {
-                ["Section Name"] = "Test Boss",
-                ["Section Header"] = {"Icon", "Target", "Tank", "Healer", "DPS"},
-                ["Section Rows"] = {
-                    [1] = {"Skull", "Boss", "MainTank", "Healer1", "DPS1"},
-                    [2] = {"Cross", "Add", "OffTank", "Healer2", "DPS2"}
-                }
-            }
-        }
-    }
-    
-    -- Test compression with LibCompress TableToString + Huffman
-    local results = {}
-    
-    -- Convert to string using TableToString
-    local dataString = self.LibCompress:TableToString(testData)
-    if not dataString then
-        self:Debug("error", "Failed to convert table to string")
-        return false, "TableToString conversion failed"
-    end
-    
-    results.origSize = string.len(dataString)
-    
-    -- Compress using Huffman
-    local compressed = self.LibCompress:CompressHuffman(dataString)
-    if not compressed then
-        self:Debug("error", "Huffman compression failed")
-        return false, "Compression failed"
-    end
-    
-    -- Log compression results
-    local ratio = math.floor((string.len(compressed) / string.len(dataString)) * 100)
-    results.compressedSize = string.len(compressed)
-    results.ratio = ratio
-    
-    self:Debug("compress", "Original: " .. string.len(dataString) .. " bytes")
-    self:Debug("compress", "Compressed: " .. string.len(compressed) .. " bytes (" .. ratio .. "% of original)")
-    
-    -- Test with real addon data if it exists
-    local realDataTest = false
-    if TWRA_Assignments and TWRA_Assignments.data then
-        realDataTest = true
-        
-        local syncData = self:PrepareDataForSync()
-        if syncData then
-            -- Compress real data
-            local realDataString = self.LibCompress:TableToString(syncData)
-            local realCompressed = self.LibCompress:CompressHuffman(realDataString)
-            
-            results.realOrigSize = string.len(realDataString)
-            results.realCompressedSize = string.len(realCompressed)
-            results.realRatio = math.floor((results.realCompressedSize / results.realOrigSize) * 100)
-            
-            -- Test compression and decompression to verify data integrity
-            local decompressedData = self.LibCompress:DecompressHuffman(realCompressed)
-            if not decompressedData then
-                self:Debug("error", "Failed to decompress real data")
-                results.realSuccess = false
-            else
-                local recoveredData = self.LibCompress:StringToTable(decompressedData)
-                if not recoveredData then
-                    self:Debug("error", "Failed to convert decompressed string back to table")
-                    results.realSuccess = false
-                else
-                    self:Debug("compress", "Real data compression/decompression successful")
-                    results.realSuccess = true
-                end
-            end
-        end
-    end
-    
-    -- Print results to chat frame for visibility
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Compression Test|r:")
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Compression Test|r: Original size: " .. results.origSize .. " bytes")
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Compression Test|r: Best compression: " .. results.compressedSize .. 
-                               " bytes (" .. results.ratio .. "% of original)")
-    
-    if realDataTest and results.realSuccess then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Compression Test|r: Real data: " .. 
-                                   results.realCompressedSize .. " bytes (" .. 
-                                   results.realRatio .. "% of original)")
-    end
-    
-    return true, results
-end
-
--- Prepare data for sync by stripping client-specific information
-function TWRA:PrepareDataForSync()
-    -- Early initialization guard - ensure assignment data structure exists
+    -- Check if we have saved assignments
     if not TWRA_Assignments then
-        self:Debug("error", "No data to prepare for sync - TWRA_Assignments is nil")
+        self:Debug("error", "No saved assignments to test compression with")
+        
         -- Auto-repair the structure
         TWRA_Assignments = {
             data = {},
@@ -302,15 +273,17 @@ function TWRA:CompressSectionData(sectionIndex)
     -- Add minimal metadata
     sectionData.timestamp = TWRA_Assignments.timestamp or time()
     
-    -- Compress section data
-    local dataString = self.LibCompress:TableToString(sectionData)
-    if not dataString then
-        self:Debug("error", "Failed to convert section to string")
-        return nil, "Failed to convert section to string"
+    -- Use standard Lua serialization instead of TableToString
+    self:Debug("compress", "Using standard Lua serialization for section " .. sectionIndex)
+    local serialized = self:SerializeTable(sectionData)
+    
+    if not serialized then
+        self:Debug("error", "Failed to serialize section data")
+        return nil, "Serialization failed"
     end
     
     -- Use Huffman compression
-    local compressed = self.LibCompress:CompressHuffman(dataString)
+    local compressed = self.LibCompress:CompressHuffman(serialized)
     if not compressed then
         self:Debug("error", "Failed to compress section data")
         return nil, "Compression failed"
@@ -476,8 +449,18 @@ function TWRA:DecompressSectionData(sectionIndex, compressedSection)
         return nil
     end
     
+    -- Check for and remove the compression marker if present
+    local startPos = 1
+    if string.byte(compressedSection, 1) == 241 then
+        self:Debug("compress", "Found compression marker (241), removing it")
+        startPos = 2
+    end
+    
+    -- Use the part without the marker for decoding
+    local base64Data = string.sub(compressedSection, startPos)
+    
     -- Decode from Base64
-    local decodedString = self:DecodeBase64(compressedSection)
+    local decodedString = self:DecodeBase64Raw(base64Data)
     if not decodedString then
         self:Debug("error", "Failed to decode section data from Base64")
         return nil
@@ -498,19 +481,174 @@ function TWRA:DecompressSectionData(sectionIndex, compressedSection)
         self:Debug("compress", "Warning: Using uncompressed data, LibCompress not available")
     end
     
-    -- Convert string to table
-    local decompressedTable
-    local func, errorMessage = loadstring("return " .. decompressedString)
+    -- Show a bit of the decompressed string for debugging
+    self:Debug("data", "Decompressed string begins with: " .. 
+              string.sub(decompressedString, 1, math.min(50, string.len(decompressedString))))
     
-    if func then
-        decompressedTable = func()
-        self:Debug("compress", "Successfully decompressed section " .. sectionIndex .. " data")
+    -- Try standard Lua deserialization first (for data compressed with our new method)
+    local decompressedTable
+    
+    -- Try loadstring first for our standard format
+    local success, result = pcall(function()
+        local func, errorMsg = loadstring("return " .. decompressedString)
+        if func then
+            return func()
+        else
+            self:Debug("error", "loadstring failed: " .. tostring(errorMsg))
+            return nil
+        end
+    end)
+    
+    if success and result and type(result) == "table" then
+        decompressedTable = result
+        self:Debug("compress", "Successfully used standard Lua deserialization")
     else
-        self:Debug("error", "Failed to convert decompressed section string to table: " .. (errorMessage or "unknown error"))
-        return nil
+        -- Fallback to LibCompress's StringToTable (for compatibility with older data)
+        self:Debug("compress", "Standard Lua deserialization failed, trying LibCompress StringToTable")
+        if self.LibCompress then
+            decompressedTable = self.LibCompress:StringToTable(decompressedString)
+            
+            if decompressedTable then
+                self:Debug("compress", "Successfully used LibCompress StringToTable")
+            else
+                self:Debug("error", "All deserialization methods failed")
+                return nil
+            end
+        else
+            self:Debug("error", "LibCompress not available for StringToTable conversion")
+            return nil
+        end
     end
     
-    return decompressedTable
+    -- If we have decompressed successfully, fill in any missing indices
+    if decompressedTable and type(decompressedTable) == "table" then
+        self:Debug("compress", "Successfully decompressed section " .. sectionIndex .. " data, filling missing indices")
+        
+        -- Fill in missing indices in the decompressed table
+        decompressedTable = self:FillMissingIndices(decompressedTable)
+        
+        -- Log table structure for debugging
+        local sectionName = decompressedTable["Section Name"] or "Unknown Section"
+        local rowCount = 0
+        if decompressedTable["Section Rows"] then
+            rowCount = table.getn(decompressedTable["Section Rows"]) or 0
+        end
+        
+        self:Debug("data", "Decompressed table for section '" .. sectionName .. 
+                  "' with " .. rowCount .. " rows")
+        
+        return decompressedTable
+    else
+        self:Debug("error", "Failed to decode section " .. sectionIndex .. " data")
+        return nil
+    end
+end
+
+-- Helper function to fill in missing indices in a table
+function TWRA:FillMissingIndices(inputTable)
+    if not inputTable or type(inputTable) ~= "table" then
+        return inputTable
+    end
+    
+    -- Process all arrays in the table (indexed by numbers)
+    for key, value in pairs(inputTable) do
+        -- If value is a table, recursively process it first
+        if type(value) == "table" then
+            inputTable[key] = self:FillMissingIndices(value)
+        end
+    end
+    
+    -- After processing nested tables, check if this is an array
+    -- Determine if this table appears to be an array (has numeric indices)
+    local isArray = false
+    local maxIndex = 0
+    
+    for index, _ in pairs(inputTable) do
+        if type(index) == "number" then
+            isArray = true
+            if index > maxIndex then
+                maxIndex = index
+            end
+        end
+    end
+    
+    -- If it's an array, fill in missing indices
+    if isArray and maxIndex > 0 then
+        for i = 1, maxIndex do
+            if inputTable[i] == nil then
+                inputTable[i] = "" -- Fill with empty string
+            end
+        end
+    end
+    
+    -- Special handling for section data to ensure consistency across the table
+    -- First, determine the number of columns from Section Header if present
+    local headerColumnCount = 0
+    if inputTable["Section Header"] and type(inputTable["Section Header"]) == "table" then
+        -- Find max header index
+        for headerIdx, _ in pairs(inputTable["Section Header"]) do
+            if type(headerIdx) == "number" and headerIdx > headerColumnCount then
+                headerColumnCount = headerIdx
+            end
+        end
+        
+        -- Fill in missing header indices
+        for i = 1, headerColumnCount do
+            if inputTable["Section Header"][i] == nil then
+                inputTable["Section Header"][i] = "" -- Fill with empty string
+            end
+        end
+    end
+    
+    -- If we have Section Rows, ensure each row has as many columns as the header
+    if inputTable["Section Rows"] and type(inputTable["Section Rows"]) == "table" and headerColumnCount > 0 then
+        for rowIndex, rowData in pairs(inputTable["Section Rows"]) do
+            if type(rowData) == "table" then
+                -- Each row should have exactly the same number of columns as the header
+                for i = 1, headerColumnCount do
+                    if rowData[i] == nil then
+                        rowData[i] = "" -- Fill with empty string
+                    end
+                end
+                -- Log the row data after filling for debugging
+                local rowContents = ""
+                for i = 1, headerColumnCount do
+                    rowContents = rowContents .. "[" .. i .. "]=" .. (rowData[i] or "nil") .. " "
+                end
+                self:Debug("compress", "Filled row " .. rowIndex .. ": " .. rowContents)
+            end
+        end
+    else
+        -- Generic array handling if there's no header to reference
+        if inputTable["Section Rows"] and type(inputTable["Section Rows"]) == "table" then
+            -- Find max column count across all rows
+            local maxColumnCount = 0
+            for _, rowData in pairs(inputTable["Section Rows"]) do
+                if type(rowData) == "table" then
+                    for colIndex, _ in pairs(rowData) do
+                        if type(colIndex) == "number" and colIndex > maxColumnCount then
+                            maxColumnCount = colIndex
+                        end
+                    end
+                end
+            end
+            
+            -- Now ensure all rows have that many columns
+            if maxColumnCount > 0 then
+                for rowIndex, rowData in pairs(inputTable["Section Rows"]) do
+                    if type(rowData) == "table" then
+                        for i = 1, maxColumnCount do
+                            if rowData[i] == nil then
+                                rowData[i] = "" -- Fill with empty string
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return inputTable
 end
 
 -- Store segmented compressed data
@@ -575,17 +713,17 @@ function TWRA:GetCompressedStructure()
     return TWRA_CompressedAssignments.structure
 end
 
--- Function to get a compressed section from TWRA_CompressedAssignments
-function TWRA:GetCompressedSection(sectionIndex)
-    if not TWRA_CompressedAssignments or 
-       not TWRA_CompressedAssignments.data or 
-       not TWRA_CompressedAssignments.data[sectionIndex] then
-        self:Debug("compress", "No compressed data available for section " .. sectionIndex)
-        return nil
-    end
+-- -- Function to get a compressed section from TWRA_CompressedAssignments redundant
+-- function TWRA:GetCompressedSection(sectionIndex)
+--     if not TWRA_CompressedAssignments or 
+--        not TWRA_CompressedAssignments.data or 
+--        not TWRA_CompressedAssignments.data[sectionIndex] then
+--         self:Debug("compress", "No compressed data available for section " .. sectionIndex)
+--         return nil
+--     end
     
-    return TWRA_CompressedAssignments.data[sectionIndex]
-end
+--     return TWRA_CompressedAssignments.data[sectionIndex]
+-- end
 
 -- Get compressed structure data
 function TWRA:GetCompressedStructure()
