@@ -673,16 +673,115 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
         end
     end
     
-    -- if not sectionData then
-    --     self:Debug("error", "No section data found for handler: " .. (currentHandler or "nil"))
-    --     return
-    -- end
+    -- Clear existing content
+    self:ClearRows()
+    self:ClearFooters()
+    
+    -- Check if this section needs processing and display a warning
+    if sectionData and sectionData["NeedsProcessing"] == true then
+        self:Debug("ui", "Section needs processing: " .. currentHandler)
+        
+        -- Create a warning header
+        if not self.processingWarningElements then
+            self.processingWarningElements = {}
+            
+            -- Create warning header
+            local warningHeader = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            warningHeader:SetPoint("TOP", self.mainFrame, "TOP", 0, -60)
+            warningHeader:SetText("Section data is being loaded...")
+            warningHeader:SetTextColor(1, 0.8, 0)
+            self.processingWarningElements.header = warningHeader
+            
+            -- Create warning icons (left and right)
+            local iconLeft = self.mainFrame:CreateTexture(nil, "OVERLAY")
+            iconLeft:SetTexture("Interface\\DialogFrame\\UI-Dialog-Icon-AlertNew")
+            iconLeft:SetWidth(32)
+            iconLeft:SetHeight(32)
+            iconLeft:SetPoint("RIGHT", warningHeader, "LEFT", -10, 0)
+            self.processingWarningElements.iconLeft = iconLeft
+            
+            local iconRight = self.mainFrame:CreateTexture(nil, "OVERLAY")
+            iconRight:SetTexture("Interface\\DialogFrame\\UI-Dialog-Icon-AlertNew")
+            iconRight:SetWidth(32)
+            iconRight:SetHeight(32)
+            iconRight:SetPoint("LEFT", warningHeader, "RIGHT", 10, 0)
+            self.processingWarningElements.iconRight = iconRight
+        else
+            -- Show existing warning elements
+            self.processingWarningElements.header:Show()
+            self.processingWarningElements.iconLeft:Show()
+            self.processingWarningElements.iconRight:Show()
+        end
+        
+        -- Try to process the section data if we have the capability
+        if TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
+            -- Find the section index for this section name
+            local sectionIndex = nil
+            for i, secName in ipairs(self.navigation.handlers) do
+                if secName == currentHandler then
+                    sectionIndex = i
+                    break
+                end
+            end
+            
+            if sectionIndex and TWRA_CompressedAssignments.sections[sectionIndex] then
+                -- Process the section data
+                self:Debug("data", "Auto-processing section data before display: " .. currentHandler)
+                
+                if self.ProcessSectionData then
+                    local success = self:ProcessSectionData(
+                        sectionIndex,
+                        TWRA_CompressedAssignments.sections[sectionIndex],
+                        TWRA_CompressedAssignments.timestamp or time(),
+                        "local"
+                    )
+                    
+                    if success then
+                        self:Debug("data", "Successfully processed section data, refreshing display")
+                        
+                        -- Hide the warning elements
+                        if self.processingWarningElements then
+                            self.processingWarningElements.header:Hide()
+                            self.processingWarningElements.iconLeft:Hide()
+                            self.processingWarningElements.iconRight:Hide()
+                        end
+                        
+                        -- Re-get the section data after processing
+                        if TWRA_Assignments and TWRA_Assignments.data then
+                            for _, section in pairs(TWRA_Assignments.data) do
+                                if section["Section Name"] == currentHandler then
+                                    sectionData = section
+                                    break
+                                end
+                            end
+                        end
+                    else
+                        self:Debug("error", "Failed to process section data")
+                        -- The warning message will still be displayed
+                        return
+                    end
+                else
+                    self:Debug("error", "ProcessSectionData function not available")
+                    -- The warning message will still be displayed
+                    return
+                end
+            else
+                self:Debug("error", "Could not find section index or compressed data for: " .. currentHandler)
+                -- The warning message will still be displayed
+                return
+            end
+        else
+            self:Debug("error", "No compressed data available for processing")
+            -- The warning message will still be displayed
+            return
+        end
+    end
     
     -- Create filtered data structure
     local filteredData = {}
     
     -- Process header from Section Header
-    if sectionData["Section Header"] then
+    if sectionData and sectionData["Section Header"] then
         table.insert(filteredData, sectionData["Section Header"])
         
         -- Determine max columns from header
@@ -695,7 +794,7 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     
     -- Process rows from Section Rows
     -- No need to filter out special rows since they've already been removed
-    if sectionData["Section Rows"] then
+    if sectionData and sectionData["Section Rows"] then
         for i, rowData in ipairs(sectionData["Section Rows"]) do
             -- Add the row to our filtered data
             table.insert(filteredData, rowData)
@@ -705,9 +804,6 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
         self:Debug("error", "No rows found in section data")
         return
     end
-    
-    -- Clear existing content
-    self:ClearRows()
     
     -- Calculate dynamic column widths based on actual content
     self.dynamicColumnWidths = self:CalculateColumnWidths(filteredData)
@@ -1391,6 +1487,23 @@ function TWRA:ClearRows()
         self.rowFrames = {}
     else
         self.rowFrames = {}
+    end
+    
+    -- Also clear any processing warning elements if they exist
+    if self.processingWarningElements then
+        if self.processingWarningElements.header then
+            self.processingWarningElements.header:Hide()
+            self.processingWarningElements.header:SetParent(nil)
+        end
+        if self.processingWarningElements.iconLeft then
+            self.processingWarningElements.iconLeft:Hide()
+            self.processingWarningElements.iconLeft:SetParent(nil)
+        end
+        if self.processingWarningElements.iconRight then
+            self.processingWarningElements.iconRight:Hide()
+            self.processingWarningElements.iconRight:SetParent(nil)
+        end
+        self.processingWarningElements = nil
     end
     
     -- Also clear footers

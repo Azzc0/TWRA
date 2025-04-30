@@ -43,6 +43,10 @@ function TWRA:NavigateToSection(index, source)
                 self:Debug("sync", "Section data not available locally: " .. sectionName)
                 needsSyncRequest = true
             end
+        else
+            -- If TWRA_CompressedAssignments.sections doesn't exist, we need to request the data
+            self:Debug("sync", "Compressed sections data structure not found")
+            needsSyncRequest = true
         end
     else
         self:Debug("nav", "Using example data - skipping sync request check")
@@ -53,6 +57,7 @@ function TWRA:NavigateToSection(index, source)
         self:Debug("sync", "Deferring navigation - requesting section data first")
         
         -- Store pending navigation information
+        self.SYNC = self.SYNC or {}
         self.SYNC.pendingSection = index
         self.SYNC.pendingSource = source
         
@@ -68,6 +73,41 @@ function TWRA:NavigateToSection(index, source)
         
         -- Add debug statement to verify we're about to return
         return false
+    end
+
+    -- Check if section needs processing - new two-step verification
+    if TWRA_Assignments and TWRA_Assignments.data and 
+       TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections and
+       TWRA_CompressedAssignments.sections[index] then
+        
+        -- Check if the section data exists but needs processing
+        local sectionExists = false
+        for _, section in pairs(TWRA_Assignments.data) do
+            if section["Section Name"] == sectionName then
+                sectionExists = true
+                if section["NeedsProcessing"] == true then
+                    self:Debug("data", "Section needs processing before navigation: " .. sectionName)
+                    
+                    -- Process the section data now
+                    if self.ProcessSectionData then
+                        local success = self:ProcessSectionData(
+                            index, 
+                            TWRA_CompressedAssignments.sections[index],
+                            TWRA_CompressedAssignments.timestamp,
+                            "local"
+                        )
+                        
+                        if not success then
+                            self:Debug("error", "Failed to process section data for: " .. sectionName)
+                            -- Continue navigation anyway since we have the skeleton structure
+                        end
+                    else
+                        self:Debug("error", "ProcessSectionData function not available")
+                    end
+                    break
+                end
+            end
+        end
     end
     
     -- Store old index for comparison
@@ -90,13 +130,14 @@ function TWRA:NavigateToSection(index, source)
     -- Trigger the event before updating display
     if self.TriggerEvent then
         self:Debug("nav", "Triggering SECTION_CHANGED event")
-        self:TriggerEvent("SECTION_CHANGED", index, sectionName, maxIndex, source)
+        self:TriggerEvent("SECTION_CHANGED", sectionName, index, maxIndex, source)
     else
         self:Debug("error", "TriggerEvent function not available")
     end
     
     -- Update display with the new section
     self:FilterAndDisplayHandler(sectionName)
+    
     self:Debug("sync", "About to broadcast section change to group")
     -- Broadcast section change if not coming from sync
     if source ~= "fromSync" and source ~= "reload" and self.BroadcastSectionChange then

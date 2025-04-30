@@ -681,7 +681,7 @@ end
 
 -- Process section data received from another player
 function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
-    self:Debug("sync", "Processing section " .. sectionIndex .. " data from " .. sender)
+    self:Debug("sync", "Processing section " .. sectionIndex .. " data from " .. (sender or "local"))
     
     -- Store in compressed format
     if not TWRA_CompressedAssignments then
@@ -691,6 +691,9 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
     if not TWRA_CompressedAssignments.sections then
         TWRA_CompressedAssignments.sections = {}
     end
+    
+    -- Store timestamp with compressed data
+    TWRA_CompressedAssignments.timestamp = timestamp
     
     -- Store the compressed section data
     TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
@@ -705,83 +708,85 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
     
     -- Cancel our response if pending
     if self.SYNC.pendingSectionResponses and self.SYNC.pendingSectionResponses[sectionIndex] then
-        self:CancelTimer(self.SYNC.pendingSectionResponses[sectionIndex])
         self.SYNC.pendingSectionResponses[sectionIndex] = nil
-        self:Debug("sync", "Canceled our pending response for section " .. sectionIndex .. " as someone else responded")
+        self:Debug("sync", "Cancelled pending section response for " .. sectionIndex)
     end
     
-    -- Attempt to decompress and store the section data
-    local success = false
-    
-    if self.DecompressSectionData then
-        local decompressedSection = self:DecompressSectionData(sectionIndex, sectionData)
+    -- If we have a pending section that we just received, we should now navigate to it
+    if self.SYNC.pendingSection and tonumber(self.SYNC.pendingSection) == tonumber(sectionIndex) then
+        self:Debug("sync", "Received data for pending section " .. sectionIndex .. ", proceeding with navigation")
         
-        if decompressedSection and type(decompressedSection) == "table" then
-            -- Update the TWRA_Assignments data
-            if not TWRA_Assignments then
-                TWRA_Assignments = {}
-            end
-            
-            if not TWRA_Assignments.data then
-                TWRA_Assignments.data = {}
-            end
-            
-            -- Store the decompressed section
-            TWRA_Assignments.data[sectionIndex] = decompressedSection
-            
-            -- Update section count
-            local receivedCount = self:GetTableSize(self.SYNC.receivedSections)
-            local totalCount = self.SYNC.totalSections or 0
-            
-            -- Log progress
-            self:Debug("sync", "Section " .. sectionIndex .. " received (" .. 
-                      receivedCount .. "/" .. totalCount .. " sections)")
-            
-            -- Show progress to user if receiving multiple sections
-            if totalCount > 1 then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received section: " .. 
-                    decompressedSection["Section name"] .. " (" .. receivedCount .. "/" .. totalCount .. ")")
-                
-                -- Update OSD with progress if available
-                if self.UpdateProgressBar then
-                    local percent = math.floor((receivedCount / totalCount) * 100)
-                    self:UpdateProgressBar(percent, receivedCount, totalCount)
+        -- Get the section name if we can
+        local sectionName = nil
+        if TWRA_Assignments and TWRA_Assignments.data then
+            for _, section in pairs(TWRA_Assignments.data) do
+                if type(section) == "table" and section["Section Index"] == sectionIndex then
+                    sectionName = section["Section Name"]
+                    break
                 end
             end
-            
-            -- If this is the currently displayed section, refresh it
-            if self.currentSection == sectionIndex and self.RefreshAssignmentTable then
-                self:RefreshAssignmentTable()
-            end
-            
-            -- If all sections have been received
-            if receivedCount >= totalCount then
-                self:Debug("sync", "All sections received!")
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Sync complete! Received all " .. totalCount .. " sections from " .. sender)
-                
-                -- Process player information for all sections
-                if self.ProcessPlayerInfo then
-                    self:ProcessPlayerInfo()
-                end
-                
-                -- Switch OSD back to assignment mode if needed
-                if self.SwitchToAssignmentMode and self.currentSection then
-                    local sectionName = TWRA_Assignments.data[self.currentSection]["Section name"]
-                    self:SwitchToAssignmentMode(sectionName)
-                end
-            end
-            
-            success = true
-        else
-            self:Debug("error", "Failed to decode section " .. sectionIndex .. " data")
         end
-    else
-        self:Debug("error", "DecompressSectionData function not available")
+        
+        -- Find section name from structure if needed
+        if not sectionName and self.SYNC.structure then
+            sectionName = self.SYNC.structure[sectionIndex]
+            self:Debug("sync", "Found section name in structure: " .. (sectionName or "nil"))
+        end
+        
+        -- Create a placeholder in TWRA_Assignments.data if it doesn't exist
+        if sectionName then
+            -- Check if we already have this section
+            local sectionExists = false
+            if TWRA_Assignments and TWRA_Assignments.data then
+                for _, section in pairs(TWRA_Assignments.data) do
+                    if type(section) == "table" and section["Section Name"] == sectionName then
+                        sectionExists = true
+                        
+                        -- Mark that it needs processing
+                        section["NeedsProcessing"] = true
+                        break
+                    end
+                end
+            end
+            
+            -- If section doesn't exist, create a placeholder
+            if not sectionExists then
+                TWRA_Assignments = TWRA_Assignments or {}
+                TWRA_Assignments.data = TWRA_Assignments.data or {}
+                
+                -- Add skeleton section with needed metadata
+                TWRA_Assignments.data[sectionIndex] = {
+                    ["Section Name"] = sectionName,
+                    ["Section Index"] = sectionIndex,
+                    ["NeedsProcessing"] = true,
+                    ["Section Metadata"] = {
+                        ["Note"] = {},
+                        ["Warning"] = {},
+                        ["GUID"] = {}
+                    }
+                }
+                self:Debug("sync", "Created placeholder for section: " .. sectionName)
+            end
+            
+            -- Now we can navigate to this section
+            if self.NavigateToSection then
+                -- Use navigation by index, which will now handle the processing
+                self:NavigateToSection(sectionIndex, self.SYNC.pendingSource or "fromSync")
+                
+                -- Clear pending section after navigation
+                self.SYNC.pendingSection = nil
+                self.SYNC.pendingSource = nil
+            else
+                self:Debug("error", "NavigateToSection function not available")
+            end
+        else
+            self:Debug("error", "Could not find section name for index " .. sectionIndex)
+            -- We'll still return success, just won't navigate
+        end
     end
     
-    return success
+    return true
 end
-
 
 -- Function to process all compressed sections at once
 function TWRA:ProcessAllCompressedSections()
