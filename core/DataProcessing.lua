@@ -936,31 +936,27 @@ function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp)
         return false
     end
     
-    self:Debug("data", "Building skeleton structure from decoded structure data")
+    self:Debug("data", "Building minimal skeleton structure from decoded structure data")
     
     -- Create new TWRA_Assignments skeleton or use existing
     TWRA_Assignments = TWRA_Assignments or {}
     TWRA_Assignments.timestamp = timestamp or TWRA_Assignments.timestamp
     TWRA_Assignments.data = {}
     
-    -- Build skeleton sections
+    -- Build minimal skeleton sections
     local sectionsCount = 0
     for index, sectionName in pairs(decodedStructure) do
         if type(index) == "number" and type(sectionName) == "string" then
-            -- Create skeleton section entry
+            -- Create minimal skeleton section entry
+            -- Only include what's absolutely necessary
             TWRA_Assignments.data[index] = {
                 ["Section Name"] = sectionName,
-                ["Section Rows"] = {},
-                ["Section Header"] = {},
-                ["Section Metadata"] = {
-                    ["Name"] = { sectionName }
-                },
-                ["Section Player Info"] = {}
+                ["NeedsProcessing"] = true
             }
             sectionsCount = sectionsCount + 1
         end
     end
     
-    self:Debug("data", "Built skeleton structure with " .. sectionsCount .. " sections")
+    self:Debug("data", "Built minimal skeleton structure with " .. sectionsCount .. " sections")
     return true
 end

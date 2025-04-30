@@ -536,14 +536,20 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     
     -- IMPORTANT: Create or update TWRA_CompressedAssignments with proper initialization
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    
+    -- Explicitly clear existing sections to avoid stale data
+    TWRA_CompressedAssignments.sections = nil
+    
+    -- Update timestamp and structure data
     TWRA_CompressedAssignments.timestamp = timestamp
     TWRA_CompressedAssignments.structure = structureData
 
-    -- Initialize empty sections for all sections in the structure
+    -- Now initialize empty sections table
     TWRA_CompressedAssignments.sections = {}
+    
+    -- Create empty placeholders for each section (we'll fill them later)
     for index, sectionName in pairs(decodedStructure) do
         if type(index) == "number" then
-            -- Create empty placeholders for each section
             TWRA_CompressedAssignments.sections[index] = ""
             self:Debug("sync", "Created empty section placeholder for section " .. index)
         end
@@ -556,27 +562,35 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     self.SYNC = self.SYNC or {}
     self.SYNC.cachedTimestamp = timestamp
     
-    -- IMPORTANT: Create or update TWRA_Assignments with proper initialization
-    TWRA_Assignments = TWRA_Assignments or {}
-    TWRA_Assignments.timestamp = timestamp
-    TWRA_Assignments.data = {}
-    TWRA_Assignments.isExample = false
+    -- Clear existing data structures to prepare for new structure
+    if self.ClearDataForStructureResponse then
+        self:ClearDataForStructureResponse()
+    end
     
-    self:Debug("sync", "Updated TWRA_Assignments with timestamp " .. timestamp)
-    
-    -- Create skeleton sections - IMPORTANT: Use "Section Name" with capital 'N'
-    local sectionCount = 0
-    for index, sectionName in pairs(decodedStructure) do
-        if type(index) == "number" and type(sectionName) == "string" then
-            -- Add skeleton section entry with correct key name "Section Name"
-            TWRA_Assignments.data[index] = {
-                ["Section Name"] = sectionName
-            }
-            
-            self:Debug("sync", "Created skeleton for section " .. index .. ": " .. sectionName)
-            sectionCount = sectionCount + 1
-        else
-            self:Debug("error", "Invalid section data format for index " .. tostring(index))
+    -- IMPORTANT: Use BuildSkeletonFromStructure instead of manually creating sections
+    if self.BuildSkeletonFromStructure then
+        self:Debug("sync", "Using BuildSkeletonFromStructure to create section skeletons")
+        self:BuildSkeletonFromStructure(decodedStructure, timestamp)
+    else
+        -- Fallback to manual creation if the function is not available
+        self:Debug("error", "BuildSkeletonFromStructure not available, falling back to manual skeleton creation")
+        
+        -- IMPORTANT: Create or update TWRA_Assignments with proper initialization
+        TWRA_Assignments = TWRA_Assignments or {}
+        TWRA_Assignments.timestamp = timestamp
+        TWRA_Assignments.data = {}
+        TWRA_Assignments.isExample = false
+        
+        -- Create minimal skeleton sections like BuildSkeletonFromStructure would
+        for index, sectionName in pairs(decodedStructure) do
+            if type(index) == "number" and type(sectionName) == "string" then
+                -- Just the bare minimum structure needed
+                TWRA_Assignments.data[index] = {
+                    ["Section Name"] = sectionName,
+                    ["NeedsProcessing"] = true
+                }
+                self:Debug("sync", "Created skeleton for section " .. index .. ": " .. sectionName)
+            end
         end
     end
     
@@ -587,10 +601,6 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
             self:Debug("sync", "Saved section " .. idx .. ": " .. section["Section Name"])
         end
     end
-    
-    -- -- Get the total number of sections for progress tracking
-    -- self.SYNC.totalSections = sectionCount
-    -- self:Debug("sync", "Structure has " .. sectionCount .. " total sections")
     
     -- Rebuild navigation
     if self.RebuildNavigation then
@@ -610,7 +620,7 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
         self:Debug("sync", "Navigating to pending section " .. pendingSection)
         
         if self.NavigateToSection then
-            self:NavigateToSection(pendingSection, fromSync)
+            self:NavigateToSection(pendingSection, "fromSync")
             self:Debug("sync", "Navigation to section " .. pendingSection .. " complete")
         else
             self:Debug("error", "NavigateToSection function not available")
@@ -623,11 +633,12 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
         -- If no pending section, navigate to first section
         if TWRA_Assignments.data[1] and self.NavigateToSection then
             self:Debug("sync", "No pending section, navigating to section 1")
-            self:NavigateToSection(1, fromSync)
+            self:NavigateToSection(1, "fromSync")
         end
     end
     
     -- Notify the user that structure has been updated
+    local sectionCount = self:GetTableSize(decodedStructure)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received structure data from " .. sender .. " with " .. sectionCount .. " sections")
     
     self:Debug("sync", "ProcessStructureData completed successfully")
