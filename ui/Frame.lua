@@ -613,13 +613,13 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
                                not TWRA_CompressedAssignments.sections[sectionIndex] or
                                TWRA_CompressedAssignments.sections[sectionIndex] == ""
         
-        self:Debug("ui", "Section " .. currentHandler .. " - missingCompressedData: " .. tostring(missingCompressedData))
+        -- self:Debug("ui", "Section " .. currentHandler .. " - missingCompressedData: " .. tostring(missingCompressedData))
     end
     
     -- Handle data processing requirements or missing data
     if needsProcessing or (not isExampleData and missingCompressedData) then
-        self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
-                  ", missingCompressedData: " .. tostring(missingCompressedData))
+        -- self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
+                --   ", missingCompressedData: " .. tostring(missingCompressedData))
         
         -- Create warning elements if they don't exist
         if not self.processingWarningElements then
@@ -696,12 +696,14 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
         else if needsProcessing then
             -- For sections that need processing
             self.processingWarningElements.header:SetText("Section assignments not processed")
-            self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
-            self.processingWarningElements.infoText:Show()
+            self.processingWarningElements.header:Show()
+            -- self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
+            -- self.processingWarningElements.infoText:Show()
             
         else if missingCompressedData then
             -- For sections missing compressed data
             self.processingWarningElements.header:SetText("Section assignments not processed")
+            self.processingWarningElements.header:Show()
             self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
             self.processingWarningElements.infoText:Show()
             

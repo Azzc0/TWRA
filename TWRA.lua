@@ -15,7 +15,6 @@ TWRA = TWRA or {}
 function TWRA:NavigateToSection(index, source)
     -- Debug entry with source tracking
     self:Debug("nav", "NavigateToSection called with index: " .. tostring(index) .. ", source: " .. tostring(source or "unknown"))
-    
     -- Handle legacy case where section is passed as a name instead of index
     if type(index) == "string" then
         -- Find the index for this name
@@ -54,15 +53,20 @@ function TWRA:NavigateToSection(index, source)
     
     -- Simple compressed data handling with example exception
     local missingCompressedData = false
+    local needsProcessing = false
     
-    -- Check if we need compressed data (and we're not using example data)
-    if TWRA_CompressedAssignments and not TWRA_CompressedAssignments.sections[index] then
+    -- Check if compressed data is empty (existence is guaranteed)
+    if TWRA_CompressedAssignments.sections[index] == "" then
         missingCompressedData = true
+        TWRA:Debug("nav", "Missing compressed data for section index: " .. index)
+    else
+        TWRA:Debug("nav", "Compressed data available for section index: " .. index)
     end
     
     -- Example data overrides the need for compressed data
     if TWRA_Assignments and TWRA_Assignments.isExample then
         missingCompressedData = false
+        TWRA:Debug("nav", "Using example data, no compressed data needed")
     end
     
     -- If data is missing, request it and exit
@@ -71,15 +75,19 @@ function TWRA:NavigateToSection(index, source)
             self.SYNC.pendingSection = index
         end
         if self.RequestSectionData then
+            self:Debug("nav", "Requesting section data for index: " .. index)
             self:RequestSectionData(index)
-            return false
+        else
+            self:Debug("nav", "RequestSectionData function not available but data is missing")
         end
+        return false -- Always return here to stop execution if compressed data is missing
     end
     
     -- Check if section data needs processing
-    if TWRA_Assignments.data[index] and TWRA_Assignments.data[index]["NeedsProcessing"] then
+    needsProcessing = TWRA_Assignments.data[index]["NeedsProcessing"] or false
+    if needsProcessing then
         if self.ProcessSectionData then
-            self:Debug("data", "Processing section data for index: " .. index)
+            self:Debug("nav", "Processing section data for index: " .. index)
             self:ProcessSectionData(index)
         else
             self:Debug("error", "ProcessSectionData function not available")
@@ -112,37 +120,46 @@ function TWRA:NavigateToSection(index, source)
         end
     end
     
-    -- Event system handling
-    local handled = false
+    -- Prepare navigation event data
+    local eventData = {
+        index = index,
+        sectionName = sectionName,
+        source = source or "unknown",
+        sectionData = sectionData
+    }
     
-    if self.TriggerEvent then
-        -- Call event handler first and check if it returned true (event was handled)
-        handled = self:TriggerEvent("NAVIGATE_TO_SECTION", index, sectionName, source) == true
-    end
+    -- Trigger the NAVIGATE_TO_SECTION event and get number of listeners that were called
+    local listenersCount = self:TriggerEvent("NAVIGATE_TO_SECTION", eventData)
     
-    -- If not handled by an event handler, use the default display mechanism
-    if not handled then
-        self:Debug("nav", "Navigation not handled by event, displaying section...")
+    -- Also trigger the SECTION_CHANGED event for components that listen to it
+    -- This is needed for OSD, Minimap, AutoTanks, and other modules
+    self:TriggerEvent("SECTION_CHANGED", sectionName, index, table.getn(self.navigation.handlers), source)
+    
+    -- -- If no event listeners handled the navigation, use the default display mechanism
+    -- if listenersCount == 0 then
+    --     self:Debug("nav", "No event listeners for NAVIGATE_TO_SECTION, using default display mechanism")
         
-        -- Display the section content using FilterAndDisplayHandler
-        if self.FilterAndDisplayHandler then
-            self:FilterAndDisplayHandler(sectionName)
-        end
+    --     -- Display the section content using FilterAndDisplayHandler
+    --     if self.FilterAndDisplayHandler then
+    --         self:FilterAndDisplayHandler(sectionName)
+    --     end
         
-        -- Update OSD if applicable
-        if self.UpdateOSDContent then
-            self:UpdateOSDContent()
-        end
-    end
+    --     -- Update OSD if applicable
+    --     if self.UpdateOSDContent then
+    --         self:UpdateOSDContent()
+    --     end
+    -- else
+    --     self:Debug("nav", "Navigation handled by " .. listenersCount .. " event listener(s)")
+    -- end
     
-    -- If section data is available and source is "user" or "autoNavigate", broadcast the change to the group
-    if source == "user" or source == "autoNavigate" then
-        if self.BroadcastSectionChange then
-            self:Debug("sync", "About to broadcast section change to group")
-            local timestamp = TWRA_Assignments and TWRA_Assignments.timestamp or nil
-            self:BroadcastSectionChange(index, timestamp)
-        end
-    end
+    -- -- If section data is available and source is "user" or "autoNavigate", broadcast the change to the group
+    -- if source == "user" or source == "autoNavigate" then
+    --     if self.BroadcastSectionChange then
+    --         self:Debug("sync", "About to broadcast section change to group")
+    --         local timestamp = TWRA_Assignments and TWRA_Assignments.timestamp or nil
+    --         self:BroadcastSectionChange(index, timestamp)
+    --     end
+    -- end
     
     -- Final debug to confirm navigation is complete
     self:Debug("nav", "Navigation complete: Section " .. index .. " (" .. sectionName .. ")")
@@ -218,6 +235,14 @@ function TWRA:Initialize()
                 addon:InitializeDebug()
             end
             
+            -- Initialize Sync system
+            if addon.InitializeSync then
+                addon:Debug("general", "Initializing sync system")
+                addon:InitializeSync()
+            else
+                addon:Debug("error", "InitializeSync function not found - sync functionality will not work!")
+            end
+            
             addon:Debug("general", "Variables loaded")
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- This fires on initial load and UI reload
@@ -278,6 +303,12 @@ function TWRA:Initialize()
     -- Initialize Debug system (must be early)
     if self.InitDebug then 
         self:Debug("general", "Debug system initialized")
+    end
+
+    -- Also initialize Sync outside of event handler to ensure it runs
+    if self.InitializeSync then
+        self:Debug("general", "Initializing sync system during startup")
+        self:InitializeSync()
     end
 
     -- Check if this is a UI reload and restore state

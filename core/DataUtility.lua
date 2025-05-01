@@ -219,75 +219,105 @@ function TWRA:GetRelevantRowsForCurrentSection(sectionData)
     return relevantRows
 end
 
--- Legacy display function to handle the old format
-function TWRA:DisplayLegacySection()
-    self:Debug("ui", "Displaying legacy format section")
+-- -- Legacy display function to handle the old format
+-- function TWRA:DisplayLegacySection()
+--     self:Debug("ui", "Displaying legacy format section")
     
-    -- Check if we have data and navigation
-    if not self.fullData or not self.navigation or 
-       not self.navigation.currentIndex or
-       not self.navigation.handlers then
-        self:Debug("ui", "No data or navigation available")
-        return
-    end
+--     -- Check if we have data and navigation
+--     if not self.fullData or not self.navigation or 
+--        not self.navigation.currentIndex or
+--        not self.navigation.handlers then
+--         self:Debug("ui", "No data or navigation available")
+--         return
+--     end
     
-    local currentSection = self.navigation.handlers[self.navigation.currentIndex]
-    if not currentSection then
-        self:Debug("ui", "No current section selected")
-        return
-    end
+--     local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+--     if not currentSection then
+--         self:Debug("ui", "No current section selected")
+--         return
+--     end
     
-    -- Clear any existing rows
-    if self.ClearRows then
-        self:ClearRows()
-    end
+--     -- Clear any existing rows
+--     if self.ClearRows then
+--         self:ClearRows()
+--     end
     
-    -- Find header row for this section and create it
-    local headerRow = nil
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
-            headerRow = self.fullData[i]
-            break
-        end
-    end
+--     -- Find header row for this section and create it
+--     local headerRow = nil
+--     for i = 1, table.getn(self.fullData) do
+--         if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
+--             headerRow = self.fullData[i]
+--             break
+--         end
+--     end
     
-    if headerRow and self.CreateRow then
-        self:CreateRow(1, headerRow, false, true)
-    end
+--     if headerRow and self.CreateRow then
+--         self:CreateRow(1, headerRow, false, true)
+--     end
     
-    -- Find rows for this section and create them
-    local rowIdx = 2  -- Start after header
-    local relevantRows = self:GetPlayerRelevantRows(currentSection)
+--     -- Find rows for this section and create them
+--     local rowIdx = 2  -- Start after header
+--     local relevantRows = self:GetPlayerRelevantRows(currentSection)
     
-    for i = 1, table.getn(self.fullData) do
-        if self.fullData[i][1] == currentSection and self.fullData[i][2] ~= "Icon" then
-            local isRelevant = false
-            for _, r in ipairs(relevantRows) do
-                if r == i then
-                    isRelevant = true
-                    break
-                end
-            end
+--     for i = 1, table.getn(self.fullData) do
+--         if self.fullData[i][1] == currentSection and self.fullData[i][2] ~= "Icon" then
+--             local isRelevant = false
+--             for _, r in ipairs(relevantRows) do
+--                 if r == i then
+--                     isRelevant = true
+--                     break
+--                 end
+--             end
             
-            if self.CreateRow then
-                self:CreateRow(rowIdx, self.fullData[i], isRelevant)
-                rowIdx = rowIdx + 1
+--             if self.CreateRow then
+--                 self:CreateRow(rowIdx, self.fullData[i], isRelevant)
+--                 rowIdx = rowIdx + 1
+--             end
+--         end
+--     end
+    
+--     -- Update UI elements
+--     if self.UpdateRowDisplay then
+--         self:UpdateRowDisplay()
+--     end
+    
+--     -- Update OSD if needed
+--     if self.ShouldShowOSD and self.ShouldShowOSD() and self.ShowOSD then
+--         self:Debug("osd", "Showing OSD for legacy section")
+--         self:ShowOSD()
+--     end
+    
+--     return true
+-- end
+
+-- Find tank role columns in section headers
+function TWRA:FindTankRoleColumns(section)
+    local tankColumns = {}
+    
+    -- Skip if no header
+    if not section["Section Header"] then
+        return tankColumns
+    end
+    
+    -- The standardized tank role name
+    local tankRole = "Tank"
+    
+    -- Check each header column
+    for colIdx, headerText in ipairs(section["Section Header"]) do
+        -- Skip if not a string
+        if type(headerText) == "string" then
+            -- Convert to lowercase for case-insensitive matching
+            local lcHeader = string.lower(headerText)
+            
+            -- Check if this header has a direct mapping to "Tank" in ROLE_MAPPINGS
+            if self.ROLE_MAPPINGS and self.ROLE_MAPPINGS[lcHeader] == tankRole then
+                table.insert(tankColumns, colIdx)
+                self:Debug("data", "Found tank column: " .. colIdx .. " (" .. headerText .. ")", false, true)
             end
         end
     end
     
-    -- Update UI elements
-    if self.UpdateRowDisplay then
-        self:UpdateRowDisplay()
-    end
-    
-    -- Update OSD if needed
-    if self.ShouldShowOSD and self.ShouldShowOSD() and self.ShowOSD then
-        self:Debug("osd", "Showing OSD for legacy section")
-        self:ShowOSD()
-    end
-    
-    return true
+    return tankColumns
 end
 
 -- Clear data while preserving section metadata

@@ -66,6 +66,10 @@ function TWRA:RegisterSyncEvents()
             end
         end
     end
+
+    -- Immediately register for the SECTION_CHANGED event
+    -- This ensures we're registered even if InitializeSync hasn't run yet
+    self:RegisterSectionChangeHandler()
 end
 
 -- Function to check if Live Sync should be active based on saved settings
@@ -97,8 +101,8 @@ function TWRA:ActivateLiveSync()
         -- Even without the frame, we'll try to continue
     end
     
-    -- Make sure section change handler is registered (only registers once)
-    self:RegisterSectionChangeHandler()
+    -- Note: We're not registering for SECTION_CHANGED here anymore since it's
+    -- done in InitializeSync regardless of sync settings
     
     -- Enable message handling
     self:Debug("sync", "Live Sync fully activated")
@@ -398,6 +402,10 @@ end
 function TWRA:InitializeSync()
     self:Debug("sync", "Initializing sync module")
     
+    -- Register for SECTION_CHANGED event early, regardless of sync settings
+    -- We'll check sync settings when the event fires, not when registering
+    self:RegisterSectionChangeHandler()
+    
     -- Check saved variables for sync settings
     if TWRA_SavedVariables and TWRA_SavedVariables.options then
         -- Update runtime values with saved settings - use boolean conversion for consistency
@@ -408,7 +416,7 @@ function TWRA:InitializeSync()
                   tostring(self.SYNC.liveSync) .. ", TankSync=" .. 
                   tostring(self.SYNC.tankSync))
         
-        -- Automatically activate if enabled in settings
+        -- Only activate automated syncing if enabled
         if self.SYNC.liveSync then
             self:Debug("sync", "LiveSync is enabled in settings, activating now")
             self:ActivateLiveSync()
@@ -434,10 +442,7 @@ function TWRA:InitializeSync()
         TWRA:ToggleMessageMonitoring()
     end
     
-    self:Debug("sync", "Registered /syncmon command")
-    
-    -- Register our section change handler
-    self:RegisterSectionChangeHandler()
+    self:Debug("sync", "Sync initialization complete")
 end
 
 -- Function to register with CHAT_MSG_ADDON event
@@ -618,41 +623,61 @@ function TWRA:RegisterSectionChangeHandler()
         return
     end
     
-    -- Register for the SECTION_CHANGED message
+    -- Register for the SECTION_CHANGED message - we always want to listen
+    -- for this event regardless of sync settings
     self:RegisterEvent("SECTION_CHANGED", function(sectionName, sectionIndex, numSections, context)
         -- Always log that we received the event regardless of LiveSync status
         self:Debug("sync", "SECTION_CHANGED event received: " .. tostring(sectionName) .. 
                   " (" .. tostring(sectionIndex) .. "), liveSync=" .. tostring(self.SYNC.liveSync))
         
-        -- Don't broadcast if live sync is not enabled
+        -- Only broadcast if Live Sync is enabled
         if not self.SYNC.liveSync then
             self:Debug("sync", "Skipping section broadcast - LiveSync not enabled")
             return
         end
         
-        -- Skip if the context indicates we should suppress sync
-        if context then
-            self:Debug("sync", "Skipping section broadcast - suppressSync flag is set")
+        -- Skip if the context is "fromSync" to prevent feedback loops
+        if context == "fromSync" then
+            self:Debug("sync", "Skipping section broadcast - came from sync already")
             return
         end
         
-        -- Get current section directly from TWRA_Assignments
-        if not TWRA_Assignments or not TWRA_Assignments.currentSection then
-            self:Debug("error", "Cannot broadcast section - TWRA_Assignments.currentSection is not set")
+        -- Get current section index either from parameter or assignments
+        local currentSectionIndex = sectionIndex
+        if not currentSectionIndex and TWRA_Assignments and TWRA_Assignments.currentSection then
+            currentSectionIndex = TWRA_Assignments.currentSection
+            self:Debug("sync", "Using section index from TWRA_Assignments: " .. currentSectionIndex)
+        end
+        
+        if not currentSectionIndex then
+            self:Debug("error", "Cannot broadcast section - no valid section index found")
             return
         end
         
         -- Get timestamp for sync
-        local timestamp = TWRA_Assignments.timestamp
+        local timestamp = 0
+        if TWRA_Assignments and TWRA_Assignments.timestamp then
+            timestamp = TWRA_Assignments.timestamp
+            self:Debug("sync", "Using timestamp from TWRA_Assignments: " .. timestamp)
+        end
         
-        -- Broadcast section change with the current section from assignments
-        self:Debug("sync", "Broadcasting section change with index: " .. TWRA_Assignments.currentSection)
-        self:BroadcastSectionChange(TWRA_Assignments.currentSection, timestamp)
-    end)
+        -- Debug before broadcasting
+        self:Debug("sync", "About to broadcast section change with index: " .. currentSectionIndex)
+        
+        -- Broadcast section change with the determined section index
+        local success = self:BroadcastSectionChange(currentSectionIndex, timestamp)
+        
+        -- Debug after broadcasting
+        if success then
+            self:Debug("sync", "Successfully broadcast section change")
+        else
+            self:Debug("error", "Failed to broadcast section change")
+        end
+    end, "Sync")  -- Added "Sync" as the owner parameter
     
     -- Mark as registered
     self.SYNC.sectionChangeHandlerRegistered = true
-    self:Debug("sync", "Section change handler registered")
+    self:Debug("sync", "Section change handler registered successfully")
 end
 
 -- Stub functions for compressed data retrieval - to be implemented elsewhere
