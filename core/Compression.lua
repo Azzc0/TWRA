@@ -440,24 +440,31 @@ function TWRA:DecompressStructureData(compressedStructure)
     return sections
 end
 
--- Decompress section data
-function TWRA:DecompressSectionData(sectionIndex, compressedSection)
-    self:Debug("compress", "Decompressing section " .. sectionIndex .. " data")
-    
+-- Decompress section data (version with consistent marker byte handling)
+function TWRA:DecompressSectionData(compressedSection)
     if not compressedSection or type(compressedSection) ~= "string" then
         self:Debug("error", "Invalid compressed section data")
         return nil
     end
     
-    -- Check for and remove the compression marker if present
-    local startPos = 1
-    if string.byte(compressedSection, 1) == 241 then
-        self:Debug("compress", "Found compression marker (241), removing it")
-        startPos = 2
+    -- Debug the actual content we're trying to decompress
+    self:Debug("compress", "Decompressing section data of length " .. string.len(compressedSection))
+    
+    -- Check first byte and fix the marker if needed
+    local firstByte = string.byte(compressedSection, 1)
+    self:Debug("compress", "First byte of compressed data: " .. tostring(firstByte))
+    
+    -- Make a copy of the data with the marker byte if needed
+    local processData = compressedSection
+    
+    -- If the first byte is not the marker byte (241), add it
+    if firstByte ~= 241 then
+        self:Debug("compress", "Adding marker byte to compressed data")
+        processData = "\241" .. compressedSection
     end
     
-    -- Use the part without the marker for decoding
-    local base64Data = string.sub(compressedSection, startPos)
+    -- Use the properly formatted data for decoding
+    local base64Data = string.sub(processData, 2)  -- Skip the marker byte
     
     -- Decode from Base64
     local decodedString = self:DecodeBase64Raw(base64Data)
@@ -522,7 +529,7 @@ function TWRA:DecompressSectionData(sectionIndex, compressedSection)
     
     -- If we have decompressed successfully, fill in any missing indices
     if decompressedTable and type(decompressedTable) == "table" then
-        self:Debug("compress", "Successfully decompressed section " .. sectionIndex .. " data, filling missing indices")
+        self:Debug("compress", "Successfully decompressed section data, filling missing indices")
         
         -- Fill in missing indices in the decompressed table
         decompressedTable = self:FillMissingIndices(decompressedTable)
@@ -539,7 +546,7 @@ function TWRA:DecompressSectionData(sectionIndex, compressedSection)
         
         return decompressedTable
     else
-        self:Debug("error", "Failed to decode section " .. sectionIndex .. " data")
+        self:Debug("error", "Failed to decode section data")
         return nil
     end
 end

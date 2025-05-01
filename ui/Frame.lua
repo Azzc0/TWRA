@@ -8,86 +8,6 @@ function TWRA:IsExampleData(data)
     return data == self.EXAMPLE_DATA
 end
 
--- Enhanced GetPlayerStatus function to handle example data with better debugging
-function TWRA:GetPlayerStatus(name)
-    -- Safety check
-    if not name or name == "" then 
-        return false, nil 
-    end
-    
-    -- Debug mode - enable this to see all GetPlayerStatus calls
-    local debugMe = false
-    
-    -- Check if this is the current player
-    if UnitName("player") == name then 
-        return true, true 
-    end
-    
-    -- Check if we have this player in our PLAYERS table
-    if self.PLAYERS and self.PLAYERS[name] then
-        if debugMe then
-            DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in PLAYERS table: " .. 
-                                         self.PLAYERS[name][1] .. ", " .. (self.PLAYERS[name][2] and "Online" or "Offline"))
-        end
-        return true, self.PLAYERS[name][2] -- Return online status directly from table
-    end
-    
-    -- Check if we're using example data
-    if self.usingExampleData and self.EXAMPLE_PLAYERS then
-        local classInfo = self.EXAMPLE_PLAYERS[name]
-        if classInfo then
-            -- For old string format
-            if type(classInfo) == "string" then
-                local isOffline = string.find(classInfo, "|OFFLINE")
-                if debugMe then
-                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in EXAMPLE_PLAYERS (string format): " .. 
-                                                tostring(not isOffline))
-                end
-                return true, not isOffline
-            -- For new array format
-            elseif type(classInfo) == "table" then
-                if debugMe then
-                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in EXAMPLE_PLAYERS (table format): " .. 
-                                                tostring(classInfo[2]))
-                end
-                return true, classInfo[2]
-            end
-        end
-    end
-    
-    -- Standard raid roster check for normal operation
-    if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local raidName, _, _, _, _, _, _, online = GetRaidRosterInfo(i)
-            if raidName == name then
-                if debugMe then
-                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in raid: " .. tostring(online == 1))
-                end
-                return true, online == 1
-            end
-        end
-    end
-    
-    -- Check party if not in raid
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() > 0 then
-        for i = 1, GetNumPartyMembers() do
-            if UnitName("party"..i) == name then
-                local isConnected = UnitIsConnected("party"..i)
-                if debugMe then
-                    DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - found in party: " .. tostring(isConnected))
-                end
-                return true, isConnected
-            end
-        end
-    end
-    
-    -- Not found
-    if debugMe then
-        DEFAULT_CHAT_FRAME:AddMessage("GetPlayerStatus: " .. name .. " - not found")
-    end
-    return false, nil
-end
-
 -- UI-specific functions
 TWRA.currentView = "main"  -- Either "main" or "options"
 
@@ -425,7 +345,6 @@ function TWRA:CreateMainFrame()
                     end
                 end
                 
-                -- If not found by name, try by index
                 if not found and TWRA_Assignments.currentSection then
                     local index = TWRA_Assignments.currentSection
                     if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
@@ -643,7 +562,7 @@ function TWRA:NavigateHandler(delta)
     self:NavigateToSection(newIndex)
 end
 
--- Replace FilterAndDisplayHandler to use dynamic column widths
+-- Replace FilterAndDisplayHandler to use dynamic column widths and hide headers when data needs processing
 function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Debug entry
     self:Debug("ui", "FilterAndDisplayHandler called for section: " .. (currentHandler or "nil"))
@@ -662,12 +581,14 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     
     -- Get the current section data based on the handler name
     local sectionData = nil
+    local sectionIndex = nil
     
-    -- Try to find the section data for the current handler
+    -- Try to find the section data and index for the current handler
     if TWRA_Assignments and TWRA_Assignments.data then
-        for _, section in pairs(TWRA_Assignments.data) do
+        for idx, section in pairs(TWRA_Assignments.data) do
             if section["Section Name"] == currentHandler then
                 sectionData = section
+                sectionIndex = idx
                 break
             end
         end
@@ -677,18 +598,37 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     self:ClearRows()
     self:ClearFooters()
     
-    -- Check if this section needs processing and display a warning
-    if sectionData and sectionData["NeedsProcessing"] == true then
-        self:Debug("ui", "Section needs processing: " .. currentHandler)
+    -- Check if we're using example data
+    local isExampleData = (TWRA_Assignments and TWRA_Assignments.isExample) or self.usingExampleData
+    
+    -- EARLY CHECK: If section needs processing or we're missing compressed data, show warning and don't display headers
+    local needsProcessing = sectionData and sectionData["NeedsProcessing"] == true
+    local missingCompressedData = false
+    
+    -- Check if compressed data is available for this section - SIMPLIFIED CHECK
+    if not isExampleData and sectionIndex and not needsProcessing then
+        -- A section with empty string value ("") means it's missing the actual compressed data
+        missingCompressedData = not TWRA_CompressedAssignments or
+                               not TWRA_CompressedAssignments.sections or
+                               not TWRA_CompressedAssignments.sections[sectionIndex] or
+                               TWRA_CompressedAssignments.sections[sectionIndex] == ""
         
-        -- Create a warning header
+        self:Debug("ui", "Section " .. currentHandler .. " - missingCompressedData: " .. tostring(missingCompressedData))
+    end
+    
+    -- Handle data processing requirements or missing data
+    if needsProcessing or (not isExampleData and missingCompressedData) then
+        self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
+                  ", missingCompressedData: " .. tostring(missingCompressedData))
+        
+        -- Create warning elements if they don't exist
         if not self.processingWarningElements then
             self.processingWarningElements = {}
             
             -- Create warning header
             local warningHeader = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
             warningHeader:SetPoint("TOP", self.mainFrame, "TOP", 0, -60)
-            warningHeader:SetText("Section data is being loaded...")
+            warningHeader:SetText("Section assignments not processed")
             warningHeader:SetTextColor(1, 0.8, 0)
             self.processingWarningElements.header = warningHeader
             
@@ -706,74 +646,80 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
             iconRight:SetHeight(32)
             iconRight:SetPoint("LEFT", warningHeader, "RIGHT", 10, 0)
             self.processingWarningElements.iconRight = iconRight
+            
+            -- Create additional info text for synced sections
+            local infoText = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            infoText:SetPoint("TOP", warningHeader, "BOTTOM", 0, -10)
+            infoText:SetText("Waiting for data from raid members...")
+            infoText:SetTextColor(0.8, 0.8, 1)
+            self.processingWarningElements.infoText = infoText
         else
             -- Show existing warning elements
             self.processingWarningElements.header:Show()
             self.processingWarningElements.iconLeft:Show()
             self.processingWarningElements.iconRight:Show()
+            if self.processingWarningElements.infoText then
+                self.processingWarningElements.infoText:Show()
+            end
         end
         
-        -- Try to process the section data if we have the capability
-        if TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
-            -- Find the section index for this section name
-            local sectionIndex = nil
-            for i, secName in ipairs(self.navigation.handlers) do
-                if secName == currentHandler then
-                    sectionIndex = i
+        -- Set the appropriate warning messages based on condition
+        -- For example data, update the warning message
+        if isExampleData then
+            self:Debug("ui", "Example data - displaying specific message")
+            self.processingWarningElements.header:SetText("Displaying example data")
+            self.processingWarningElements.infoText:Hide()
+            
+            -- Update the section to mark it as processed (for example data only)
+            for idx, section in pairs(TWRA_Assignments.data) do
+                if section["Section Name"] == currentHandler then
+                    -- For example data, just mark it as processed without actually processing
+                    section["NeedsProcessing"] = false
+                    
+                    -- Create minimal structure if needed
+                    section["Section Header"] = section["Section Header"] or {"Icon", "Target"}
+                    section["Section Rows"] = section["Section Rows"] or {}
+                    section["Section Metadata"] = section["Section Metadata"] or {
+                        ["Note"] = {},
+                        ["Warning"] = {},
+                        ["GUID"] = {}
+                    }
+                    
+                    -- Refresh our sectionData reference
+                    sectionData = section
+                    
+                    self:Debug("ui", "Example data marked as processed")
+                    needsProcessing = false
                     break
                 end
             end
+        else if needsProcessing then
+            -- For sections that need processing
+            self.processingWarningElements.header:SetText("Section assignments not processed")
+            self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
+            self.processingWarningElements.infoText:Show()
             
-            if sectionIndex and TWRA_CompressedAssignments.sections[sectionIndex] then
-                -- Process the section data
-                self:Debug("data", "Auto-processing section data before display: " .. currentHandler)
-                
-                if self.ProcessSectionData then
-                    local success = self:ProcessSectionData(
-                        sectionIndex,
-                        TWRA_CompressedAssignments.sections[sectionIndex],
-                        TWRA_CompressedAssignments.timestamp or time(),
-                        "local"
-                    )
-                    
-                    if success then
-                        self:Debug("data", "Successfully processed section data, refreshing display")
-                        
-                        -- Hide the warning elements
-                        if self.processingWarningElements then
-                            self.processingWarningElements.header:Hide()
-                            self.processingWarningElements.iconLeft:Hide()
-                            self.processingWarningElements.iconRight:Hide()
-                        end
-                        
-                        -- Re-get the section data after processing
-                        if TWRA_Assignments and TWRA_Assignments.data then
-                            for _, section in pairs(TWRA_Assignments.data) do
-                                if section["Section Name"] == currentHandler then
-                                    sectionData = section
-                                    break
-                                end
-                            end
-                        end
-                    else
-                        self:Debug("error", "Failed to process section data")
-                        -- The warning message will still be displayed
-                        return
-                    end
-                else
-                    self:Debug("error", "ProcessSectionData function not available")
-                    -- The warning message will still be displayed
-                    return
-                end
-            else
-                self:Debug("error", "Could not find section index or compressed data for: " .. currentHandler)
-                -- The warning message will still be displayed
-                return
+        else if missingCompressedData then
+            -- For sections missing compressed data
+            self.processingWarningElements.header:SetText("Section assignments not processed")
+            self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
+            self.processingWarningElements.infoText:Show()
+            
+        end
+        end
+        end
+        
+        -- Important: Return early to prevent showing headers and content
+        return
+    else
+        -- Hide the warning elements if they exist, since we don't need them
+        if self.processingWarningElements then
+            self.processingWarningElements.header:Hide()
+            self.processingWarningElements.iconLeft:Hide()
+            self.processingWarningElements.iconRight:Hide()
+            if self.processingWarningElements.infoText then
+                self.processingWarningElements.infoText:Hide()
             end
-        else
-            self:Debug("error", "No compressed data available for processing")
-            -- The warning message will still be displayed
-            return
         end
     end
     
@@ -1489,21 +1435,20 @@ function TWRA:ClearRows()
         self.rowFrames = {}
     end
     
-    -- Also clear any processing warning elements if they exist
+    -- Also hide all processing warning elements if they exist
     if self.processingWarningElements then
         if self.processingWarningElements.header then
             self.processingWarningElements.header:Hide()
-            self.processingWarningElements.header:SetParent(nil)
         end
         if self.processingWarningElements.iconLeft then
             self.processingWarningElements.iconLeft:Hide()
-            self.processingWarningElements.iconLeft:SetParent(nil)
         end
         if self.processingWarningElements.iconRight then
             self.processingWarningElements.iconRight:Hide()
-            self.processingWarningElements.iconRight:SetParent(nil)
         end
-        self.processingWarningElements = nil
+        if self.processingWarningElements.infoText then
+            self.processingWarningElements.infoText:Hide()
+        end
     end
     
     -- Also clear footers

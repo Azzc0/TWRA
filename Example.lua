@@ -455,6 +455,19 @@ function TWRA:LoadExampleDataAndShow()
             self:Debug("ui", "Created main frame during LoadExampleDataAndShow")
         end
         
+        -- Ensure main frame is shown regardless of current state
+        if self.mainFrame and not self.mainFrame:IsShown() then
+            -- Use ToggleMainFrame to ensure proper visibility handling
+            self:ToggleMainFrame()
+            self:Debug("ui", "Showing main frame during LoadExampleDataAndShow")
+        end
+        
+        -- Switch to main view if we're in options view
+        if self.currentView == "options" then
+            self:ShowMainView()
+            self:Debug("ui", "Switched from options to main view during LoadExampleDataAndShow")
+        end
+        
         -- Force complete refresh of dropdown menu
         if self.navigation and self.navigation.dropdownMenu then
             self:Debug("nav", "Force refreshing dropdown menu during LoadExampleDataAndShow")
@@ -484,77 +497,81 @@ function TWRA:LoadExampleDataAndShow()
                 local menuHeight = (buttonHeight * table.getn(self.navigation.handlers)) + padding
                 dropdownMenu:SetHeight(menuHeight)
                 
-                -- Recreate buttons for each section
-                for i = 1, table.getn(self.navigation.handlers) do
-                    local handler = self.navigation.handlers[i]
-                    
-                    -- Create button for this section
+                -- Create buttons for each section
+                for i, handler in ipairs(self.navigation.handlers) do
                     local button = CreateFrame("Button", nil, dropdownMenu)
                     button:SetHeight(buttonHeight)
+                    button:SetWidth(dropdownMenu:GetWidth() - 10)  -- 5px padding on each side
                     button:SetPoint("TOPLEFT", dropdownMenu, "TOPLEFT", 5, -5 - ((i-1) * buttonHeight))
-                    button:SetPoint("TOPRIGHT", dropdownMenu, "TOPRIGHT", -5, -5 - ((i-1) * buttonHeight))
                     
-                    -- Highlight texture
-                    button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-                    
-                    -- Button text
-                    local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                    buttonText:SetPoint("LEFT", 5, 0)
-                    buttonText:SetPoint("RIGHT", -5, 0)
-                    buttonText:SetText(handler)
-                    buttonText:SetJustifyH("LEFT")
-                    
-                    -- Mark current selection
-                    if i == self.navigation.currentIndex then
-                        button:SetNormalTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-                        local normalTex = button:GetNormalTexture()
-                        normalTex:SetVertexColor(1, 0.82, 0, 0.4)
-                    end
-                    
-                    -- Click handler
                     button:SetScript("OnClick", function()
-                        -- Update text immediately for responsive UI
-                        if self.navigation.handlerText then
-                            self.navigation.handlerText:SetText(handler)
-                        end
-                        
-                        -- Navigate to this section
-                        self:NavigateToSection(i, "user")
-                        
-                        -- Hide the dropdown
+                        self:NavigateToSection(i)
                         dropdownMenu:Hide()
                     end)
                     
-                    -- Store the button
-                    table.insert(dropdownMenu.buttons, button)
+                    button:SetScript("OnEnter", function()
+                        button:SetBackdropColor(0.3, 0.3, 0.3, 1)
+                    end)
+                    
+                    button:SetScript("OnLeave", function()
+                        button:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+                    end)
+                    
+                    -- Set up button appearance
+                    button:SetBackdrop({
+                        bgFile = "Interface\\Buttons\\WHITE8x8",
+                        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                        tile = true, tileSize = 16, edgeSize = 16,
+                        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+                    })
+                    button:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+                    
+                    -- Add text
+                    local text = button:CreateFontString(nil, "OVERLAY")
+                    text:SetFont("Fonts\\FRIZQT__.TTF", 10)
+                    text:SetTextColor(1, 1, 1, 1)
+                    text:SetPoint("LEFT", button, "LEFT", 5, 0)
+                    text:SetText(handler)
+                    
+                    -- Store reference to button
+                    dropdownMenu.buttons[i] = button
                 end
                 
                 self:Debug("nav", "Rebuilt dropdown menu with " .. table.getn(self.navigation.handlers) .. " sections")
             end
         end
-
-        -- Switch to main view if in options
-        if self.currentView == "options" then
-            self:ShowMainView()
+        
+        -- Use NavigateToSection to properly refresh UI
+        if self.navigation and self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
+            self:Debug("nav", "Calling NavigateToSection to ensure complete UI refresh")
+            self:NavigateToSection(1, "fromExample")
         else
-            -- If already in main view, force complete refresh of the UI
-            -- First ensure we're showing the right page content
-            if self.FilterAndDisplayHandler and self.navigation and 
-               self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
-                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                self:FilterAndDisplayHandler(sectionName)
-                
-                -- Make sure all UI elements are properly updated
-                if self.navigation.handlerText then
-                    self.navigation.handlerText:SetText(sectionName)
+            -- Fallback if navigation handlers aren't available
+            -- If main frame is already showing, force a refresh of the current view
+            if self.mainFrame and self.mainFrame:IsShown() then
+                -- Force refresh of current view content
+                if self.FilterAndDisplayHandler and self.navigation and 
+                   self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
+                    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                    
+                    -- Clear any existing content first to ensure a complete refresh
+                    if self.ClearRows then
+                        self:ClearRows()
+                    end
+                    if self.ClearFooters then
+                        self:ClearFooters()
+                    end
+                    
+                    -- Force filtering and display of the current section
+                    self:FilterAndDisplayHandler(sectionName)
+                    
+                    -- Make sure all UI elements are properly updated
+                    if self.navigation.handlerText then
+                        self.navigation.handlerText:SetText(sectionName)
+                    end
+                    
+                    self:Debug("ui", "Forced refresh of main view content")
                 end
-                
-                -- -- Show the frame if it's not already shown
-                -- if self.mainFrame and not self.mainFrame:IsShown() then
-                --     self.mainFrame:Show()
-                -- end
-                
-                self:Debug("ui", "Forced refresh of main view content")
             end
         end
         

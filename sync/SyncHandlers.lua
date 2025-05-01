@@ -420,18 +420,42 @@ function TWRA:HandleSectionResponseCommand(message, sender)
         sectionData = "\241" .. sectionData
     end
     
-    -- Simply store the compressed section data
+    -- Store the compressed section data
     TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
     self:Debug("sync", "Stored compressed data for section " .. sectionIndex)
     
-    -- Process the section data
-    if self:ProcessSectionData(sectionIndex, sectionData, timestamp, sender) then
-        -- If we have a pending section that we were waiting to navigate to,
-        -- and we just received its data, navigate to it now
-        if self.SYNC.pendingSection then
-            self:Debug("sync", "Navigating to pending section " .. sectionIndex .. " that we have its data")
-            self:NavigateToSection(sectionIndex, self.SYNC.pendingSource)
+    -- Track that we've received this section
+    self.SYNC = self.SYNC or {}
+    self.SYNC.receivedSections = self.SYNC.receivedSections or {}
+    self.SYNC.receivedSections[sectionIndex] = true
+    
+    -- Track others' responses to avoid duplicate responses
+    self.SYNC.receivedSectionResponses = self.SYNC.receivedSectionResponses or {}
+    self.SYNC.receivedSectionResponses[sectionIndex] = true
+    
+    -- Cancel our response if pending
+    if self.SYNC.pendingSectionResponses and self.SYNC.pendingSectionResponses[sectionIndex] then
+        self.SYNC.pendingSectionResponses[sectionIndex] = nil
+        self:Debug("sync", "Cancelled pending section response for " .. sectionIndex)
+    end
+    
+    -- If we have a pending section that we were waiting to navigate to,
+    -- and we just received its data, navigate to it now
+    if self.SYNC.pendingSection and tonumber(self.SYNC.pendingSection) == tonumber(sectionIndex) then
+        self:Debug("sync", "Received data for pending section " .. sectionIndex .. ", proceeding with navigation")
+        
+        -- Create or update the placeholder section entry with minimal metadata
+        self:CreateSectionPlaceholder(sectionIndex, timestamp)
+        
+        -- Now we can navigate to this section - it will be processed on demand
+        if self.NavigateToSection then
+            self:NavigateToSection(sectionIndex, self.SYNC.pendingSource or "fromSync")
+            
+            -- Clear pending section after navigation
             self.SYNC.pendingSection = nil
+            self.SYNC.pendingSource = nil
+        else
+            self:Debug("error", "NavigateToSection function not available")
         end
     end
 end
@@ -492,159 +516,6 @@ function TWRA:QueueStructureResponse(timestamp, sender)
     return true
 end
 
--- Process structure data received from another player
-function TWRA:ProcessStructureData(structureData, timestamp, sender)
-    self:Debug("sync", "ProcessStructureData: Processing structure data from " .. sender)
-    self:Debug("data", "Structure data length: " .. string.len(structureData))
-    
-    -- First let's verify that the structure data is valid
-    if not structureData or type(structureData) ~= "string" then
-        self:Debug("sync", "Invalid structure data received from " .. sender)
-        return false
-    end
-    
-    -- Attempt to decode the structure to get section information
-    local decodedStructure = nil
-    self:Debug("sync", "Attempting to decode structure data")
-    
-    if self.DecompressStructureData then
-        -- Use pcall to catch any errors in the decompression process
-        local success, result = pcall(function()
-            return self:DecompressStructureData(structureData)
-        end)
-        
-        if success and result then
-            decodedStructure = result
-            self:Debug("sync", "Successfully decompressed structure data with " .. self:GetTableSize(decodedStructure) .. " sections")
-        else
-            self:Debug("error", "DecompressStructureData failed: " .. tostring(result))
-            return false
-        end
-    else
-        self:Debug("sync", "DecompressStructureData function not available")
-        return false
-    end
-    
-    -- Verify the decoded structure is a valid table
-    if not decodedStructure or type(decodedStructure) ~= "table" then
-        self:Debug("sync", "Failed to decode structure data from " .. sender)
-        return false
-    end
-    
-    -- Success - we have decoded structure data with section names
-    self:Debug("sync", "Structure data decoded successfully with " .. self:GetTableSize(decodedStructure) .. " sections")
-    
-    -- IMPORTANT: Create or update TWRA_CompressedAssignments with proper initialization
-    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
-    
-    -- Explicitly clear existing sections to avoid stale data
-    TWRA_CompressedAssignments.sections = nil
-    
-    -- Update timestamp and structure data
-    TWRA_CompressedAssignments.timestamp = timestamp
-    TWRA_CompressedAssignments.structure = structureData
-
-    -- Now initialize empty sections table
-    TWRA_CompressedAssignments.sections = {}
-    
-    -- Create empty placeholders for each section (we'll fill them later)
-    for index, sectionName in pairs(decodedStructure) do
-        if type(index) == "number" then
-            TWRA_CompressedAssignments.sections[index] = ""
-            self:Debug("sync", "Created empty section placeholder for section " .. index)
-        end
-    end
-
-    self:Debug("sync", "Updated TWRA_CompressedAssignments with timestamp " .. timestamp .. " and " .. 
-              self:GetTableSize(TWRA_CompressedAssignments.sections) .. " empty section placeholders")
-    
-    -- Store the timestamp for section requests
-    self.SYNC = self.SYNC or {}
-    self.SYNC.cachedTimestamp = timestamp
-    
-    -- Clear existing data structures to prepare for new structure
-    if self.ClearDataForStructureResponse then
-        self:ClearDataForStructureResponse()
-    end
-    
-    -- IMPORTANT: Use BuildSkeletonFromStructure instead of manually creating sections
-    if self.BuildSkeletonFromStructure then
-        self:Debug("sync", "Using BuildSkeletonFromStructure to create section skeletons")
-        self:BuildSkeletonFromStructure(decodedStructure, timestamp)
-    else
-        -- Fallback to manual creation if the function is not available
-        self:Debug("error", "BuildSkeletonFromStructure not available, falling back to manual skeleton creation")
-        
-        -- IMPORTANT: Create or update TWRA_Assignments with proper initialization
-        TWRA_Assignments = TWRA_Assignments or {}
-        TWRA_Assignments.timestamp = timestamp
-        TWRA_Assignments.data = {}
-        TWRA_Assignments.isExample = false
-        
-        -- Create minimal skeleton sections like BuildSkeletonFromStructure would
-        for index, sectionName in pairs(decodedStructure) do
-            if type(index) == "number" and type(sectionName) == "string" then
-                -- Just the bare minimum structure needed
-                TWRA_Assignments.data[index] = {
-                    ["Section Name"] = sectionName,
-                    ["NeedsProcessing"] = true
-                }
-                self:Debug("sync", "Created skeleton for section " .. index .. ": " .. sectionName)
-            end
-        end
-    end
-    
-    -- Log the actual saved sections to verify
-    self:Debug("sync", "TWRA_Assignments.data now contains " .. self:GetTableSize(TWRA_Assignments.data) .. " sections")
-    for idx, section in pairs(TWRA_Assignments.data) do
-        if type(section) == "table" and section["Section Name"] then
-            self:Debug("sync", "Saved section " .. idx .. ": " .. section["Section Name"])
-        end
-    end
-    
-    -- Rebuild navigation
-    if self.RebuildNavigation then
-        self:Debug("sync", "Rebuilding navigation with skeleton structure")
-        self:RebuildNavigation()
-        self:Debug("sync", "Navigation rebuilt successfully")
-    else
-        self:Debug("sync", "RebuildNavigation function not available")
-    end
-    
-    -- Mark that we've received structure for this timestamp
-    self.SYNC.receivedStructureResponseForTimestamp = timestamp
-    
-    -- Navigate to pending section if one is set
-    if self.SYNC.pendingSection and tonumber(self.SYNC.pendingSection) then
-        local pendingSection = tonumber(self.SYNC.pendingSection)
-        self:Debug("sync", "Navigating to pending section " .. pendingSection)
-        
-        if self.NavigateToSection then
-            self:NavigateToSection(pendingSection, "fromSync")
-            self:Debug("sync", "Navigation to section " .. pendingSection .. " complete")
-        else
-            self:Debug("error", "NavigateToSection function not available")
-        end
-        
-        -- Clear pending section after use
-        self.SYNC.pendingSection = nil
-        self:Debug("sync", "Cleared pendingSection after navigation")
-    else
-        -- If no pending section, navigate to first section
-        if TWRA_Assignments.data[1] and self.NavigateToSection then
-            self:Debug("sync", "No pending section, navigating to section 1")
-            self:NavigateToSection(1, "fromSync")
-        end
-    end
-    
-    -- Notify the user that structure has been updated
-    local sectionCount = self:GetTableSize(decodedStructure)
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received structure data from " .. sender .. " with " .. sectionCount .. " sections")
-    
-    self:Debug("sync", "ProcessStructureData completed successfully")
-    return true
-end
-
 -- Helper function to request all sections after receiving a structure oh no this is definitly something we want to be default.
 function TWRA:RequestSectionsAfterStructure(decodedStructure, timestamp)
     -- Calculate the total number of sections to request
@@ -677,115 +548,6 @@ function TWRA:RequestSectionsAfterStructure(decodedStructure, timestamp)
             requestDelay = requestDelay + 0.2 -- 200ms between requests
         end
     end
-end
-
--- Process section data received from another player
-function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
-    self:Debug("sync", "Processing section " .. sectionIndex .. " data from " .. (sender or "local"))
-    
-    -- Store in compressed format
-    if not TWRA_CompressedAssignments then
-        TWRA_CompressedAssignments = {}
-    end
-    
-    if not TWRA_CompressedAssignments.sections then
-        TWRA_CompressedAssignments.sections = {}
-    end
-    
-    -- Store timestamp with compressed data
-    TWRA_CompressedAssignments.timestamp = timestamp
-    
-    -- Store the compressed section data
-    TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
-    
-    -- Track that we've received this section
-    self.SYNC.receivedSections = self.SYNC.receivedSections or {}
-    self.SYNC.receivedSections[sectionIndex] = true
-    
-    -- Track others' responses to avoid duplicate responses
-    self.SYNC.receivedSectionResponses = self.SYNC.receivedSectionResponses or {}
-    self.SYNC.receivedSectionResponses[sectionIndex] = true
-    
-    -- Cancel our response if pending
-    if self.SYNC.pendingSectionResponses and self.SYNC.pendingSectionResponses[sectionIndex] then
-        self.SYNC.pendingSectionResponses[sectionIndex] = nil
-        self:Debug("sync", "Cancelled pending section response for " .. sectionIndex)
-    end
-    
-    -- If we have a pending section that we just received, we should now navigate to it
-    if self.SYNC.pendingSection and tonumber(self.SYNC.pendingSection) == tonumber(sectionIndex) then
-        self:Debug("sync", "Received data for pending section " .. sectionIndex .. ", proceeding with navigation")
-        
-        -- Get the section name if we can
-        local sectionName = nil
-        if TWRA_Assignments and TWRA_Assignments.data then
-            for _, section in pairs(TWRA_Assignments.data) do
-                if type(section) == "table" and section["Section Index"] == sectionIndex then
-                    sectionName = section["Section Name"]
-                    break
-                end
-            end
-        end
-        
-        -- Find section name from structure if needed
-        if not sectionName and self.SYNC.structure then
-            sectionName = self.SYNC.structure[sectionIndex]
-            self:Debug("sync", "Found section name in structure: " .. (sectionName or "nil"))
-        end
-        
-        -- Create a placeholder in TWRA_Assignments.data if it doesn't exist
-        if sectionName then
-            -- Check if we already have this section
-            local sectionExists = false
-            if TWRA_Assignments and TWRA_Assignments.data then
-                for _, section in pairs(TWRA_Assignments.data) do
-                    if type(section) == "table" and section["Section Name"] == sectionName then
-                        sectionExists = true
-                        
-                        -- Mark that it needs processing
-                        section["NeedsProcessing"] = true
-                        break
-                    end
-                end
-            end
-            
-            -- If section doesn't exist, create a placeholder
-            if not sectionExists then
-                TWRA_Assignments = TWRA_Assignments or {}
-                TWRA_Assignments.data = TWRA_Assignments.data or {}
-                
-                -- Add skeleton section with needed metadata
-                TWRA_Assignments.data[sectionIndex] = {
-                    ["Section Name"] = sectionName,
-                    ["Section Index"] = sectionIndex,
-                    ["NeedsProcessing"] = true,
-                    ["Section Metadata"] = {
-                        ["Note"] = {},
-                        ["Warning"] = {},
-                        ["GUID"] = {}
-                    }
-                }
-                self:Debug("sync", "Created placeholder for section: " .. sectionName)
-            end
-            
-            -- Now we can navigate to this section
-            if self.NavigateToSection then
-                -- Use navigation by index, which will now handle the processing
-                self:NavigateToSection(sectionIndex, self.SYNC.pendingSource or "fromSync")
-                
-                -- Clear pending section after navigation
-                self.SYNC.pendingSection = nil
-                self.SYNC.pendingSource = nil
-            else
-                self:Debug("error", "NavigateToSection function not available")
-            end
-        else
-            self:Debug("error", "Could not find section name for index " .. sectionIndex)
-            -- We'll still return success, just won't navigate
-        end
-    end
-    
-    return true
 end
 
 -- Function to process all compressed sections at once
@@ -922,6 +684,73 @@ function TWRA:InitializeSyncHandlers()
     self:Debug("sync", "Segmented sync " .. (self.SYNC.useSegmentedSync and "enabled" or "disabled"))
     
     self:Debug("sync", "Sync handlers initialized")
+    return true
+end
+
+-- Helper function to create or update a section placeholder
+function TWRA:CreateSectionPlaceholder(sectionIndex, timestamp)
+    -- We need to find the section name from our existing structure
+    local sectionName = nil
+    
+    -- First try to get the section name from TWRA_Assignments if it exists
+    if TWRA_Assignments and TWRA_Assignments.data then
+        for idx, section in pairs(TWRA_Assignments.data) do
+            if idx == sectionIndex or (section["Section Index"] and section["Section Index"] == sectionIndex) then
+                sectionName = section["Section Name"]
+                break
+            end
+        end
+    end
+    
+    -- If we couldn't find the section name in TWRA_Assignments, try to decode the structure
+    if not sectionName and TWRA_CompressedAssignments and TWRA_CompressedAssignments.structure then
+        local success, decodedStructure = pcall(function()
+            return self:DecompressStructureData(TWRA_CompressedAssignments.structure)
+        end)
+        
+        if success and decodedStructure and decodedStructure[sectionIndex] then
+            sectionName = decodedStructure[sectionIndex]
+        end
+    end
+    
+    -- If we still don't have a section name, we can't create a placeholder
+    if not sectionName then
+        self:Debug("error", "Cannot create section placeholder - no name found for section " .. sectionIndex)
+        return false
+    end
+    
+    -- Ensure TWRA_Assignments exists and has a data table
+    TWRA_Assignments = TWRA_Assignments or {}
+    TWRA_Assignments.data = TWRA_Assignments.data or {}
+    
+    -- Create or update the section placeholder
+    local placeholderExists = false
+    for idx, section in pairs(TWRA_Assignments.data) do
+        if (idx == sectionIndex or (section["Section Index"] and section["Section Index"] == sectionIndex)) and 
+           section["Section Name"] == sectionName then
+            -- Update the existing placeholder
+            section["NeedsProcessing"] = true
+            placeholderExists = true
+            self:Debug("sync", "Updated placeholder for section " .. sectionName)
+            break
+        end
+    end
+    
+    -- If the placeholder doesn't exist, create it
+    if not placeholderExists then
+        TWRA_Assignments.data[sectionIndex] = {
+            ["Section Name"] = sectionName,
+            ["Section Index"] = sectionIndex,
+            ["NeedsProcessing"] = true,
+            ["Section Metadata"] = {
+                ["Note"] = {},
+                ["Warning"] = {},
+                ["GUID"] = {}
+            }
+        }
+        self:Debug("sync", "Created placeholder for section: " .. sectionName)
+    end
+    
     return true
 end
 

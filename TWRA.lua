@@ -11,141 +11,141 @@ end
 -- Addon namespace
 TWRA = TWRA or {}
 
--- NavigateToSection function for isolation testing
+-- Navigate to a specific section index
 function TWRA:NavigateToSection(index, source)
-    self:Debug("nav", "NavigateToSection called with index " .. index .. " from " .. (source or "unknown"))
+    -- Debug entry with source tracking
+    self:Debug("nav", "NavigateToSection called with index: " .. tostring(index) .. ", source: " .. tostring(source or "unknown"))
     
-    -- Safety checks
-    if not self.navigation or not self.navigation.handlers then
-        self:Debug("error", "NavigateToSection: No navigation or handlers")
+    -- Handle legacy case where section is passed as a name instead of index
+    if type(index) == "string" then
+        -- Find the index for this name
+        for i, name in ipairs(self.navigation.handlers) do
+            if name == index then
+                index = i
+                self:Debug("nav", "Converted section name to index: " .. i)
+                break
+            end
+        end
+    end
+    
+    -- Perform validation checks
+    if not self.navigation then
+        self:Debug("error", "NavigateToSection: Navigation context not initialized")
         return false
     end
     
-    -- Validate index
-    local maxIndex = table.getn(self.navigation.handlers)
-    if index < 1 or index > maxIndex then
-        self:Debug("error", "NavigateToSection: Invalid index " .. index .. ", resetting to 1")
-        index = 1
+    if not self.navigation.handlers or table.getn(self.navigation.handlers) == 0 then
+        self:Debug("error", "NavigateToSection: No section handlers available")
+        return false
     end
     
-    -- Get the section name we're trying to navigate to
+    -- Make sure index is a number within the valid range
+    if type(index) ~= "number" or index < 1 or index > table.getn(self.navigation.handlers) then
+        self:Debug("error", "NavigateToSection: Invalid section index " .. tostring(index))
+        return false
+    end
+    
+    -- Get the section name for this index
     local sectionName = self.navigation.handlers[index]
-    
-    -- Initialize needsSyncRequest properly
-    local needsSyncRequest = false
-    
-    -- Skip sync request check if using example data
-    if not (TWRA_Assignments and TWRA_Assignments.isExample) then
-        -- Check if this section exists in our compressed sections data - using index as requested
-        if TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
-            local sectionData = TWRA_CompressedAssignments.sections[index]
-            if not sectionData or sectionData == "" then
-                self:Debug("sync", "Section data not available locally: " .. sectionName)
-                needsSyncRequest = true
-            end
-        else
-            -- If TWRA_CompressedAssignments.sections doesn't exist, we need to request the data
-            self:Debug("sync", "Compressed sections data structure not found")
-            needsSyncRequest = true
-        end
-    else
-        self:Debug("nav", "Using example data - skipping sync request check")
-    end
-    
-    -- If we need to request section data
-    if needsSyncRequest then
-        self:Debug("sync", "Deferring navigation - requesting section data first")
-        
-        -- Store pending navigation information
-        self.SYNC = self.SYNC or {}
-        self.SYNC.pendingSection = index
-        self.SYNC.pendingSource = source
-        
-        -- Request section data
-        if self.RequestSectionSync then
-            -- Add debug statement right before we call RequestSectionSync
-            self:Debug("sync", "Calling RequestSectionSync for section " .. index)
-            self:RequestSectionSync(index, TWRA_Assignments.timestamp)
-            self:Debug("sync", "Sent section request for: " .. sectionName)
-        else
-            self:Debug("error", "RequestSectionSync function not available")
-        end
-        
-        -- Add debug statement to verify we're about to return
+    if not sectionName then
+        self:Debug("error", "NavigateToSection: No section name found at index " .. index)
         return false
     end
-
-    -- Check if section needs processing - new two-step verification
-    if TWRA_Assignments and TWRA_Assignments.data and 
-       TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections and
-       TWRA_CompressedAssignments.sections[index] then
-        
-        -- Check if the section data exists but needs processing
-        local sectionExists = false
-        for _, section in pairs(TWRA_Assignments.data) do
-            if section["Section Name"] == sectionName then
-                sectionExists = true
-                if section["NeedsProcessing"] == true then
-                    self:Debug("data", "Section needs processing before navigation: " .. sectionName)
-                    
-                    -- Process the section data now
-                    if self.ProcessSectionData then
-                        local success = self:ProcessSectionData(
-                            index, 
-                            TWRA_CompressedAssignments.sections[index],
-                            TWRA_CompressedAssignments.timestamp,
-                            "local"
-                        )
-                        
-                        if not success then
-                            self:Debug("error", "Failed to process section data for: " .. sectionName)
-                            -- Continue navigation anyway since we have the skeleton structure
-                        end
-                    else
-                        self:Debug("error", "ProcessSectionData function not available")
-                    end
-                    break
-                end
-            end
+    
+    -- Simple compressed data handling with example exception
+    local missingCompressedData = false
+    
+    -- Check if we need compressed data (and we're not using example data)
+    if TWRA_CompressedAssignments and not TWRA_CompressedAssignments.sections[index] then
+        missingCompressedData = true
+    end
+    
+    -- Example data overrides the need for compressed data
+    if TWRA_Assignments and TWRA_Assignments.isExample then
+        missingCompressedData = false
+    end
+    
+    -- If data is missing, request it and exit
+    if missingCompressedData then
+        if self.SYNC then
+            self.SYNC.pendingSection = index
+        end
+        if self.RequestSectionData then
+            self:RequestSectionData(index)
+            return false
         end
     end
     
-    -- Store old index for comparison
-    local oldIndex = self.navigation.currentIndex
+    -- Check if section data needs processing
+    if TWRA_Assignments.data[index] and TWRA_Assignments.data[index]["NeedsProcessing"] then
+        if self.ProcessSectionData then
+            self:Debug("data", "Processing section data for index: " .. index)
+            self:ProcessSectionData(index)
+        else
+            self:Debug("error", "ProcessSectionData function not available")
+        end
+    end
     
-    -- Update current index
+    -- Update the current index
     self.navigation.currentIndex = index
     
-    -- Update UI text
+    -- Update the handler text in the UI
     if self.navigation.handlerText then
         self.navigation.handlerText:SetText(sectionName)
     end
     
-    -- Save current section to saved variables
+    -- Store the current section in the assignments table to persist across sessions
     if TWRA_Assignments then
+        -- Save both index and name for compatibility
         TWRA_Assignments.currentSection = index
         TWRA_Assignments.currentSectionName = sectionName
     end
     
-    -- Trigger the event before updating display
+    -- Find section data for this section
+    local sectionData = nil
+    if TWRA_Assignments and TWRA_Assignments.data then
+        for idx, section in pairs(TWRA_Assignments.data) do
+            if section["Section Name"] == sectionName then
+                sectionData = section
+                break
+            end
+        end
+    end
+    
+    -- Event system handling
+    local handled = false
+    
     if self.TriggerEvent then
-        self:Debug("nav", "Triggering SECTION_CHANGED event")
-        self:TriggerEvent("SECTION_CHANGED", sectionName, index, maxIndex, source)
-    else
-        self:Debug("error", "TriggerEvent function not available")
+        -- Call event handler first and check if it returned true (event was handled)
+        handled = self:TriggerEvent("NAVIGATE_TO_SECTION", index, sectionName, source) == true
     end
     
-    -- Update display with the new section
-    self:FilterAndDisplayHandler(sectionName)
-    
-    self:Debug("sync", "About to broadcast section change to group")
-    -- Broadcast section change if not coming from sync
-    if source ~= "fromSync" and source ~= "reload" and self.BroadcastSectionChange then
-        self:BroadcastSectionChange(index)
+    -- If not handled by an event handler, use the default display mechanism
+    if not handled then
+        self:Debug("nav", "Navigation not handled by event, displaying section...")
+        
+        -- Display the section content using FilterAndDisplayHandler
+        if self.FilterAndDisplayHandler then
+            self:FilterAndDisplayHandler(sectionName)
+        end
+        
+        -- Update OSD if applicable
+        if self.UpdateOSDContent then
+            self:UpdateOSDContent()
+        end
     end
     
+    -- If section data is available and source is "user" or "autoNavigate", broadcast the change to the group
+    if source == "user" or source == "autoNavigate" then
+        if self.BroadcastSectionChange then
+            self:Debug("sync", "About to broadcast section change to group")
+            local timestamp = TWRA_Assignments and TWRA_Assignments.timestamp or nil
+            self:BroadcastSectionChange(index, timestamp)
+        end
+    end
+    
+    -- Final debug to confirm navigation is complete
     self:Debug("nav", "Navigation complete: Section " .. index .. " (" .. sectionName .. ")")
-    
     return true
 end
 

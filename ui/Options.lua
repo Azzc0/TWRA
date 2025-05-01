@@ -890,19 +890,19 @@ function TWRA:CreateOptionsInMainFrame()
         
         self:Debug("data", "Importing data")
         
-        -- Save current section information before import
-        local currentSectionName = nil
-        local currentSectionIndex = 1
-        
-        if TWRA_Assignments then
-            currentSectionName = TWRA_Assignments.currentSectionName
-            currentSectionIndex = TWRA_Assignments.currentSection or 1
-            self:Debug("data", "Import with saved section: " .. 
-                       (currentSectionName or "unnamed") .. " (" .. currentSectionIndex .. ")")
+        -- Try first with the new format direct import
+        local newFormatResult = false
+        if self.DirectImportNewFormat then
+            newFormatResult = self:DirectImportNewFormat(importText)
+            if newFormatResult then
+                importBox:SetText("")
+                importBox:ClearFocus()
+                return
+            end
         end
         
-        -- Try to decode the data
-        local decodedData = self:DecodeBase64(importText)
+        -- Save current section information before import
+        local currentSectionName = nil
         if not decodedData then
             self:Debug("error", "Failed to decode data")
             return

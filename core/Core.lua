@@ -450,9 +450,13 @@ end
 function TWRA:ToggleMainFrame()
     -- Fix for the double-toggle issue - check if frame is already being toggled
     if self.isTogglingMainFrame then
+        self:Debug("ui", "Toggle operation already in progress, ignoring duplicate request")
         return
     end
+    
+    -- Set the flag with a built-in failsafe (will auto-reset after 1 second no matter what)
     self.isTogglingMainFrame = true
+    self.isTogglingMainFrameTime = GetTime()
 
     -- SIMPLIFIED: check if frame exists and toggle visibility directly
     if not self.mainFrame then
@@ -487,8 +491,22 @@ function TWRA:ToggleMainFrame()
         end
     end
 
-    -- Clear the flag after a short delay using our own timer system
-    self:ScheduleTimer(function() self.isTogglingMainFrame = nil end, 0.1)  -- Reduced delay
+    -- Immediately clear the flag instead of using a timer
+    self.isTogglingMainFrame = nil
+    
+    -- Add a failsafe frame to ensure the flag gets cleared
+    if not self.toggleMainFrameFailsafeFrame then
+        self.toggleMainFrameFailsafeFrame = CreateFrame("Frame")
+        self.toggleMainFrameFailsafeFrame:SetScript("OnUpdate", function()
+            -- If the flag has been set for more than 1 second, force reset it
+            if TWRA.isTogglingMainFrame and TWRA.isTogglingMainFrameTime and 
+               (GetTime() - TWRA.isTogglingMainFrameTime > 1) then
+                TWRA:Debug("ui", "Failsafe: resetting stuck toggle flag")
+                TWRA.isTogglingMainFrame = nil
+                TWRA.isTogglingMainFrameTime = nil
+            end
+        end)
+    end
 end
 
 -- Add navigation handler for navigating to the previous or next section
