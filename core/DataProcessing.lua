@@ -1290,13 +1290,19 @@ function TWRA:GetAllGroupRowsForSection(section)
                     local lowerCell = string.lower(cellValue)
                     
                     -- Check for group references using various patterns
-                    if string.find(lowerCell, "group") or
-                       string.find(lowerCell, "gr%.") or
-                       string.find(lowerCell, "grp") then
+                    -- Note the explicit space matching with %s* for optional spaces
+                    if string.find(lowerCell, "group%s+") or     -- "Group " with trailing space
+                       string.find(lowerCell, "groups%s+") or    -- "Groups " with trailing space
+                       string.find(lowerCell, "gr%s+") or        -- "Gr " with trailing space
+                       string.find(lowerCell, "gr%.%s*") or      -- "Gr." with optional space
+                       string.find(lowerCell, "grp%s*") then     -- "Grp" with optional space
                         
                         foundGroupRef = true
                         matchedCell = cellValue
                         matchedColumn = colIndex
+                        self:Debug("data", "Found group reference in row " .. rowIdx .. 
+                                 " column " .. colIndex ..
+                                 ": '" .. cellValue .. "'", false, true)
                         break  -- Found a match, no need to check other columns
                     end
                 end
@@ -1418,8 +1424,8 @@ function TWRA:IsCellContainingPlayerNameOrClass(cellText, isTargetColumn)
     return false
 end
 
--- Check if a cell contains the player's current group
-function TWRA:IsCellContainingPlayerGroup(cellText)
+-- Helper function to check if a cell is relevant for the player's current group
+function TWRA:IsCellRelevantForPlayerGroup(cellText)
     -- Skip empty cells or non-string cells
     if not cellText or type(cellText) ~= "string" or cellText == "" then
         return false
@@ -1440,23 +1446,28 @@ function TWRA:IsCellContainingPlayerGroup(cellText)
         return false
     end
     
-    -- Look for "Group X" format
-    if string.find(string.lower(cellText), "group%s*" .. playerGroup) then
-        self:Debug("data", "Cell contains player's group: " .. cellText, false, true)
-        return true
-    end
+    -- Look for group references
+    local lowerCell = string.lower(cellText)
     
-    -- Look for numeric references to the group
-    if string.find(cellText, "Group") then
+    -- First, check if this is a group-related cell by looking for common group patterns
+    -- This is just a quick pre-check to filter out non-group cells
+    if string.find(lowerCell, "group") or 
+       string.find(lowerCell, "gr%.") or 
+       string.find(lowerCell, "gr ") or
+       string.find(lowerCell, "grp") then
+        
+        -- Optimize by directly looking for the group number
+        -- This approach focuses more on numeric matching than text patterns
         local pos = 1
-        local str = cellText
+        local str = lowerCell
         while pos <= string.len(str) do
             local digitStart, digitEnd = string.find(str, "%d+", pos)
             if not digitStart then break end
             
             local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
             if groupNum and groupNum == playerGroup then
-                self:Debug("data", "Cell contains player's group number: " .. cellText, false, true)
+                self:Debug("data", "Cell relevant for player's group " .. playerGroup .. 
+                          " (numeric reference): " .. cellText, false, true)
                 return true
             end
             pos = digitEnd + 1
@@ -1708,18 +1719,15 @@ function TWRA:IsCellRelevantForPlayerGroup(cellText)
     -- Look for group references
     local lowerCell = string.lower(cellText)
     
-    -- Direct group reference (e.g. "Group 3")
-    if string.find(lowerCell, "group%s*" .. playerGroup) or
-       string.find(lowerCell, "gr%.%s*" .. playerGroup) or
-       string.find(lowerCell, "gr%s*" .. playerGroup) or
-       string.find(lowerCell, "grp%s*" .. playerGroup) then
+    -- First, check if this is a group-related cell by looking for common group patterns
+    -- This is just a quick pre-check to filter out non-group cells
+    if string.find(lowerCell, "group") or 
+       string.find(lowerCell, "gr%.") or 
+       string.find(lowerCell, "gr ") or
+       string.find(lowerCell, "grp") then
         
-        self:Debug("data", "Cell relevant for player's group " .. playerGroup .. ": " .. cellText, false, true)
-        return true
-    end
-    
-    -- Check for numeric references like "Groups 1, 3, 5"
-    if string.find(lowerCell, "group") then
+        -- Optimize by directly looking for the group number
+        -- This approach focuses more on numeric matching than text patterns
         local pos = 1
         local str = lowerCell
         while pos <= string.len(str) do
