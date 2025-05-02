@@ -605,21 +605,36 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     local needsProcessing = sectionData and sectionData["NeedsProcessing"] == true
     local missingCompressedData = false
     
-    -- Check if compressed data is available for this section - SIMPLIFIED CHECK
-    if not isExampleData and sectionIndex and not needsProcessing then
-        -- A section with empty string value ("") means it's missing the actual compressed data
-        missingCompressedData = not TWRA_CompressedAssignments or
-                               not TWRA_CompressedAssignments.sections or
-                               not TWRA_CompressedAssignments.sections[sectionIndex] or
-                               TWRA_CompressedAssignments.sections[sectionIndex] == ""
-        
-        -- self:Debug("ui", "Section " .. currentHandler .. " - missingCompressedData: " .. tostring(missingCompressedData))
+    -- Check if compressed data is available for this section
+    if not isExampleData and sectionIndex then
+        -- First check if we have TWRA_CompressedAssignments structure
+        if not TWRA_CompressedAssignments then
+            missingCompressedData = true
+            self:Debug("ui", "TWRA_CompressedAssignments is nil")
+        elseif not TWRA_CompressedAssignments.sections then
+            missingCompressedData = true
+            self:Debug("ui", "TWRA_CompressedAssignments.sections is nil")
+        else
+            -- Direct check if this section has compressed data
+            local hasData = TWRA_CompressedAssignments.sections[sectionIndex] and 
+                           TWRA_CompressedAssignments.sections[sectionIndex] ~= ""
+            
+            -- A section without data or with empty string is missing the compressed data
+            missingCompressedData = not hasData
+            
+            self:Debug("ui", "Section " .. currentHandler .. " (" .. sectionIndex .. 
+                     ") - Has compressed data: " .. tostring(hasData) .. 
+                     ", missingCompressedData: " .. tostring(missingCompressedData))
+        end
     end
+    
+    self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
+              ", missingCompressedData: " .. tostring(missingCompressedData))
     
     -- Handle data processing requirements or missing data
     if needsProcessing or (not isExampleData and missingCompressedData) then
-        -- self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
-                --   ", missingCompressedData: " .. tostring(missingCompressedData))
+        self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
+                  ", missingCompressedData: " .. tostring(missingCompressedData))
         
         -- Create warning elements if they don't exist
         if not self.processingWarningElements then
@@ -653,22 +668,22 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
             infoText:SetText("Waiting for data from raid members...")
             infoText:SetTextColor(0.8, 0.8, 1)
             self.processingWarningElements.infoText = infoText
-        else
-            -- Show existing warning elements
-            self.processingWarningElements.header:Show()
-            self.processingWarningElements.iconLeft:Show()
-            self.processingWarningElements.iconRight:Show()
-            if self.processingWarningElements.infoText then
-                self.processingWarningElements.infoText:Show()
-            end
         end
         
+        -- Always show header and icons when processing is needed
+        self.processingWarningElements.header:Show()
+        self.processingWarningElements.iconLeft:Show()
+        self.processingWarningElements.iconRight:Show()
+        
         -- Set the appropriate warning messages based on condition
-        -- For example data, update the warning message
         if isExampleData then
+            -- For example data
             self:Debug("ui", "Example data - displaying specific message")
             self.processingWarningElements.header:SetText("Displaying example data")
-            self.processingWarningElements.infoText:Hide()
+            -- Hide the "waiting for data" message for example data
+            if self.processingWarningElements.infoText then
+                self.processingWarningElements.infoText:Hide()
+            end
             
             -- Update the section to mark it as processed (for example data only)
             for idx, section in pairs(TWRA_Assignments.data) do
@@ -693,22 +708,33 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
                     break
                 end
             end
-        else if needsProcessing then
-            -- For sections that need processing
+        else
+            -- Not example data - determine if we need to show the waiting message
             self.processingWarningElements.header:SetText("Section assignments not processed")
-            self.processingWarningElements.header:Show()
-            -- self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
-            -- self.processingWarningElements.infoText:Show()
             
-        else if missingCompressedData then
-            -- For sections missing compressed data
-            self.processingWarningElements.header:SetText("Section assignments not processed")
-            self.processingWarningElements.header:Show()
-            self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
-            self.processingWarningElements.infoText:Show()
+            -- EXACTLY MATCH THE LOGIC FROM TWRA.lua:
+            -- 1. First hide the infoText (default state)
+            if self.processingWarningElements.infoText then
+                self.processingWarningElements.infoText:Hide()
+                self:Debug("ui", "Hidden infoText by default for section " .. currentHandler)
+            end
             
-        end
-        end
+            -- 2. Check if compressed data is EXPLICITLY an empty string
+            local missingData = false
+            if TWRA_CompressedAssignments and 
+               TWRA_CompressedAssignments.sections and 
+               sectionIndex and 
+               TWRA_CompressedAssignments.sections[sectionIndex] == "" then
+                missingData = true
+                self:Debug("ui", "Section " .. currentHandler .. ": Compressed data is empty string")
+            end
+            
+            -- 3. Only show the infoText when missingData is true
+            if missingData and self.processingWarningElements.infoText then
+                self.processingWarningElements.infoText:SetText("Waiting for data from raid members...")
+                self.processingWarningElements.infoText:Show()
+                self:Debug("ui", "Showing 'waiting for data' message for section " .. currentHandler)
+            end
         end
         
         -- Important: Return early to prevent showing headers and content

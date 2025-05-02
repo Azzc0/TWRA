@@ -74,13 +74,13 @@ function TWRA:NavigateToSection(index, source)
         if self.SYNC then
             self.SYNC.pendingSection = index
         end
-        if self.RequestSectionData then
+        if self.RequestSectionSync then
             self:Debug("nav", "Requesting section data for index: " .. index)
-            self:RequestSectionData(index)
+            self:RequestSectionSync(index)
         else
             self:Debug("nav", "RequestSectionData function not available but data is missing")
         end
-        return false -- Always return here to stop execution if compressed data is missing
+        -- return false -- Always return here to stop execution if compressed data is missing
     end
     
     -- Check if section data needs processing
@@ -131,35 +131,23 @@ function TWRA:NavigateToSection(index, source)
     -- Trigger the NAVIGATE_TO_SECTION event and get number of listeners that were called
     local listenersCount = self:TriggerEvent("NAVIGATE_TO_SECTION", eventData)
     
-    -- Also trigger the SECTION_CHANGED event for components that listen to it
+    -- Trigger the SECTION_CHANGED event for components that listen to it
     -- This is needed for OSD, Minimap, AutoTanks, and other modules
     self:TriggerEvent("SECTION_CHANGED", sectionName, index, table.getn(self.navigation.handlers), source)
     
-    -- -- If no event listeners handled the navigation, use the default display mechanism
-    -- if listenersCount == 0 then
-    --     self:Debug("nav", "No event listeners for NAVIGATE_TO_SECTION, using default display mechanism")
-        
-    --     -- Display the section content using FilterAndDisplayHandler
-    --     if self.FilterAndDisplayHandler then
-    --         self:FilterAndDisplayHandler(sectionName)
-    --     end
-        
-    --     -- Update OSD if applicable
-    --     if self.UpdateOSDContent then
-    --         self:UpdateOSDContent()
-    --     end
-    -- else
-    --     self:Debug("nav", "Navigation handled by " .. listenersCount .. " event listener(s)")
-    -- end
-    
-    -- -- If section data is available and source is "user" or "autoNavigate", broadcast the change to the group
-    -- if source == "user" or source == "autoNavigate" then
-    --     if self.BroadcastSectionChange then
-    --         self:Debug("sync", "About to broadcast section change to group")
-    --         local timestamp = TWRA_Assignments and TWRA_Assignments.timestamp or nil
-    --         self:BroadcastSectionChange(index, timestamp)
-    --     end
-    -- end
+    -- Update UI if main frame exists and is shown
+    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+        -- Update main frame content
+        if previousIndex ~= index or source == "reload" then
+            if self.FilterAndDisplayHandler then
+                self:FilterAndDisplayHandler(sectionName)
+                self:Debug("nav", "Updated main frame content for section: " .. sectionName)
+            elseif self.DisplayCurrentSection then
+                self:DisplayCurrentSection()
+                self:Debug("nav", "Updated main frame content using DisplayCurrentSection for section: " .. sectionName)
+            end
+        end
+    end
     
     -- Final debug to confirm navigation is complete
     self:Debug("nav", "Navigation complete: Section " .. index .. " (" .. sectionName .. ")")

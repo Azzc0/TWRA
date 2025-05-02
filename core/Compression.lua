@@ -395,21 +395,20 @@ function TWRA:DecompressSectionData(compressedSection)
     -- Debug the actual content we're trying to decompress
     self:Debug("compress", "Decompressing section data of length " .. string.len(compressedSection))
     
-    -- Check first byte and fix the marker if needed
+    -- Check first byte and handle marker properly
     local firstByte = string.byte(compressedSection, 1)
     self:Debug("compress", "First byte of compressed data: " .. tostring(firstByte))
     
-    -- Make a copy of the data with the marker byte if needed
-    local processData = compressedSection
-    
-    -- If the first byte is not the marker byte (241), add it
-    if firstByte ~= 241 then
-        self:Debug("compress", "Adding marker byte to compressed data")
-        processData = "\241" .. compressedSection
+    -- Process data based on first byte
+    local base64Data = nil
+    if firstByte == 241 then  -- Marker byte present (ñ)
+        self:Debug("compress", "Marker byte found, extracting Base64 data")
+        base64Data = string.sub(compressedSection, 2)  -- Skip the marker byte
+    else
+        -- The data might be just Base64 without the marker
+        self:Debug("compress", "No marker byte found, treating entire string as Base64 data")
+        base64Data = compressedSection
     end
-    
-    -- Use the properly formatted data for decoding
-    local base64Data = string.sub(processData, 2)  -- Skip the marker byte
     
     -- Decode from Base64
     local decodedString = self:DecodeBase64Raw(base64Data)
@@ -418,82 +417,54 @@ function TWRA:DecompressSectionData(compressedSection)
         return nil
     end
     
-    -- Decompress using LibCompress
-    local decompressedString
-    if self.LibCompress then
-        decompressedString = self.LibCompress:DecompressHuffman(decodedString)
-        
-        if not decompressedString then
-            self:Debug("error", "Failed to decompress section data with Huffman")
+    -- Initialize compression if needed
+    if not self.LibCompress then
+        if not self:InitializeCompression() then
+            self:Debug("error", "LibCompress not available for decompression")
             return nil
         end
-    else
-        -- Fallback if LibCompress not available
-        decompressedString = decodedString
-        self:Debug("compress", "Warning: Using uncompressed data, LibCompress not available")
+    end
+    
+    -- Decompress using LibCompress
+    local decompressedString = self.LibCompress:DecompressHuffman(decodedString)
+    if not decompressedString then
+        self:Debug("error", "Failed to decompress section data with Huffman")
+        return nil
     end
     
     -- Show a bit of the decompressed string for debugging
     self:Debug("data", "Decompressed string begins with: " .. 
               string.sub(decompressedString, 1, math.min(50, string.len(decompressedString))))
     
-    -- Try standard Lua deserialization first (for data compressed with our new method)
-    local decompressedTable
-    
-    -- Try loadstring first for our standard format
+    -- Try standard Lua deserialization with loadstring
     local success, result = pcall(function()
         local func, errorMsg = loadstring("return " .. decompressedString)
-        if func then
-            return func()
-        else
+        if not func then
             self:Debug("error", "loadstring failed: " .. tostring(errorMsg))
             return nil
         end
-    end)
-    
-    if success and result and type(result) == "table" then
-        decompressedTable = result
-        self:Debug("compress", "Successfully used standard Lua deserialization")
-    else
-        -- Fallback to LibCompress's StringToTable (for compatibility with older data)
-        self:Debug("compress", "Standard Lua deserialization failed, trying LibCompress StringToTable")
-        if self.LibCompress then
-            decompressedTable = self.LibCompress:StringToTable(decompressedString)
-            
-            if decompressedTable then
-                self:Debug("compress", "Successfully used LibCompress StringToTable")
-            else
-                self:Debug("error", "All deserialization methods failed")
-                return nil
-            end
-        else
-            self:Debug("error", "LibCompress not available for StringToTable conversion")
+        
+        local execSuccess, tbl = pcall(func)
+        if not execSuccess then
+            self:Debug("error", "Failed to execute loadstring function: " .. tostring(tbl))
             return nil
         end
-    end
-    
-    -- If we have decompressed successfully, fill in any missing indices
-    if decompressedTable and type(decompressedTable) == "table" then
-        self:Debug("compress", "Successfully decompressed section data, filling missing indices")
         
-        -- Fill in missing indices in the decompressed table
-        decompressedTable = self:FillMissingIndices(decompressedTable)
-        
-        -- Log table structure for debugging
-        local sectionName = decompressedTable["Section Name"] or "Unknown Section"
-        local rowCount = 0
-        if decompressedTable["Section Rows"] then
-            rowCount = table.getn(decompressedTable["Section Rows"]) or 0
+        if type(tbl) ~= "table" then
+            self:Debug("error", "Deserialized result is not a table: " .. type(tbl))
+            return nil
         end
         
-        self:Debug("data", "Decompressed table for section '" .. sectionName .. 
-                  "' with " .. rowCount .. " rows")
-        
-        return decompressedTable
-    else
-        self:Debug("error", "Failed to decode section data")
+        return tbl
+    end)
+    
+    if not success or not result then
+        self:Debug("error", "All deserialization methods failed: " .. tostring(result))
         return nil
     end
+    
+    -- Fill in any missing indices in the table
+    return self:FillMissingIndices(result)
 end
 
 -- Helper function to fill in missing indices in a table

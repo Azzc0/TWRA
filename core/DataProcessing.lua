@@ -779,8 +779,13 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
     self:Debug("sync", "Processing section " .. sectionIndex .. " data from " .. (sender or "local"))
     
     -- Check for valid inputs
-    if not sectionIndex or not sectionData or sectionData == "" then
-        self:Debug("error", "Invalid section data or index")
+    if not sectionIndex or not sectionData then
+        self:Debug("error", "Invalid section parameters: index=" .. tostring(sectionIndex) .. ", data length=" .. (sectionData and string.len(sectionData) or "nil"))
+        return false
+    end
+    
+    if sectionData == "" then
+        self:Debug("error", "Empty section data for index " .. sectionIndex)
         return false
     end
     
@@ -805,39 +810,70 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
     
     self:Debug("sync", "Processing section: " .. sectionName .. " (index: " .. sectionIndex .. ")")
     
+    -- Check if section data starts with marker byte
+    local firstByte = string.byte(sectionData, 1)
+    self:Debug("sync", "Section data first byte: " .. tostring(firstByte) .. " (length: " .. string.len(sectionData) .. ")")
+    
     -- Decompress the section data
     local decompressedData = nil
-    if self.DecompressSectionData then
-        -- Use pcall to catch any decompression errors
-        local success, result = pcall(function()
+    
+    -- Use pcall to catch any decompression errors
+    local success, result = pcall(function()
+        if self.DecompressSectionData then
             return self:DecompressSectionData(sectionData)
-        end)
-        
-        if success and result then
-            decompressedData = result
-            self:Debug("sync", "Successfully decompressed section data")
         else
-            self:Debug("error", "Failed to decompress section data: " .. tostring(result))
-            return false
+            self:Debug("error", "DecompressSectionData function not available")
+            return nil
         end
+    end)
+    
+    if success and result then
+        decompressedData = result
+        self:Debug("sync", "Successfully decompressed section data for " .. sectionName)
     else
-        self:Debug("error", "DecompressSectionData function not available")
+        self:Debug("error", "Failed to decompress section data: " .. tostring(result))
+        
+        -- Try to provide more diagnostic information
+        if sectionData:sub(1, 1) == "?" then
+            self:Debug("error", "Section data starts with '?' - may be incorrectly formatted Base64")
+        end
+        
         return false
     end
     
     -- Verify decompressed data is valid
-    if not decompressedData or type(decompressedData) ~= "table" then
-        self:Debug("error", "Decompressed data is not valid")
+    if not decompressedData then
+        self:Debug("error", "Decompression returned nil for section " .. sectionName)
         return false
+    end
+    
+    if type(decompressedData) ~= "table" then
+        self:Debug("error", "Decompressed data is not a table but " .. type(decompressedData))
+        return false
+    end
+    
+    -- Validate required section fields
+    if not decompressedData["Section Header"] then
+        self:Debug("error", "Decompressed data missing Section Header for " .. sectionName)
+        -- Continue anyway and try to create it
+        decompressedData["Section Header"] = decompressedData["Section Header"] or {"Icon", "Target"}
+    end
+    
+    if not decompressedData["Section Rows"] then
+        self:Debug("error", "Decompressed data missing Section Rows for " .. sectionName)
+        -- Continue anyway and create empty rows
+        decompressedData["Section Rows"] = decompressedData["Section Rows"] or {}
     end
     
     -- Find the section in TWRA_Assignments.data
     local sectionFound = false
     local processedSection = nil
+    
     if TWRA_Assignments and TWRA_Assignments.data then
+        -- First look for exact section name match
         for idx, section in pairs(TWRA_Assignments.data) do
             if type(section) == "table" and section["Section Name"] == sectionName then
-                -- We found the section, update it with the decompressed data
+                self:Debug("sync", "Found matching section by name: " .. sectionName)
                 
                 -- Preserve metadata that might have been added
                 local existingMetadata = section["Section Metadata"] or {}
@@ -871,8 +907,45 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
         end
     end
     
-    -- If section wasn't found, create it
+    -- If section wasn't found by name, look for it by index
+    if not sectionFound and TWRA_Assignments and TWRA_Assignments.data and TWRA_Assignments.data[sectionIndex] then
+        local section = TWRA_Assignments.data[sectionIndex]
+        self:Debug("sync", "Found matching section by index: " .. sectionIndex)
+        
+        -- Preserve metadata that might have been added
+        local existingMetadata = section["Section Metadata"] or {}
+        
+        -- Replace section content with decompressed data
+        for key, value in pairs(decompressedData) do
+            if key ~= "Section Metadata" then
+                section[key] = value
+            end
+        end
+        
+        -- Ensure Metadata exists and merge with existing metadata
+        section["Section Metadata"] = section["Section Metadata"] or {}
+        if existingMetadata then
+            -- Preserve notes, warnings, GUIDs
+            for metaKey, metaValue in pairs(existingMetadata) do
+                if metaKey == "Note" or metaKey == "Warning" or metaKey == "GUID" then
+                    section["Section Metadata"][metaKey] = metaValue
+                end
+            end
+        end
+        
+        -- Mark as processed
+        section["NeedsProcessing"] = false
+        section["Section Name"] = sectionName
+        
+        self:Debug("sync", "Updated section at index " .. sectionIndex .. " with processed data")
+        sectionFound = true
+        processedSection = section
+    end
+    
+    -- If section wasn't found at all, create it
     if not sectionFound then
+        self:Debug("sync", "Section not found, creating new section: " .. sectionName)
+        
         TWRA_Assignments = TWRA_Assignments or {}
         TWRA_Assignments.data = TWRA_Assignments.data or {}
         
@@ -892,21 +965,36 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
         processedSection = decompressedData
     end
     
-    -- Process player-relevant info for JUST this section (using our new functionality)
+    -- Process player-relevant info for this section
     if self.ProcessPlayerInfo and processedSection then
-        self:Debug("data", "Processing player-relevant info for just the updated section")
-        self:ProcessPlayerInfo(processedSection)
+        self:Debug("data", "Processing player-relevant info for section: " .. sectionName)
+        
+        local processSuccess, processError = pcall(function()
+            self:ProcessPlayerInfo(processedSection)
+        end)
+        
+        if not processSuccess then
+            self:Debug("error", "Error processing player info: " .. tostring(processError))
+            -- Continue anyway, we've already updated the section data
+        end
     else
         -- Fallback to processing all sections if something went wrong or old function is being used
         self:Debug("data", "Falling back to processing player info for all sections")
-        self:ProcessPlayerInfo()
+        if self.ProcessPlayerInfo then
+            local allSuccess, allError = pcall(function()
+                self:ProcessPlayerInfo()
+            end)
+            
+            if not allSuccess then
+                self:Debug("error", "Error processing all player info: " .. tostring(allError))
+                -- Continue anyway
+            end
+        end
     end
     
     self:Debug("sync", "Successfully processed section " .. sectionName)
     return true
 end
-
---- Didn't we refactor out these functions befo
 
 -- Updated GetPlayerRelevantRowsForSection to only include name and class matches (not group matches)
 function TWRA:GetPlayerRelevantRowsForSection(section)
