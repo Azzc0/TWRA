@@ -211,7 +211,52 @@ function TWRA:CompressSectionData(sectionIndex)
     local sectionData = {}
     for key, value in pairs(TWRA_Assignments.data[sectionIndex]) do
         if key ~= "Section Player Info" then
-            sectionData[key] = value
+            -- For Section Metadata, make a deep copy to ensure Group Rows metadata is preserved
+            if key == "Section Metadata" and type(value) == "table" then
+                sectionData[key] = {}
+                for metaKey, metaValue in pairs(value) do
+                    -- Deep copy each metadata field
+                    if type(metaValue) == "table" then
+                        sectionData[key][metaKey] = {}
+                        for k, v in pairs(metaValue) do
+                            sectionData[key][metaKey][k] = v
+                        end
+                    else
+                        sectionData[key][metaKey] = metaValue
+                    end
+                end
+                
+                -- Debug output to verify Group Rows are being preserved
+                if value["Group Rows"] then
+                    local groupRowCount = table.getn(value["Group Rows"])
+                    self:Debug("compress", "Preserving " .. groupRowCount .. " Group Rows metadata for section " .. sectionIndex)
+                else
+                    self:Debug("compress", "No Group Rows metadata found for section " .. sectionIndex)
+                end
+            else
+                -- For other keys, just copy directly
+                sectionData[key] = value
+            end
+        end
+    end
+    
+    -- Ensure Section Metadata exists and Group Rows are present
+    if not sectionData["Section Metadata"] then
+        sectionData["Section Metadata"] = {}
+    end
+    
+    -- If Group Rows is missing but should be generated, generate it now
+    if not sectionData["Section Metadata"]["Group Rows"] or 
+       table.getn(sectionData["Section Metadata"]["Group Rows"]) == 0 then
+        self:Debug("compress", "Generating missing Group Rows metadata for section " .. sectionIndex)
+        
+        -- Use GetAllGroupRowsForSection if available
+        if self.GetAllGroupRowsForSection then
+            sectionData["Section Metadata"]["Group Rows"] = self:GetAllGroupRowsForSection(sectionData)
+            self:Debug("compress", "Generated " .. table.getn(sectionData["Section Metadata"]["Group Rows"]) .. 
+                      " Group Rows for section " .. sectionIndex)
+        else
+            self:Debug("error", "GetAllGroupRowsForSection function not available")
         end
     end
     

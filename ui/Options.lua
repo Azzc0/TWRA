@@ -890,161 +890,100 @@ function TWRA:CreateOptionsInMainFrame()
         
         self:Debug("data", "Importing data")
         
-        -- Try first with the new format direct import
-        local newFormatResult = false
-        if self.DirectImportNewFormat then
-            newFormatResult = self:DirectImportNewFormat(importText)
-            if newFormatResult then
-                importBox:SetText("")
-                importBox:ClearFocus()
-                
-                -- Process player-relevant information at the very end for new format
-                if self.ProcessPlayerInfo then
-                    self:Debug("data", "Processing comprehensive player info after import")
-                    
-                    -- First ensure player table is up to date
-                    if self.UpdatePlayerTable then
-                        self:UpdatePlayerTable()
-                    end
-                    
-                    -- First ensure all group rows are identified
-                    if self.EnsureGroupRowsIdentified then
-                        self:EnsureGroupRowsIdentified()
-                    end
-                    
-                    -- Then process ALL player info (static and dynamic)
-                    local success, errorMsg = pcall(function()
-                        self:ProcessPlayerInfo()
-                    end)
-                    
-                    if success then
-                        self:Debug("data", "Player info processed successfully")
-                    else
-                        self:Debug("error", "Error processing player info: " .. tostring(errorMsg))
-                    end
-                    
-                    -- Update OSD if it's showing
-                    if self.OSD and self.OSD:IsVisible() and self.UpdateOSDContent then
-                        self:UpdateOSDContent()
-                    end
-                end
-                
-                return
-            end
-        end
+        -- Import using the new format
+        local success = self:DirectImportNewFormat(importText)
         
-        -- Fallback to old format processing...
-        
-        -- Import the data using Base64 decode
-        local decodedData = nil
-        if self.ImportString then
-            decodedData = self:ImportString(importText)
-        end
-        
-        -- Save current section information before import
-        local currentSectionName = nil
-        local currentSectionIndex = nil
-        if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-            currentSectionIndex = self.navigation.currentIndex
-            currentSectionName = self.navigation.handlers[currentSectionIndex]
-        end
-        
-        if not decodedData then
-            self:Debug("error", "Failed to decode data")
-            return
-        end
-        
-        -- Process the import
-        if self.ClearData then
-            self:ClearData()
-        end
-        
-        if self.SaveAssignments then
-            -- Generate timestamp for this manual import
-            local timestamp = time()
-            self:SaveAssignments(decodedData, importText, timestamp)
-            self:Debug("data", "Import saved with timestamp: " .. timestamp)
-            
-            -- Clear the import box
+        if success then
+            -- Clear the import box and remove focus
             importBox:SetText("")
             importBox:ClearFocus()
-        end
-        
-        -- Make sure navigation is rebuilt
-        self:RebuildNavigation()
-        
-        -- Try to restore previous section if possible
-        local sectionFound = false
-        if self.navigation and self.navigation.handlers then
-            -- Try to find by name first (more reliable)
-            if currentSectionName then
-                for i, name in ipairs(self.navigation.handlers) do
-                    if name == currentSectionName then
-                        self.navigation.currentIndex = i
-                        if self.SaveCurrentSection then
-                            self:SaveCurrentSection()
-                        end
-                        self:Debug("data", "Restored section by name: " .. name .. " (index: " .. i .. ")")
-                        sectionFound = true
-                        break
-                    end
-                end
-            end
             
-            -- If not found by name, try by index
-            if not sectionFound and currentSectionIndex then
-                local maxIndex = table.getn(self.navigation.handlers)
-                if maxIndex > 0 then
-                    local safeIndex = math.min(currentSectionIndex, maxIndex)
-                    self.navigation.currentIndex = safeIndex
-                    if self.SaveCurrentSection then
-                        self:SaveCurrentSection()
-                    end
-                    self:Debug("data", "Restored section by index: " .. safeIndex)
-                end
-            end
-        end
-        
-        -- Process player-relevant information for this newly imported data AFTER navigation is rebuilt
-        if self.UpdatePlayerInfo then 
-            self:Debug("data", "Processing comprehensive player info after import")
-            
-            -- First ensure player table is up to date
-            if self.UpdatePlayerTable then
-                self:UpdatePlayerTable()
-            end
+            -- CRITICAL: Process each section to explicitly establish Group Rows metadata
+            -- This ensures Group Rows are properly identified
+            if TWRA_Assignments and TWRA_Assignments.data then
+                self:Debug("data", "Explicitly establishing Group Rows metadata for all sections")
+                local sectionsWithGroupRows = 0
+                local totalGroupRows = 0
+                
+                for sectionIdx, section in pairs(TWRA_Assignments.data) do
+                    if type(section) == "table" and section["Section Rows"] then
+                        -- Initialize Section Metadata if not present
+                        section["Section Metadata"] = section["Section Metadata"] or {}
                         
-            -- Then process ALL player info (static and dynamic)
-            local success, errorMsg = pcall(function()
-                self:UpdatePlayerInfo()
-            end)
+                        -- Explicitly force generation of Group Rows metadata
+                        section["Section Metadata"]["Group Rows"] = self:GetAllGroupRowsForSection(section)
+                        
+                        local groupRowCount = table.getn(section["Section Metadata"]["Group Rows"] or {})
+                        totalGroupRows = totalGroupRows + groupRowCount
+                        
+                        if groupRowCount > 0 then
+                            sectionsWithGroupRows = sectionsWithGroupRows + 1
+                        end
+                        
+                        self:Debug("data", "Section '" .. (section["Section Name"] or tostring(sectionIdx)) .. 
+                                 "': Established " .. groupRowCount .. " group rows")
+                    end
+                end
+                
+                self:Debug("data", "Established Group Rows metadata for " .. sectionsWithGroupRows .. 
+                         " sections with a total of " .. totalGroupRows .. " group rows")
+            end
             
-            if success then
-                self:Debug("data", "Player info processed successfully")
-            else
-                self:Debug("error", "Error processing player info: " .. tostring(errorMsg))
+            -- Apply ProcessImportedData for any other metadata processing
+            if self.ProcessImportedData then
+                self:Debug("data", "Applying ProcessImportedData for additional metadata processing")
+                TWRA_Assignments.data = self:ProcessImportedData(TWRA_Assignments)
+            end
+            
+            -- CRITICAL: Store compressed data immediately after establishing metadata
+            -- but BEFORE processing player-specific info
+            if self.StoreCompressedData then
+                self:Debug("data", "Storing compressed data with established metadata")
+                self:StoreCompressedData()
+            elseif self.StoreSegmentedData then
+                self:Debug("data", "Storing segmented data with established metadata")
+                self:StoreSegmentedData()
+            end
+            
+            -- Verify metadata was properly stored in compressed data
+            if TWRA_Assignments and TWRA_Assignments.data then
+                local groupRowsCheck = 0
+                for sectionIdx, section in pairs(TWRA_Assignments.data) do
+                    if type(section) == "table" and section["Section Metadata"] and 
+                       section["Section Metadata"]["Group Rows"] and 
+                       table.getn(section["Section Metadata"]["Group Rows"]) > 0 then
+                        groupRowsCheck = groupRowsCheck + 1
+                    end
+                end
+                self:Debug("data", "Verification: " .. groupRowsCheck .. " sections have Group Rows metadata after compression")
+            end
+            
+            -- NOW process player info (this is client-specific and should happen after compression)
+            if self.ProcessPlayerInfo then
+                self:Debug("data", "Processing player-specific info after import")
+                -- Process player info with error handling
+                pcall(function() self:ProcessPlayerInfo() end)
             end
             
             -- Update OSD if it's showing
-            if self.OSD and self.OSD:IsVisible() and self.UpdateOSDContent then
+            if self.OSD and self.OSD.isVisible and self.UpdateOSDContent then
                 self:UpdateOSDContent()
             end
-        end
-        
-        -- Broadcast minimal announcement to alert other clients about the new import
-        if self.AnnounceDataImport then
-            self:Debug("sync", "Broadcasting import announcement with timestamp: " .. timestamp)
-            self:AnnounceDataImport()
+            
+            -- Announce the import to other clients if needed
+            if self.AnnounceDataImport then
+                self:Debug("sync", "Broadcasting import announcement")
+                self:AnnounceDataImport()
+            end
+            
+            -- Switch to main view
+            if self.ShowMainView then
+                self:ShowMainView()
+            end
         else
-            self:Debug("error", "AnnounceDataImport function not available - import announcement not sent")
-        end
-        
-        -- Success message
-        self:Debug("data", "Assignment data imported successfully")
-        
-        -- Switch to main view
-        if self.ShowMainView then
-            self:ShowMainView()
+            -- Import failed
+            self:Debug("error", "Failed to import data - invalid format")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000TWRA:|r Import failed. The data appears to be in an invalid format.")
         end
     end)
     

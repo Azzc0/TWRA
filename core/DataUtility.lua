@@ -219,77 +219,6 @@ function TWRA:GetRelevantRowsForCurrentSection(sectionData)
     return relevantRows
 end
 
--- -- Legacy display function to handle the old format
--- function TWRA:DisplayLegacySection()
---     self:Debug("ui", "Displaying legacy format section")
-    
---     -- Check if we have data and navigation
---     if not self.fullData or not self.navigation or 
---        not self.navigation.currentIndex or
---        not self.navigation.handlers then
---         self:Debug("ui", "No data or navigation available")
---         return
---     end
-    
---     local currentSection = self.navigation.handlers[self.navigation.currentIndex]
---     if not currentSection then
---         self:Debug("ui", "No current section selected")
---         return
---     end
-    
---     -- Clear any existing rows
---     if self.ClearRows then
---         self:ClearRows()
---     end
-    
---     -- Find header row for this section and create it
---     local headerRow = nil
---     for i = 1, table.getn(self.fullData) do
---         if self.fullData[i][1] == currentSection and self.fullData[i][2] == "Icon" then
---             headerRow = self.fullData[i]
---             break
---         end
---     end
-    
---     if headerRow and self.CreateRow then
---         self:CreateRow(1, headerRow, false, true)
---     end
-    
---     -- Find rows for this section and create them
---     local rowIdx = 2  -- Start after header
---     local relevantRows = self:GetPlayerRelevantRows(currentSection)
-    
---     for i = 1, table.getn(self.fullData) do
---         if self.fullData[i][1] == currentSection and self.fullData[i][2] ~= "Icon" then
---             local isRelevant = false
---             for _, r in ipairs(relevantRows) do
---                 if r == i then
---                     isRelevant = true
---                     break
---                 end
---             end
-            
---             if self.CreateRow then
---                 self:CreateRow(rowIdx, self.fullData[i], isRelevant)
---                 rowIdx = rowIdx + 1
---             end
---         end
---     end
-    
---     -- Update UI elements
---     if self.UpdateRowDisplay then
---         self:UpdateRowDisplay()
---     end
-    
---     -- Update OSD if needed
---     if self.ShouldShowOSD and self.ShouldShowOSD() and self.ShowOSD then
---         self:Debug("osd", "Showing OSD for legacy section")
---         self:ShowOSD()
---     end
-    
---     return true
--- end
-
 -- Find tank role columns in section headers
 function TWRA:FindTankRoleColumns(section)
     local tankColumns = {}
@@ -320,52 +249,81 @@ function TWRA:FindTankRoleColumns(section)
     return tankColumns
 end
 
+-- Helper function to normalize metadata keys
+function TWRA:NormalizeMetadataKeys(metadata)
+    if type(metadata) ~= "table" then
+        return metadata
+    end
+    
+    local normalizedMetadata = {}
+    local keyMappings = {
+        ["notes"] = "Note",
+        ["warnings"] = "Warning",
+        ["guids"] = "GUID",
+        ["Group Rows"] = "Group Rows"
+    }
+    
+    -- Copy all values, normalizing keys as needed
+    for key, value in pairs(metadata) do
+        local normalizedKey = keyMappings[key] or key
+        normalizedMetadata[normalizedKey] = value
+    end
+    
+    return normalizedMetadata
+end
+
 -- Clear data while preserving section metadata
 function TWRA:ClearData()
     self:Debug("data", "Clearing current data")
     
     -- Check if we have metadata to preserve
     local metadataToPreserve = {}
+    local playerInfoToPreserve = {}
+    
     if TWRA_Assignments and TWRA_Assignments.data and type(TWRA_Assignments.data) == "table" then
-        
-        -- Extract metadata from each section
+        -- Extract metadata and player info from each section
         for sectionIdx, section in pairs(TWRA_Assignments.data) do
-            if type(section) == "table" and section["Section Name"] and section["Section Metadata"] then
+            if type(section) == "table" and section["Section Name"] then
                 local sectionName = section["Section Name"]
-                metadataToPreserve[sectionName] = {
-                    Note = {},
-                    Warning = {},
-                    GUID = {}
-                }
                 
-                -- Copy metadata arrays 
-                if type(section["Section Metadata"]) == "table" then
-                    -- Copy Notes
-                    if type(section["Section Metadata"]["Note"]) == "table" then
-                        for _, note in ipairs(section["Section Metadata"]["Note"]) do
-                            table.insert(metadataToPreserve[sectionName].Note, note)
+                -- PRESERVE METADATA: Normalize and deep copy all metadata
+                metadataToPreserve[sectionName] = {}
+                if section["Section Metadata"] and type(section["Section Metadata"]) == "table" then
+                    -- First normalize the keys to ensure consistent case
+                    local normalizedMetadata = self:NormalizeMetadataKeys(section["Section Metadata"])
+                    
+                    -- Then deep copy the normalized metadata
+                    metadataToPreserve[sectionName] = self:DeepCopyTable(normalizedMetadata)
+                    
+                    -- Log what we're preserving
+                    local metadataKeys = ""
+                    for key, value in pairs(normalizedMetadata) do
+                        if type(value) == "table" then
+                            metadataKeys = metadataKeys .. key .. "(" .. table.getn(value) .. "), "
+                        else
+                            metadataKeys = metadataKeys .. key .. ", "
                         end
-                        self:Debug("data", "Preserved " .. table.getn(section["Section Metadata"]["Note"]) .. 
-                                  " notes for section " .. sectionName)
                     end
                     
-                    -- Copy Warnings
-                    if type(section["Section Metadata"]["Warning"]) == "table" then
-                        for _, warning in ipairs(section["Section Metadata"]["Warning"]) do
-                            table.insert(metadataToPreserve[sectionName].Warning, warning)
+                    self:Debug("data", "Preserved metadata for section " .. sectionName .. ": " .. metadataKeys)
+                end
+                
+                -- PRESERVE PLAYER INFO: Separately preserve the player info
+                playerInfoToPreserve[sectionName] = {}
+                if section["Section Player Info"] and type(section["Section Player Info"]) == "table" then
+                    playerInfoToPreserve[sectionName] = self:DeepCopyTable(section["Section Player Info"])
+                    
+                    -- Log what we're preserving
+                    local playerInfoKeys = ""
+                    for key, value in pairs(section["Section Player Info"]) do
+                        if type(value) == "table" then
+                            playerInfoKeys = playerInfoKeys .. key .. "(" .. table.getn(value) .. "), "
+                        else
+                            playerInfoKeys = playerInfoKeys .. key .. ", "
                         end
-                        self:Debug("data", "Preserved " .. table.getn(section["Section Metadata"]["Warning"]) .. 
-                                  " warnings for section " .. sectionName)
                     end
                     
-                    -- Copy GUIDs
-                    if type(section["Section Metadata"]["GUID"]) == "table" then
-                        for _, guid in ipairs(section["Section Metadata"]["GUID"]) do
-                            table.insert(metadataToPreserve[sectionName].GUID, guid)
-                        end
-                        self:Debug("data", "Preserved " .. table.getn(section["Section Metadata"]["GUID"]) .. 
-                                  " GUIDs for section " .. sectionName)
-                    end
+                    self:Debug("data", "Preserved player info for section " .. sectionName .. ": " .. playerInfoKeys)
                 end
             end
         end
@@ -379,32 +337,79 @@ function TWRA:ClearData()
         self.navigation.currentIndex = 1
     end
     
-    -- Create a hook to restore metadata after the next save
-    if next(metadataToPreserve) ~= nil then
+    -- Create a hook to restore metadata and player info after the next save
+    if next(metadataToPreserve) ~= nil or next(playerInfoToPreserve) ~= nil then
         self.pendingMetadataRestore = metadataToPreserve
-        self:Debug("data", "Set up metadata restoration hook for next save operation")
+        self.pendingPlayerInfoRestore = playerInfoToPreserve
         
-        -- Create a function that will be called after SaveAssignments to restore metadata
+        self:Debug("data", "Set up metadata and player info restoration hook for next save operation")
+        
+        -- Create a function that will be called after SaveAssignments to restore metadata and player info
         self.RestorePendingMetadata = function()
-            if not self.pendingMetadataRestore then
+            if not self.pendingMetadataRestore or not TWRA_Assignments or not TWRA_Assignments.data then
                 return
             end
             
-            -- Clear the pending metadata
-            self.pendingMetadataRestore = nil
-        end
-        
-        -- Set up a post-save hook
-        local originalSaveAssignments = self.SaveAssignments
-        self.SaveAssignments = function(self, data, sourceString, originalTimestamp, noAnnounce)
-            local result = originalSaveAssignments(self, data, sourceString, originalTimestamp, noAnnounce)
-            
-            -- Restore metadata after saving
-            if self.RestorePendingMetadata then
-                self:RestorePendingMetadata()
+            -- For each section, restore the entire metadata
+            for sectionIdx, section in pairs(TWRA_Assignments.data) do
+                if type(section) == "table" and section["Section Name"] then
+                    local sectionName = section["Section Name"]
+                    
+                    -- RESTORE METADATA
+                    if self.pendingMetadataRestore[sectionName] then
+                        -- Initialize metadata if needed
+                        section["Section Metadata"] = section["Section Metadata"] or {}
+                        
+                        -- Normalize the existing metadata keys
+                        section["Section Metadata"] = self:NormalizeMetadataKeys(section["Section Metadata"])
+                        
+                        -- Merge the preserved metadata with any new metadata
+                        for key, value in pairs(self.pendingMetadataRestore[sectionName]) do
+                            -- Don't overwrite existing non-empty values
+                            if not section["Section Metadata"][key] or 
+                               (type(section["Section Metadata"][key]) == "table" and table.getn(section["Section Metadata"][key]) == 0) then
+                                
+                                section["Section Metadata"][key] = self:DeepCopyTable(value)
+                                self:Debug("data", "Restored " .. key .. " metadata for section " .. sectionName)
+                            end
+                        end
+                    end
+                    
+                    -- RESTORE PLAYER INFO
+                    if self.pendingPlayerInfoRestore and self.pendingPlayerInfoRestore[sectionName] then
+                        -- Initialize player info if needed
+                        section["Section Player Info"] = section["Section Player Info"] or {}
+                        
+                        -- Merge the preserved player info with any new player info
+                        for key, value in pairs(self.pendingPlayerInfoRestore[sectionName]) do
+                            -- Always restore player info since it's computed from scratch
+                            section["Section Player Info"][key] = self:DeepCopyTable(value)
+                        end
+                        
+                        self:Debug("data", "Restored player info for section " .. sectionName)
+                    end
+                end
             end
             
-            return result
+            -- Clear the pending restoration data
+            self.pendingMetadataRestore = nil
+            self.pendingPlayerInfoRestore = nil
+            self:Debug("data", "Completed metadata and player info restoration")
+        end
+        
+        -- Set up a post-save hook if it doesn't already exist
+        if not self.originalSaveAssignments then
+            self.originalSaveAssignments = self.SaveAssignments
+            self.SaveAssignments = function(self, data, sourceString, originalTimestamp, noAnnounce)
+                local result = self:originalSaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
+                
+                -- Restore metadata and player info after saving
+                if self.RestorePendingMetadata then
+                    self:RestorePendingMetadata()
+                end
+                
+                return result
+            end
         end
     end
     
@@ -412,8 +417,23 @@ function TWRA:ClearData()
     return true
 end
 
+-- Helper function to deep copy a table (used for metadata preservation)
+function TWRA:DeepCopyTable(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in pairs(orig) do
+            copy[orig_key] = self:DeepCopyTable(orig_value)
+        end
+    else
+        -- Simple value - just return it directly
+        copy = orig
+    end
+    return copy
+end
+
 -- SaveAssignments - Save assignments to SavedVariables for sharing and persistence
--- Now with proper callback system for pre/post-save operations
 function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     if not data then
         self:Debug("error", "SaveAssignments called with nil data")
@@ -451,7 +471,7 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
             self:Debug("data", "Applied CaptureSpecialRows to extract special rows as metadata")
         end
         
-        -- ENSURE GROUP ROWS IDENTIFICATION: Critical step to fix missing group rows
+        -- ENSURE GROUP ROWS IDENTIFICATION: Now we rely on preserved metadata
         if self.EnsureGroupRowsIdentified then
             -- First, we need to store the data temporarily so EnsureGroupRowsIdentified can find it
             TWRA_Assignments = TWRA_Assignments or {}
@@ -507,6 +527,9 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
         self:Debug("data", "Assigned legacy format data directly to SavedVariables")
     end
     
+    -- IMPORTANT: Do NOT process player info here yet - we'll do it at the very end
+    -- First make sure our hooks run to restore all metadata
+    
     -- Announce save to chat if enabled and not suppressed
     local announceMessage = "Raid assignments " .. (sourceString or "unknown source") .. 
                           " saved."
@@ -531,6 +554,29 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     if self.RebuildNavigation then
         self:Debug("nav", "Rebuilding navigation after import")
         self:RebuildNavigation()
+    end
+    
+    -- MOVE METADATA RESTORATION HERE - if the hook exists, call it directly
+    if self.RestorePendingMetadata then
+        self:Debug("data", "Calling RestorePendingMetadata before processing player info")
+        self:RestorePendingMetadata()
+    end
+    
+    -- NOW: Process player info AFTER all metadata restoration is complete
+    -- This ensures player info is generated from the final, complete data state
+    self:Debug("data", "Processing player information AFTER metadata restoration (very late in import)")
+    if self.ProcessPlayerInfo then
+        local success, error = pcall(function()
+            self:ProcessPlayerInfo()
+        end)
+        
+        if success then
+            self:Debug("data", "Successfully processed player info at the end of import")
+        else
+            self:Debug("error", "Error processing player info at the end of import: " .. tostring(error))
+        end
+    else
+        self:Debug("error", "ProcessPlayerInfo function not available")
     end
     
     -- Navigate to first section if needed
@@ -662,6 +708,19 @@ function TWRA:CaptureSpecialRows(data)
             metadata["Warning"] = metadata["Warning"] or {}
             metadata["GUID"] = metadata["GUID"] or {}
             
+            -- IMPORTANT: Also make sure Group Rows exists
+            metadata["Group Rows"] = metadata["Group Rows"] or {}
+            
+            -- Find Group Rows explicitly if they're not already defined
+            if table.getn(metadata["Group Rows"]) == 0 then
+                metadata["Group Rows"] = self:GetAllGroupRowsForSection(section)
+                self:Debug("data", "Generated Group Rows metadata for section: " .. sectionName .. 
+                          " with " .. table.getn(metadata["Group Rows"]) .. " rows")
+            else
+                self:Debug("data", "Using existing Group Rows metadata for section: " .. sectionName .. 
+                          " with " .. table.getn(metadata["Group Rows"]) .. " rows")
+            end
+            
             -- Ensure Section Rows exists before trying to iterate over it
             if section["Section Rows"] and type(section["Section Rows"]) == "table" then
                 -- Track indices of special rows to remove later
@@ -728,11 +787,12 @@ function TWRA:CaptureSpecialRows(data)
                     end
                 end
                 
-                -- Remember the metadata for this section
+                -- Remember the metadata for this section - USING PROPER CAPITALIZATION
                 self.pendingMetadataRestore[sectionName] = {
-                    notes = table.getn(metadata["Note"]),
-                    warnings = table.getn(metadata["Warning"]),
-                    guids = table.getn(metadata["GUID"])
+                    ["Note"] = metadata["Note"],
+                    ["Warning"] = metadata["Warning"],
+                    ["GUID"] = metadata["GUID"],
+                    ["Group Rows"] = metadata["Group Rows"]
                 }
                 
                 -- Only remove special rows if we found any

@@ -585,15 +585,15 @@ function TWRA:ProcessImportedData(data)
                               table.getn(metadata["Warning"]) .. " warnings, " ..
                               table.getn(metadata["GUID"]) .. " GUIDs")
                     
-                    -- ENHANCED: Identify and store group rows in metadata during initial processing
-                    -- This ensures Group Rows are detected during import and not rechecked later
-                    -- First check if group rows already exist, if not then scan for them
-                    if not metadata["Group Rows"] or table.getn(metadata["Group Rows"]) == 0 then
-                        metadata["Group Rows"] = self:GetAllGroupRowsForSection(section)
-                        self:Debug("data", "Section '" .. sectionName .. "': Identified " .. 
-                                  table.getn(metadata["Group Rows"]) .. " group rows during import")
-                        
-                        -- Print the actual group rows found for debugging
+                    -- CRITICAL: ALWAYS identify Group Rows during import
+                    -- Force generation and store in metadata
+                    metadata["Group Rows"] = self:GetAllGroupRowsForSection(section)
+                    local groupRowCount = table.getn(metadata["Group Rows"])
+                    self:Debug("data", "CRITICAL: Section '" .. sectionName .. "': Identified " .. 
+                              groupRowCount .. " group rows during import processing")
+                    
+                    -- Print the actual group rows found for debugging
+                    if groupRowCount > 0 then
                         local groupRowsList = ""
                         for i, rowIndex in ipairs(metadata["Group Rows"]) do
                             if rowIndex > 0 and rowIndex <= table.getn(section["Section Rows"]) then
@@ -614,8 +614,7 @@ function TWRA:ProcessImportedData(data)
                         end
                         self:Debug("data", "Group rows: " .. groupRowsList, false, true)
                     else
-                        self:Debug("data", "Section '" .. sectionName .. "': Using existing " .. 
-                                  table.getn(metadata["Group Rows"]) .. " group rows")
+                        self:Debug("data", "No Group Rows found for section '" .. sectionName .. "'")
                     end
                     
                     -- ENHANCED: Also identify tank columns during import
@@ -1327,52 +1326,41 @@ function TWRA:GetAllGroupRowsForSection(section)
     
     -- Skip if no rows
     if not section["Section Rows"] then
+        self:Debug("data", "No Section Rows found in GetAllGroupRowsForSection", false, true)
         return allGroupRows
     end
     
-    self:Debug("data", "Scanning for ANY group references in section: " .. (section["Section Name"] or "Unknown"), false, true)
+    self:Debug("data", "Scanning for explicit group references in section: " .. (section["Section Name"] or "Unknown"), false, true)
     
-    -- Check each row for ANY group references
+    -- Check each row for group references - ONLY explicit ones
     for rowIdx, rowData in ipairs(section["Section Rows"]) do
+        -- Skip if rowData is not a table
+        if type(rowData) ~= "table" then
+            self:Debug("data", "Row " .. rowIdx .. " is not a table, skipping", false, true)
         -- Skip special rows
-        if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
+        elseif rowData[1] == "Note" or rowData[1] == "Warning" or rowData[1] == "GUID" then
+            self:Debug("data", "Row " .. rowIdx .. " is a special row, skipping", false, true)
+        else
             local foundGroupRef = false
             local matchedCell = ""
-            local matchedPattern = ""
             local matchedColumn = 0
             
-            -- Check each cell for group references, explicitly SKIP column 2 (target column)
-            for colIndex, cellValue in ipairs(rowData) do
-                -- Always skip target column (column 2) for group matching
-                if colIndex ~= 2 and type(cellValue) == "string" and cellValue ~= "" then
-                    -- Convert to lowercase for case-insensitive matching
+            -- IMPORTANT: Check all columns EXCEPT icon and target (columns 1 and 2)
+            -- Start from column 3 and check all remaining columns
+            for colIndex = 3, table.getn(rowData) do
+                if type(rowData[colIndex]) == "string" and rowData[colIndex] ~= "" then
+                    local cellValue = rowData[colIndex]
                     local lowerCell = string.lower(cellValue)
                     
-                    -- Look for common group patterns
-                    if string.find(lowerCell, "group") or 
-                       string.find(lowerCell, "groups") or
-                       string.find(lowerCell, "gr%.") or     -- Gr.
-                       string.find(lowerCell, "gr ") or      -- Gr 
-                       string.find(lowerCell, "grp") then    -- Grp
+                    -- Check for group references using various patterns
+                    if string.find(lowerCell, "group") or
+                       string.find(lowerCell, "gr%.") or
+                       string.find(lowerCell, "grp") then
                         
-                        -- If we find any of these patterns, consider it a group reference
                         foundGroupRef = true
                         matchedCell = cellValue
                         matchedColumn = colIndex
-                        
-                        -- Try to determine which pattern matched
-                        if string.find(lowerCell, "group") then
-                            matchedPattern = "group"
-                        elseif string.find(lowerCell, "gr%.") then
-                            matchedPattern = "gr."
-                        elseif string.find(lowerCell, "gr ") then
-                            matchedPattern = "gr"
-                        elseif string.find(lowerCell, "grp") then
-                            matchedPattern = "grp"
-                        end
-                        
-                        -- Once we've found a match, no need to check more cells in this row
-                        break
+                        break  -- Found a match, no need to check other columns
                     end
                 end
             end
@@ -1382,12 +1370,20 @@ function TWRA:GetAllGroupRowsForSection(section)
                 table.insert(allGroupRows, rowIdx)
                 self:Debug("data", "Found group reference in row " .. rowIdx .. 
                          " column " .. matchedColumn ..
-                         " matching '" .. matchedPattern .. "': '" .. matchedCell .. "'", false, true)
+                         ": '" .. matchedCell .. "'", false, true)
             end
         end
     end
     
     self:Debug("data", "Found " .. table.getn(allGroupRows) .. " rows with group references", false, true)
+    
+    -- CRITICAL: Persist this information into the section metadata immediately
+    if section["Section Metadata"] then
+        section["Section Metadata"]["Group Rows"] = allGroupRows
+        self:Debug("data", "Stored " .. table.getn(allGroupRows) .. 
+                  " group rows in section metadata", false, true)
+    end
+    
     return allGroupRows
 end
 
