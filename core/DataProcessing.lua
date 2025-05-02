@@ -1,7 +1,37 @@
 -- Handle loading of data including scanning for GUIDs
 function TWRA:ProcessLoadedData(data)
-    -- Process player-specific information after data is loaded
-    self:ProcessPlayerInfo()
+    -- Process player-specific information after data is loaded with comprehensive error handling
+    self:Debug("data", "Processing player information for loaded data")
+    
+    -- Use pcall to safely execute player info processing
+    local success, error = pcall(function()
+        self:ProcessPlayerInfo()
+    end)
+    
+    if not success then
+        self:Debug("error", "Error processing player info during data load: " .. tostring(error))
+        
+        -- Try a second approach with safer section-by-section processing
+        self:Debug("data", "Attempting fallback section-by-section player info processing")
+        if TWRA_Assignments and TWRA_Assignments.data then
+            for sectionIdx, section in pairs(TWRA_Assignments.data) do
+                if type(section) == "table" and section["Section Name"] then
+                    local sectionSuccess, sectionError = pcall(function()
+                        self:ProcessPlayerInfo(section)
+                    end)
+                    
+                    if sectionSuccess then
+                        self:Debug("data", "Successfully processed player info for section " .. section["Section Name"])
+                    else
+                        self:Debug("error", "Failed to process player info for section " .. 
+                                  section["Section Name"] .. ": " .. tostring(sectionError))
+                    end
+                end
+            end
+        end
+    else
+        self:Debug("data", "Successfully processed player info for all sections")
+    end
     
     -- After processing data, setup section navigation
     self:RebuildNavigation()
@@ -18,6 +48,9 @@ function TWRA:ProcessLoadedData(data)
             self.AUTONAVIGATE.lastMarkedGuid = nil  
         end
     end
+    
+    -- Return success
+    return true
 end
 
 -- EnsureCompleteRows - Ensures that all rows have the same number of columns
@@ -421,11 +454,10 @@ function TWRA:ProcessImportedData(data)
                 
                 -- Initialize Section Metadata if not present
                 section["Section Metadata"] = section["Section Metadata"] or {}
+                local metadata = section["Section Metadata"]
                 
                 -- IMPORTANT: Process special rows (Note, Warning, GUID) and store in metadata
                 if section["Section Rows"] and type(section["Section Rows"]) == "table" then
-                    local metadata = section["Section Metadata"]
-                    
                     -- Initialize metadata arrays
                     metadata["Note"] = metadata["Note"] or {}
                     metadata["Warning"] = metadata["Warning"] or {}
@@ -470,6 +502,50 @@ function TWRA:ProcessImportedData(data)
                               table.getn(metadata["Note"]) .. " notes, " ..
                               table.getn(metadata["Warning"]) .. " warnings, " ..
                               table.getn(metadata["GUID"]) .. " GUIDs")
+                    
+                    -- ENHANCED: Identify and store group rows in metadata during initial processing
+                    -- This ensures Group Rows are detected during import and not rechecked later
+                    -- First check if group rows already exist, if not then scan for them
+                    if not metadata["Group Rows"] or table.getn(metadata["Group Rows"]) == 0 then
+                        metadata["Group Rows"] = self:GetAllGroupRowsForSection(section)
+                        self:Debug("data", "Section '" .. sectionName .. "': Identified " .. 
+                                  table.getn(metadata["Group Rows"]) .. " group rows during import")
+                        
+                        -- Print the actual group rows found for debugging
+                        local groupRowsList = ""
+                        for i, rowIndex in ipairs(metadata["Group Rows"]) do
+                            if rowIndex > 0 and rowIndex <= table.getn(section["Section Rows"]) then
+                                local rowData = section["Section Rows"][rowIndex]
+                                local rowContent = ""
+                                -- Get a summary of the row content
+                                if type(rowData) == "table" then
+                                    for j = 1, math.min(5, table.getn(rowData)) do
+                                        if rowData[j] and rowData[j] ~= "" then
+                                            rowContent = rowContent .. "[" .. j .. "]=" .. rowData[j] .. " "
+                                        end
+                                    end
+                                end
+                                groupRowsList = groupRowsList .. rowIndex .. "(" .. rowContent .. "), "
+                            else
+                                groupRowsList = groupRowsList .. rowIndex .. "(invalid), "
+                            end
+                        end
+                        self:Debug("data", "Group rows: " .. groupRowsList, false, true)
+                    else
+                        self:Debug("data", "Section '" .. sectionName .. "': Using existing " .. 
+                                  table.getn(metadata["Group Rows"]) .. " group rows")
+                    end
+                    
+                    -- ENHANCED: Also identify tank columns during import
+                    -- First check if tank columns already exist, if not then find them
+                    if not metadata["Tank Columns"] or table.getn(metadata["Tank Columns"]) == 0 then
+                        metadata["Tank Columns"] = self:FindTankRoleColumns(section)
+                        self:Debug("data", "Section '" .. sectionName .. "': Identified " .. 
+                                  table.getn(metadata["Tank Columns"]) .. " tank columns during import")
+                    else
+                        self:Debug("data", "Section '" .. sectionName .. "': Using existing " .. 
+                                  table.getn(metadata["Tank Columns"]) .. " tank columns")
+                    end
                 end
             end
         end
@@ -774,45 +850,59 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     return true
 end
 
--- Process section data received from another player
-function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
-    self:Debug("sync", "Processing section " .. sectionIndex .. " data from " .. (sender or "local"))
+-- Process section data for a specific section index
+function TWRA:ProcessSectionData(sectionIndex)
+    self:Debug("data", "Processing section " .. sectionIndex)
     
-    -- Check for valid inputs
-    if not sectionIndex or not sectionData then
-        self:Debug("error", "Invalid section parameters: index=" .. tostring(sectionIndex) .. ", data length=" .. (sectionData and string.len(sectionData) or "nil"))
+    -- Check for valid input
+    if not sectionIndex or type(sectionIndex) ~= "number" then
+        self:Debug("error", "Invalid section index: " .. tostring(sectionIndex))
         return false
     end
     
-    if sectionData == "" then
-        self:Debug("error", "Empty section data for index " .. sectionIndex)
+    -- Ensure we have assignment data
+    if not TWRA_Assignments or not TWRA_Assignments.data or not TWRA_Assignments.data[sectionIndex] then
+        self:Debug("error", "Section " .. sectionIndex .. " not found in TWRA_Assignments.data")
         return false
     end
     
-    -- Store the section name for reference
-    local sectionName = nil
-    if TWRA_Assignments and TWRA_Assignments.data then
-        for idx, section in pairs(TWRA_Assignments.data) do
-            if type(section) == "table" and 
-               ((section["Section Index"] and section["Section Index"] == sectionIndex) or 
-                (idx == sectionIndex)) then
-                sectionName = section["Section Name"]
-                break
+    -- Check if section data exists in TWRA_CompressedAssignments
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections or not TWRA_CompressedAssignments.sections[sectionIndex] then
+        self:Debug("error", "No compressed data found for section " .. sectionIndex)
+        return false
+    end
+    
+    -- Get the compressed section data
+    local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
+    if not sectionData or sectionData == "" then
+        self:Debug("error", "Empty compressed data for section " .. sectionIndex)
+        return false
+    end
+    
+    -- Get the section name for reference
+    local sectionName = TWRA_Assignments.data[sectionIndex]["Section Name"]
+    if not sectionName then
+        self:Debug("error", "Section name not found for index " .. sectionIndex)
+        return false
+    end
+    
+    self:Debug("data", "Processing section: " .. sectionName .. " (index: " .. sectionIndex .. ")")
+    
+    -- IMPORTANT: Make a complete copy of the existing metadata before we do anything else
+    local existingMetadata = {}
+    if TWRA_Assignments.data[sectionIndex]["Section Metadata"] then
+        -- Deep copy all metadata fields to ensure nothing is lost
+        for key, value in pairs(TWRA_Assignments.data[sectionIndex]["Section Metadata"]) do
+            if type(value) == "table" then
+                existingMetadata[key] = {}
+                for k, v in pairs(value) do
+                    existingMetadata[key][k] = v
+                end
+            else
+                existingMetadata[key] = value
             end
         end
     end
-    
-    -- If we don't have a section name, can't proceed
-    if not sectionName then
-        self:Debug("error", "Cannot find section name for index " .. sectionIndex)
-        return false
-    end
-    
-    self:Debug("sync", "Processing section: " .. sectionName .. " (index: " .. sectionIndex .. ")")
-    
-    -- Check if section data starts with marker byte
-    local firstByte = string.byte(sectionData, 1)
-    self:Debug("sync", "Section data first byte: " .. tostring(firstByte) .. " (length: " .. string.len(sectionData) .. ")")
     
     -- Decompress the section data
     local decompressedData = nil
@@ -829,7 +919,7 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
     
     if success and result then
         decompressedData = result
-        self:Debug("sync", "Successfully decompressed section data for " .. sectionName)
+        self:Debug("data", "Successfully decompressed section data for " .. sectionName)
     else
         self:Debug("error", "Failed to decompress section data: " .. tostring(result))
         
@@ -865,135 +955,125 @@ function TWRA:ProcessSectionData(sectionIndex, sectionData, timestamp, sender)
         decompressedData["Section Rows"] = decompressedData["Section Rows"] or {}
     end
     
-    -- Find the section in TWRA_Assignments.data
-    local sectionFound = false
-    local processedSection = nil
-    
-    if TWRA_Assignments and TWRA_Assignments.data then
-        -- First look for exact section name match
-        for idx, section in pairs(TWRA_Assignments.data) do
-            if type(section) == "table" and section["Section Name"] == sectionName then
-                self:Debug("sync", "Found matching section by name: " .. sectionName)
-                
-                -- Preserve metadata that might have been added
-                local existingMetadata = section["Section Metadata"] or {}
-                
-                -- Replace section content with decompressed data
-                for key, value in pairs(decompressedData) do
-                    if key ~= "Section Metadata" then
-                        section[key] = value
-                    end
-                end
-                
-                -- Ensure Metadata exists and merge with existing metadata
-                section["Section Metadata"] = section["Section Metadata"] or {}
-                if existingMetadata then
-                    -- Preserve notes, warnings, GUIDs
-                    for metaKey, metaValue in pairs(existingMetadata) do
-                        if metaKey == "Note" or metaKey == "Warning" or metaKey == "GUID" then
-                            section["Section Metadata"][metaKey] = metaValue
-                        end
-                    end
-                end
-                
-                -- Mark as processed
-                section["NeedsProcessing"] = false
-                
-                self:Debug("sync", "Updated section " .. sectionName .. " with processed data")
-                sectionFound = true
-                processedSection = section
-                break
-            end
+    -- Replace section content with decompressed data
+    for key, value in pairs(decompressedData) do
+        if key ~= "Section Metadata" then
+            TWRA_Assignments.data[sectionIndex][key] = value
         end
     end
     
-    -- If section wasn't found by name, look for it by index
-    if not sectionFound and TWRA_Assignments and TWRA_Assignments.data and TWRA_Assignments.data[sectionIndex] then
-        local section = TWRA_Assignments.data[sectionIndex]
-        self:Debug("sync", "Found matching section by index: " .. sectionIndex)
-        
-        -- Preserve metadata that might have been added
-        local existingMetadata = section["Section Metadata"] or {}
-        
-        -- Replace section content with decompressed data
-        for key, value in pairs(decompressedData) do
-            if key ~= "Section Metadata" then
-                section[key] = value
-            end
-        end
-        
-        -- Ensure Metadata exists and merge with existing metadata
-        section["Section Metadata"] = section["Section Metadata"] or {}
-        if existingMetadata then
-            -- Preserve notes, warnings, GUIDs
-            for metaKey, metaValue in pairs(existingMetadata) do
-                if metaKey == "Note" or metaKey == "Warning" or metaKey == "GUID" then
-                    section["Section Metadata"][metaKey] = metaValue
-                end
-            end
-        end
-        
-        -- Mark as processed
-        section["NeedsProcessing"] = false
-        section["Section Name"] = sectionName
-        
-        self:Debug("sync", "Updated section at index " .. sectionIndex .. " with processed data")
-        sectionFound = true
-        processedSection = section
+    -- Handle metadata carefully - create if it doesn't exist
+    if not TWRA_Assignments.data[sectionIndex]["Section Metadata"] then
+        TWRA_Assignments.data[sectionIndex]["Section Metadata"] = {}
     end
     
-    -- If section wasn't found at all, create it
-    if not sectionFound then
-        self:Debug("sync", "Section not found, creating new section: " .. sectionName)
-        
-        TWRA_Assignments = TWRA_Assignments or {}
-        TWRA_Assignments.data = TWRA_Assignments.data or {}
-        
-        -- Create new section with the decompressed data
-        decompressedData["Section Name"] = sectionName
-        decompressedData["Section Index"] = sectionIndex
-        decompressedData["NeedsProcessing"] = false
-        decompressedData["Section Metadata"] = decompressedData["Section Metadata"] or {
-            ["Note"] = {},
-            ["Warning"] = {},
-            ["GUID"] = {}
-        }
-        
-        -- Add to TWRA_Assignments.data
-        TWRA_Assignments.data[sectionIndex] = decompressedData
-        self:Debug("sync", "Created new section " .. sectionName .. " with processed data")
-        processedSection = decompressedData
+    -- First transfer any metadata from the decompressed data (if it exists)
+    if decompressedData["Section Metadata"] then
+        for key, value in pairs(decompressedData["Section Metadata"]) do
+            TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] = value
+        end
     end
+    
+    -- Then restore any existing critical metadata that might not be in the decompressed data
+    for key, value in pairs(existingMetadata) do
+        -- Critical metadata that must be preserved
+        if key == "GUID" or key == "Note" or key == "Warning" then
+            TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] = value
+            self:Debug("data", "Preserved existing " .. key .. " metadata for section " .. sectionName)
+        end
+        
+        -- For any other metadata fields, only copy if they don't exist in the decompressed data
+        if not TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] then
+            TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] = value
+            self:Debug("data", "Restored missing " .. key .. " metadata for section " .. sectionName)
+        end
+    end
+    
+    -- Ensure metadata arrays always exist
+    local criticalMetadata = {"Note", "Warning", "GUID", "Tank Columns", "Group Rows"}
+    for _, metaKey in ipairs(criticalMetadata) do
+        if not TWRA_Assignments.data[sectionIndex]["Section Metadata"][metaKey] then
+            TWRA_Assignments.data[sectionIndex]["Section Metadata"][metaKey] = {}
+            self:Debug("data", "Created empty " .. metaKey .. " metadata for section " .. sectionName)
+        end
+    end
+    
+    -- Log what metadata fields we have after processing
+    local metaKeys = ""
+    for key, _ in pairs(TWRA_Assignments.data[sectionIndex]["Section Metadata"]) do
+        metaKeys = metaKeys .. key .. ", "
+    end
+    self:Debug("data", "Final metadata keys: " .. metaKeys)
+    
+    -- Mark as processed
+    TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = false
+    TWRA_Assignments.data[sectionIndex]["Section Name"] = sectionName
+    
+    self:Debug("data", "Updated section at index " .. sectionIndex .. " with processed data")
     
     -- Process player-relevant info for this section
-    if self.ProcessPlayerInfo and processedSection then
+    if self.ProcessPlayerInfo then
         self:Debug("data", "Processing player-relevant info for section: " .. sectionName)
         
         local processSuccess, processError = pcall(function()
-            self:ProcessPlayerInfo(processedSection)
+            self:ProcessPlayerInfo(TWRA_Assignments.data[sectionIndex])
         end)
         
         if not processSuccess then
             self:Debug("error", "Error processing player info: " .. tostring(processError))
             -- Continue anyway, we've already updated the section data
         end
-    else
-        -- Fallback to processing all sections if something went wrong or old function is being used
-        self:Debug("data", "Falling back to processing player info for all sections")
-        if self.ProcessPlayerInfo then
-            local allSuccess, allError = pcall(function()
-                self:ProcessPlayerInfo()
-            end)
-            
-            if not allSuccess then
-                self:Debug("error", "Error processing all player info: " .. tostring(allError))
-                -- Continue anyway
+    end
+    
+    self:Debug("data", "Successfully processed section " .. sectionName)
+    return true
+end
+
+-- Function to process all sections data
+function TWRA:ProcessAllSectionsData(data, sender)
+    self:Debug("data", "Processing all sections data from " .. sender)
+    
+    -- Parse the data format: numSections;index1:len1:data1;index2:len2:data2;...
+    local parts = self:SplitString(data, ";")
+    local numSections = tonumber(parts[1])
+    
+    if not numSections then
+        self:Debug("error", "Invalid section count in bulk data")
+        return
+    end
+    
+    self:Debug("data", "Processing " .. numSections .. " sections")
+    
+    -- Process each section
+    local processedCount = 0
+    
+    for i = 2, table.getn(parts) do -- The # length operator is not available to us hence the table.getn approach
+        if parts[i] and parts[i] ~= "" then
+            local sectionParts = self:SplitString(parts[i], ":")
+            if table.getns(ectionParts) >= 3 then
+                local sectionIndex = tonumber(sectionParts[1])
+                local dataLength = tonumber(sectionParts[2])
+                local sectionData = sectionParts[3]
+                
+                if sectionIndex and dataLength and sectionData and string.len(sectionData) == dataLength then
+                    -- Process this section
+                    self:Debug("sync", "Processing section " .. sectionIndex .. " from bulk data")
+                    self:ProcessSectionData(sectionIndex)
+                    processedCount = processedCount + 1
+                else
+                    self:Debug("error", "Invalid section data format in bulk response")
+                end
             end
         end
     end
     
-    self:Debug("sync", "Successfully processed section " .. sectionName)
-    return true
+    self:Debug("sync", "Finished processing " .. processedCount .. " sections from bulk data")
+    
+    -- Notify user of completion
+    if processedCount > 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received and processed " .. 
+                                      processedCount .. " sections from " .. sender)
+    end
 end
 
 -- Updated GetPlayerRelevantRowsForSection to only include name and class matches (not group matches)
@@ -1011,6 +1091,9 @@ function TWRA:GetPlayerRelevantRowsForSection(section)
         return relevantRows
     end
     
+    -- Log player info for debugging
+    self:Debug("data", "Searching for rows relevant to player: " .. playerName, false, true)
+    
     -- Scan through rows looking for matches
     for rowIndex, rowData in ipairs(section["Section Rows"]) do
         local isRelevantRow = false
@@ -1020,10 +1103,14 @@ function TWRA:GetPlayerRelevantRowsForSection(section)
         if rowData[1] == "Note" or rowData[1] == "Warning" or rowData[1] == "GUID" then
             -- Skip these special rows
         else
-            -- Check each cell in the row for a match - SKIP column 2 (target column)
+            -- Check each cell in the row for a match - SKIP target column (column 2) if configured to do so
             for colIndex, cellValue in ipairs(rowData) do
-                -- Only process string values and skip the target column (column 2)
-                if colIndex ~= 2 and type(cellValue) == "string" and cellValue ~= "" then
+                -- Skip processing if not a string or empty
+                if type(cellValue) ~= "string" or cellValue == "" then
+                    -- Skip empty or non-string cells
+                elseif colIndex == 2 and self.IGNORE_TARGET_COLUMN_FOR_RELEVANCE then
+                    -- Skip target column if configured to ignore it
+                else
                     -- Direct player name match
                     if cellValue == playerName then
                         isRelevantRow = true
@@ -1052,6 +1139,7 @@ function TWRA:GetPlayerRelevantRowsForSection(section)
         end
     end
     
+    self:Debug("data", "Found " .. table.getn(relevantRows) .. " relevant rows for player: " .. playerName, false, true)
     return relevantRows
 end
 
@@ -1175,25 +1263,64 @@ function TWRA:GetAllGroupRowsForSection(section)
         return allGroupRows
     end
     
+    self:Debug("data", "Scanning for ANY group references in section: " .. (section["Section Name"] or "Unknown"), false, true)
+    
     -- Check each row for ANY group references
     for rowIdx, rowData in ipairs(section["Section Rows"]) do
         -- Skip special rows
         if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
-            -- Check each cell for group references, SKIP column 2 (target column)
+            local foundGroupRef = false
+            local matchedCell = ""
+            local matchedPattern = ""
+            local matchedColumn = 0
+            
+            -- Check each cell for group references, explicitly SKIP column 2 (target column)
             for colIndex, cellValue in ipairs(rowData) do
-                -- Skip target column (column 2)
+                -- Always skip target column (column 2) for group matching
                 if colIndex ~= 2 and type(cellValue) == "string" and cellValue ~= "" then
-                    -- Look for "Group" keyword
-                    if string.find(string.lower(cellValue), "group") then
-                        table.insert(allGroupRows, rowIdx)
-                        self:Debug("data", "Found group reference in row " .. rowIdx .. ", column " .. colIndex, false, true)
+                    -- Convert to lowercase for case-insensitive matching
+                    local lowerCell = string.lower(cellValue)
+                    
+                    -- Look for common group patterns
+                    if string.find(lowerCell, "group") or 
+                       string.find(lowerCell, "groups") or
+                       string.find(lowerCell, "gr%.") or     -- Gr.
+                       string.find(lowerCell, "gr ") or      -- Gr 
+                       string.find(lowerCell, "grp") then    -- Grp
+                        
+                        -- If we find any of these patterns, consider it a group reference
+                        foundGroupRef = true
+                        matchedCell = cellValue
+                        matchedColumn = colIndex
+                        
+                        -- Try to determine which pattern matched
+                        if string.find(lowerCell, "group") then
+                            matchedPattern = "group"
+                        elseif string.find(lowerCell, "gr%.") then
+                            matchedPattern = "gr."
+                        elseif string.find(lowerCell, "gr ") then
+                            matchedPattern = "gr"
+                        elseif string.find(lowerCell, "grp") then
+                            matchedPattern = "grp"
+                        end
+                        
+                        -- Once we've found a match, no need to check more cells in this row
                         break
                     end
                 end
             end
+            
+            -- Add to our list if we found a group reference
+            if foundGroupRef then
+                table.insert(allGroupRows, rowIdx)
+                self:Debug("data", "Found group reference in row " .. rowIdx .. 
+                         " column " .. matchedColumn ..
+                         " matching '" .. matchedPattern .. "': '" .. matchedCell .. "'", false, true)
+            end
         end
     end
     
+    self:Debug("data", "Found " .. table.getn(allGroupRows) .. " rows with group references", false, true)
     return allGroupRows
 end
 
@@ -1259,4 +1386,256 @@ function TWRA:GetGroupRowsForSection(section)
     end
     
     return groupRows
+end
+
+-- Check if a cell contains the player's name or class group
+function TWRA:IsCellContainingPlayerNameOrClass(cellText, isTargetColumn)
+    -- Skip empty cells or non-string cells
+    if not cellText or type(cellText) ~= "string" or cellText == "" then
+        return false
+    end
+    
+    -- Get player info
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    playerClass = playerClass and string.upper(playerClass) or nil
+    
+    -- Direct player name match
+    if cellText == playerName then
+        self:Debug("data", "Cell contains direct player name match: " .. cellText, false, true)
+        return true
+    end
+    
+    -- Class group match (e.g. "Warriors" for a Warrior)
+    if not isTargetColumn and playerClass and self.CLASS_GROUP_NAMES and 
+       self.CLASS_GROUP_NAMES[cellText] and 
+       string.upper(self.CLASS_GROUP_NAMES[cellText]) == playerClass then
+        self:Debug("data", "Cell contains class group match: " .. cellText, false, true)
+        return true
+    end
+    
+    -- No match found
+    return false
+end
+
+-- Check if a cell contains the player's current group
+function TWRA:IsCellContainingPlayerGroup(cellText)
+    -- Skip empty cells or non-string cells
+    if not cellText or type(cellText) ~= "string" or cellText == "" then
+        return false
+    end
+    
+    -- Find player's group number (1-8)
+    local playerGroup = nil
+    for i = 1, GetNumRaidMembers() do
+        local name, _, subgroup = GetRaidRosterInfo(i)
+        if name == UnitName("player") then
+            playerGroup = subgroup
+            break
+        end
+    end
+    
+    -- If not in a raid or no group found, return false
+    if not playerGroup then
+        return false
+    end
+    
+    -- Look for "Group X" format
+    if string.find(string.lower(cellText), "group%s*" .. playerGroup) then
+        self:Debug("data", "Cell contains player's group: " .. cellText, false, true)
+        return true
+    end
+    
+    -- Look for numeric references to the group
+    if string.find(cellText, "Group") then
+        local pos = 1
+        local str = cellText
+        while pos <= string.len(str) do
+            local digitStart, digitEnd = string.find(str, "%d+", pos)
+            if not digitStart then break end
+            
+            local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
+            if groupNum and groupNum == playerGroup then
+                self:Debug("data", "Cell contains player's group number: " .. cellText, false, true)
+                return true
+            end
+            pos = digitEnd + 1
+        end
+    end
+    
+    -- No match found
+    return false
+end
+
+-- UpdateGroupInfo - Called when player's group changes to update relevant information
+function TWRA:UpdateGroupInfo()
+    self:Debug("data", "Updating player group information for all sections")
+    
+    -- Get player's current group
+    local playerName = UnitName("player")
+    local playerGroup = nil
+    for i = 1, GetNumRaidMembers() do
+        local name, _, subgroup = GetRaidRosterInfo(i)
+        if name == playerName then
+            playerGroup = subgroup
+            break
+        end
+    end
+    
+    if playerGroup then
+        self:Debug("data", "Player is in group " .. playerGroup)
+    else
+        self:Debug("data", "Player is not in a raid group")
+    end
+    
+    -- Only update dynamic player info (based on group), no need to update static player info
+    self:ProcessDynamicPlayerInfo()
+    
+    -- Update UI if a section is currently active
+    if self.navigation and self.navigation.currentIndex and 
+       self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
+        local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+        
+        -- Refresh UI if needed
+        if self.mainFrame and self.mainFrame:IsShown() and
+           self.currentView == "main" and self.FilterAndDisplayHandler then
+            self:FilterAndDisplayHandler(currentSection)
+            self:Debug("ui", "Refreshed UI for current section after group change")
+        end
+        
+        -- Refresh OSD if it's showing
+        if self.OSD and self.OSD.isVisible then
+            self:UpdateOSDContent()
+            self:Debug("osd", "Refreshed OSD after group change")
+        end
+    end
+    
+    return true
+end
+
+-- Monitor player's raid group changes
+function TWRA:MonitorGroupChanges()
+    self:Debug("data", "Setting up group change monitoring")
+    
+    -- Set up event handler to detect when player joins/leaves a group
+    if not self.groupMonitorFrame then
+        self.groupMonitorFrame = CreateFrame("Frame")
+        
+        -- Track the last known group
+        self.lastKnownGroup = nil
+        
+        -- Create function to check if group has changed
+        self.CheckGroupChanged = function()
+            -- Get current group
+            local playerName = UnitName("player")
+            local currentGroup = nil
+            
+            for i = 1, GetNumRaidMembers() do
+                local name, _, subgroup = GetRaidRosterInfo(i)
+                if name == playerName then
+                    currentGroup = subgroup
+                    break
+                end
+            end
+            
+            -- If group has changed, update info
+            if self.lastKnownGroup ~= currentGroup then
+                self:Debug("data", "Player's group changed from " .. 
+                          (self.lastKnownGroup or "none") .. " to " .. 
+                          (currentGroup or "none"))
+                
+                -- Update last known group
+                self.lastKnownGroup = currentGroup
+                
+                -- Update group-related information
+                self:UpdateGroupInfo()
+            end
+        end
+        
+        -- Handle RAID_ROSTER_UPDATE event
+        self.groupMonitorFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+        self.groupMonitorFrame:RegisterEvent("GROUP_ROSTER_UPDATE") -- For compatibility with newer clients
+        self.groupMonitorFrame:RegisterEvent("PARTY_MEMBERS_CHANGED") -- For classic compatibility
+        
+        self.groupMonitorFrame:SetScript("OnEvent", function()
+            -- Wait a short delay to ensure all roster changes have processed
+            self:ScheduleTimer(self.CheckGroupChanged, 0.5)
+        end)
+        
+        -- Initialize last known group
+        self:ScheduleTimer(function()
+            local playerName = UnitName("player")
+            for i = 1, GetNumRaidMembers() do
+                local name, _, subgroup = GetRaidRosterInfo(i)
+                if name == playerName then
+                    self.lastKnownGroup = subgroup
+                    self:Debug("data", "Initial group: " .. (self.lastKnownGroup or "none"))
+                    break
+                end
+            end
+        end, 1)
+        
+        self:Debug("data", "Group monitoring activated")
+    end
+end
+
+-- Initialize group monitoring during addon startup
+function TWRA:InitializeGroupMonitoring()
+    self:Debug("data", "Setting up group monitoring during initialization")
+    self:MonitorGroupChanges()
+end
+
+-- Function to ensure group rows are identified in all sections
+function TWRA:EnsureGroupRowsIdentified()
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("error", "EnsureGroupRowsIdentified: No assignments data to process")
+        return false
+    end
+    
+    self:Debug("data", "Ensuring group rows are identified in all sections")
+    
+    -- Process each section
+    for sectionIdx, section in pairs(TWRA_Assignments.data) do
+        -- Skip if not a table or doesn't have required keys
+        if type(section) == "table" and section["Section Rows"] then
+            -- Initialize Section Metadata if not present
+            section["Section Metadata"] = section["Section Metadata"] or {}
+            local metadata = section["Section Metadata"]
+            
+            -- Only scan for group rows if they don't already exist
+            if not metadata["Group Rows"] or table.getn(metadata["Group Rows"]) == 0 then
+                metadata["Group Rows"] = self:GetAllGroupRowsForSection(section)
+                local sectionName = section["Section Name"] or tostring(sectionIdx)
+                
+                self:Debug("data", "Section '" .. sectionName .. "': Identified " .. 
+                          table.getn(metadata["Group Rows"]) .. " group rows during final processing")
+                
+                -- Print the actual group rows found for debugging
+                local groupRowsList = ""
+                for i, rowIndex in ipairs(metadata["Group Rows"]) do
+                    if rowIndex > 0 and rowIndex <= table.getn(section["Section Rows"]) then
+                        local rowData = section["Section Rows"][rowIndex]
+                        local rowContent = ""
+                        -- Get a summary of the row content
+                        if type(rowData) == "table" then
+                            for j = 1, math.min(5, table.getn(rowData)) do
+                                if rowData[j] and rowData[j] ~= "" then
+                                    rowContent = rowContent .. "[" .. j .. "]=" .. rowData[j] .. " "
+                                end
+                            end
+                        end
+                        groupRowsList = groupRowsList .. rowIndex .. "(" .. rowContent .. "), "
+                    else
+                        groupRowsList = groupRowsList .. rowIndex .. "(invalid), "
+                    end
+                end
+                
+                if table.getn(metadata["Group Rows"]) > 0 then
+                    self:Debug("data", "Group rows: " .. groupRowsList, false, true)
+                end
+            end
+        end
+    end
+    
+    return true
 end

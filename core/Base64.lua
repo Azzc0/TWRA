@@ -340,7 +340,7 @@ function TWRA:ExpandAbbreviations(data)
                                 -- Try exact match first
                                 if type(value) == "string" and self.ABBREVIATION_MAPPINGS[value] then
                                     row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
-                                    self:Debug("data", "Expanded row abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                    self:Debug("data", "Expanded row abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value], false, true)
                                 end
                                 -- For icon column (usually index 1), also try special handling
                                 if colIndex == 1 and type(value) == "string" then
@@ -348,11 +348,11 @@ function TWRA:ExpandAbbreviations(data)
                                     local num = tonumber(value)
                                     if num and num >= 1 and num <= 9 and self.ABBREVIATION_MAPPINGS[value] then
                                         row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
-                                        self:Debug("data", "Expanded numeric icon: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                        self:Debug("data", "Expanded numeric icon: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value], false, true)
                                     -- Handle symbol icons (!, ?)
                                     elseif (value == "!" or value == "?") and self.ABBREVIATION_MAPPINGS[value] then
                                         row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
-                                        self:Debug("data", "Expanded symbol icon: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                        self:Debug("data", "Expanded symbol icon: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value], false, true)
                                     end
                                 end
                             end
@@ -381,7 +381,7 @@ function TWRA:ExpandAbbreviations(data)
                     for i, headerValue in pairs(section["sh"]) do
                         if type(headerValue) == "string" and self.ABBREVIATION_MAPPINGS[headerValue] then
                             section["sh"][i] = self.ABBREVIATION_MAPPINGS[headerValue]
-                            self:Debug("data", "Expanded short header abbreviation: " .. headerValue .. " -> " .. self.ABBREVIATION_MAPPINGS[headerValue])
+                            self:Debug("data", "Expanded short header abbreviation: " .. headerValue .. " -> " .. self.ABBREVIATION_MAPPINGS[headerValue], false, true)
                         end
                     end
                 end
@@ -393,7 +393,7 @@ function TWRA:ExpandAbbreviations(data)
                             for colIndex, value in pairs(row) do
                                 if type(value) == "string" and self.ABBREVIATION_MAPPINGS[value] then
                                     row[colIndex] = self.ABBREVIATION_MAPPINGS[value]
-                                    self:Debug("data", "Expanded short row abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value])
+                                    self:Debug("data", "Expanded short row abbreviation: " .. value .. " -> " .. self.ABBREVIATION_MAPPINGS[value], false, true)
                                 end
                             end
                         end

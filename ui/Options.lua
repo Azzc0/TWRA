@@ -897,12 +897,58 @@ function TWRA:CreateOptionsInMainFrame()
             if newFormatResult then
                 importBox:SetText("")
                 importBox:ClearFocus()
+                
+                -- Process player-relevant information at the very end for new format
+                if self.ProcessPlayerInfo then
+                    self:Debug("data", "Processing comprehensive player info after import")
+                    
+                    -- First ensure player table is up to date
+                    if self.UpdatePlayerTable then
+                        self:UpdatePlayerTable()
+                    end
+                    
+                    -- First ensure all group rows are identified
+                    if self.EnsureGroupRowsIdentified then
+                        self:EnsureGroupRowsIdentified()
+                    end
+                    
+                    -- Then process ALL player info (static and dynamic)
+                    local success, errorMsg = pcall(function()
+                        self:ProcessPlayerInfo()
+                    end)
+                    
+                    if success then
+                        self:Debug("data", "Player info processed successfully")
+                    else
+                        self:Debug("error", "Error processing player info: " .. tostring(errorMsg))
+                    end
+                    
+                    -- Update OSD if it's showing
+                    if self.OSD and self.OSD:IsVisible() and self.UpdateOSDContent then
+                        self:UpdateOSDContent()
+                    end
+                end
+                
                 return
             end
         end
         
+        -- Fallback to old format processing...
+        
+        -- Import the data using Base64 decode
+        local decodedData = nil
+        if self.ImportString then
+            decodedData = self:ImportString(importText)
+        end
+        
         -- Save current section information before import
         local currentSectionName = nil
+        local currentSectionIndex = nil
+        if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+            currentSectionIndex = self.navigation.currentIndex
+            currentSectionName = self.navigation.handlers[currentSectionIndex]
+        end
+        
         if not decodedData then
             self:Debug("error", "Failed to decode data")
             return
@@ -959,10 +1005,35 @@ function TWRA:CreateOptionsInMainFrame()
             end
         end
         
-        -- Process player-relevant information for this newly imported data
+        -- Process player-relevant information for this newly imported data AFTER navigation is rebuilt
         if self.ProcessPlayerInfo then
-            self:Debug("data", "Processing player-relevant information for imported data")
-            self:ProcessPlayerInfo()
+            self:Debug("data", "Processing comprehensive player info after import")
+            
+            -- First ensure player table is up to date
+            if self.UpdatePlayerTable then
+                self:UpdatePlayerTable()
+            end
+            
+            -- First ensure all group rows are identified
+            if self.EnsureGroupRowsIdentified then
+                self:EnsureGroupRowsIdentified()
+            end
+            
+            -- Then process ALL player info (static and dynamic)
+            local success, errorMsg = pcall(function()
+                self:ProcessPlayerInfo()
+            end)
+            
+            if success then
+                self:Debug("data", "Player info processed successfully")
+            else
+                self:Debug("error", "Error processing player info: " .. tostring(errorMsg))
+            end
+            
+            -- Update OSD if it's showing
+            if self.OSD and self.OSD:IsVisible() and self.UpdateOSDContent then
+                self:UpdateOSDContent()
+            end
         end
         
         -- Broadcast minimal announcement to alert other clients about the new import

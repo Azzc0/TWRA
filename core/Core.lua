@@ -127,6 +127,14 @@ function TWRA:OnLoad(eventFrame)
         self:Debug("ui", "Dropdowns initialized")
     end
     
+    -- Initialize group monitoring system
+    if self.InitializeGroupMonitoring then
+        self:Debug("data", "Initializing group monitoring")
+        self:InitializeGroupMonitoring()
+    else
+        self:Debug("warning", "InitializeGroupMonitoring function not found, group monitoring not initialized")
+    end
+    
     self:Debug("general", "Addon loaded. Type /twra for options.")
 
     -- Create minimap button during load

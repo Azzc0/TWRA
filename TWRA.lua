@@ -1212,8 +1212,6 @@ function TWRA:ClearData()
     end
 end
 
-
-
 -- Handle CHAT_MSG_ADDON events
 function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
     self:Debug("sync", "OnChatMsgAddon called - prefix: " .. prefix .. ", from: " .. sender)
@@ -1285,7 +1283,7 @@ end
 
 -- Handle group composition changes
 function TWRA:OnGroupChanged()
-    self:Debug("general", "Group composition changed, updating player table")
+    self:Debug("general", "Group composition changed, updating player table and dynamic info")
     
     -- Update the player table with current group information
     -- UpdatePlayerTable now checks TWRA_Assignments.isExample automatically
@@ -1293,6 +1291,28 @@ function TWRA:OnGroupChanged()
         self:Debug("general", "Player table updated successfully")
     end
     
-    -- Additional group change handling can go here
-    -- This is where existing group change code would be
+    -- Process dynamic player info to update group-based relevance
+    if TWRA_Assignments and TWRA_Assignments.data then
+        -- First ensure all group rows are identified
+        self:EnsureGroupRowsIdentified()
+        
+        -- Then process dynamic player info (group-based relevance)
+        if self.ProcessDynamicPlayerInfo then
+            local success, errorMsg = pcall(function()
+                self:ProcessDynamicPlayerInfo()
+            end)
+            
+            if success then
+                self:Debug("general", "Dynamic player info updated successfully after group change")
+            else
+                self:Debug("error", "Error updating dynamic player info: " .. tostring(errorMsg))
+            end
+        end
+        
+        -- Update OSD if it's visible
+        if self.OSD and self.OSD:IsVisible() and self.UpdateOSDContent then
+            self:UpdateOSDContent()
+            self:Debug("osd", "Updated OSD content after group change")
+        end
+    end
 end

@@ -412,6 +412,139 @@ function TWRA:ClearData()
     return true
 end
 
+-- SaveAssignments - Save assignments to SavedVariables for sharing and persistence
+-- Now with proper callback system for pre/post-save operations
+function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
+    if not data then
+        self:Debug("error", "SaveAssignments called with nil data")
+        return
+    end
+    
+    local currentSection = nil
+    if self.navigation and self.navigation.currentIndex then
+        currentSection = self.navigation.currentIndex
+    end
+    self:Debug("nav", "SaveAssignments - Current section before update: " .. (currentSection or "unknown"))
+    
+    -- Clear current data first to avoid duplications
+    self:Debug("data", "Clearing current data")
+    if not self:ClearData() then
+        self:Debug("error", "Failed to clear data before save")
+    else
+        self:Debug("data", "Data cleared successfully")
+    end
+    
+    -- Check if we're dealing with new format structure (with data.data)
+    if data.data then
+        self:Debug("data", "Detected new format structure in SaveAssignments")
+        
+        -- Make sure all rows have entries for all columns
+        if self.EnsureCompleteRows then
+            data = self:EnsureCompleteRows(data)
+            self:Debug("data", "Applied EnsureCompleteRows during SaveAssignments for new format")
+        end
+        
+        -- Process special rows like Note, Warning, GUID and move them to section metadata
+        self:Debug("data", "Processing special rows to move them to section metadata")
+        if self.CaptureSpecialRows then
+            data = self:CaptureSpecialRows(data)
+            self:Debug("data", "Applied CaptureSpecialRows to extract special rows as metadata")
+        end
+        
+        -- ENSURE GROUP ROWS IDENTIFICATION: Critical step to fix missing group rows
+        if self.EnsureGroupRowsIdentified then
+            -- First, we need to store the data temporarily so EnsureGroupRowsIdentified can find it
+            TWRA_Assignments = TWRA_Assignments or {}
+            TWRA_Assignments.data = data.data
+            TWRA_Assignments.timestamp = timestamp or time()
+            TWRA_Assignments.version = 2
+            TWRA_Assignments.source = sourceString
+            
+            -- Now identify all group rows in each section
+            self:EnsureGroupRowsIdentified()
+            self:Debug("data", "Ensured group rows are identified in all sections during SaveAssignments")
+            
+            -- Get the data back after group rows identification
+            data.data = TWRA_Assignments.data
+        end
+    end
+    
+    -- Update the saved variables
+    TWRA_Assignments = TWRA_Assignments or {}
+    if data.data then
+        -- New format with structured data
+        TWRA_Assignments.data = data.data
+        TWRA_Assignments.version = 2
+    else
+        -- Legacy format with flattened data array
+        TWRA_Assignments.data = data
+        TWRA_Assignments.version = 1
+    end
+    
+    -- Store additional metadata
+    TWRA_Assignments.timestamp = timestamp or time()
+    TWRA_Assignments.source = sourceString
+    
+    -- Set current section to 1 if it doesn't already exist
+    if not self.navigation then
+        self.navigation = {}
+    end
+    if not self.navigation.currentIndex or self.navigation.currentIndex < 1 then
+        self.navigation.currentIndex = 1
+    end
+    
+    -- Generate compressed data for sync if new format
+    if data.data then
+        self:Debug("data", "Generating segmented compressed data for future sync operations")
+        if self.StoreSegmentedData then
+            self:StoreSegmentedData()
+            self:Debug("data", "Generated and stored segmented compressed data successfully")
+        else
+            self:Debug("error", "StoreSegmentedData not available, compressed data not stored")
+        end
+        self:Debug("data", "Assigned new format data directly to SavedVariables")
+    else
+        self:Debug("data", "Assigned legacy format data directly to SavedVariables")
+    end
+    
+    -- Announce save to chat if enabled and not suppressed
+    local announceMessage = "Raid assignments " .. (sourceString or "unknown source") .. 
+                          " saved."
+    if self.db and self.db.char and not self.db.char.quietmode and not noAnnounce then
+        -- Check if player is in a party/raid before announcing
+        local inRaid = GetNumRaidMembers() > 0
+        local inParty = GetNumPartyMembers() > 0
+        
+        if inRaid or inParty then
+            self:Debug("general", "Import detected while in party/raid - suppressing announcement")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r " .. announceMessage)
+        end
+    else
+        self:Debug("general", "Import detected while in party/raid - suppressing announcement")
+    end
+    
+    -- Trigger events for custom handlers
+    self:TriggerEvent("ASSIGNMENTS_SAVED", data)
+    
+    -- Rebuild navigation after save
+    if self.RebuildNavigation then
+        self:Debug("nav", "Rebuilding navigation after import")
+        self:RebuildNavigation()
+    end
+    
+    -- Navigate to first section if needed
+    if self.navigation and self.navigation.currentIndex and self.navigation.currentIndex < 1 then
+        if self.NavigateToSection then
+            self:Debug("nav", "Navigating to first section after import")
+            self:NavigateToSection(1)
+        end
+    end
+    
+    -- Return timestamp for calling functions
+    return timestamp or time()
+end
+
 -- Process imported data to handle shortened keys and special characters
 function TWRA:ProcessImportedData(data)
     if not data then return data end
