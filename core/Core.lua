@@ -114,6 +114,22 @@ function TWRA:OnLoad(eventFrame)
         self:InitDebug()
     end
     
+    -- Initialize Performance monitoring system
+    if self.InitializePerformance then
+        self:Debug("perf", "Initializing performance monitoring system")
+        if self:InitializePerformance() then
+            self:Debug("perf", "Performance monitoring system initialized successfully")
+            -- Hook critical functions during initialization
+            if self.Performance and not self.Performance.hooked and self.HookCriticalFunctions then
+                self:HookCriticalFunctions()
+            end
+        else
+            self:Debug("error", "Failed to initialize performance monitoring system")
+        end
+    else
+        self:Debug("error", "InitializePerformance function not found")
+    end
+    
     -- Ensure all needed namespaces exist
     TWRA.UI = TWRA.UI or {}
     TWRA.SYNC = TWRA.SYNC or {
@@ -299,7 +315,8 @@ frame:SetScript("OnEvent", function()
 end)
 frame:SetScript("OnLoad", function() TWRA:OnLoad(frame) end)
 
--- Modify the slash command handler to support show/hide commands
+-- TWRA Performance Monitoring
+-- Modify the slash command handler to support performance monitoring commands
 SLASH_TWRA1 = "/twra"
 SlashCmdList["TWRA"] = function(msg)
     -- Basic slash command handling
@@ -311,6 +328,23 @@ SlashCmdList["TWRA"] = function(msg)
     for word in string.gfind(msg, "%S+") do
         args[i] = string.lower(word)
         i = i + 1
+    end
+    
+    -- Check for performance command first
+    if args[1] == "perf" then
+        -- Remove the first argument (perf) and pass the rest to HandlePerfCommand
+        local perfArgs = {}
+        for j = 2, i-1 do
+            perfArgs[j-1] = args[j]
+        end
+        
+        -- Call the performance command handler
+        if TWRA.HandlePerfCommand then
+            TWRA:HandlePerfCommand(perfArgs)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Performance monitoring system not initialized")
+        end
+        return
     end
     
     -- Check for debug command
@@ -403,12 +437,14 @@ SlashCmdList["TWRA"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /twra show - Show main window")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra hide - Hide main window")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra osd - Toggle on-screen display")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra perf - Performance monitoring commands")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra options - Open options panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra resetview - Reset to main view")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra next - Go to next section")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra prev - Go to previous section")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra # - Go to specific section number")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Access debug commands")
+        DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra perf' for performance monitoring options")
         DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra debug' for detailed debug options")
     end
 end

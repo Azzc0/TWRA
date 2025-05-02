@@ -221,6 +221,14 @@ function TWRA:Initialize()
                 addon:InitializeDebug()
             end
             
+            -- Initialize Performance monitoring
+            if addon.InitializePerformance then
+                addon:Debug("general", "Initializing performance monitoring system")
+                addon:InitializePerformance()
+            else
+                addon:Debug("error", "InitializePerformance function not found")
+            end
+            
             -- Initialize Sync system
             if addon.InitializeSync then
                 addon:Debug("general", "Initializing sync system")
@@ -862,6 +870,19 @@ SlashCmdList["TWRA"] = function(msg)
         else
             DEFAULT_CHAT_FRAME:AddMessage("TWRA: Unknown debug category: " .. arg)
             TWRA:ListDebugCategories()
+        end
+    elseif command == "perf" or command == "performance" then
+        -- Handle performance commands by splitting remaining arguments
+        local args = {}
+        for word in string.gmatch(arg, "%S+") do
+            table.insert(args, word)
+        end
+        
+        -- Call the performance command handler if it exists
+        if TWRA.HandlePerfCommand then
+            TWRA:HandlePerfCommand(args)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Performance monitoring system not initialized")
         end
     else
         -- Default behavior - toggle main frame

@@ -1,6 +1,8 @@
 -- Sync functionality for TWRA
 TWRA = TWRA or {}
 
+-- Can a CHAT_MSG_ADDON have a lot of argument? I see that we're sending TWRA SECREQ:TIMESTAMP:INDEX RAID Clickyou
+
 -- Setup initial SYNC module properties
 TWRA.SYNC = TWRA.SYNC or {}
 TWRA.SYNC.PREFIX = "TWRA" -- Addon message prefix

@@ -1,6 +1,6 @@
 -- TWRA AutoNavigate integration for SuperWoW
 TWRA = TWRA or {}
-
+-- Is RAID_TARGET_UPDATE  an event we can use instead of the timer?
 -- Store information about mob-to-section mapping
 TWRA.AUTONAVIGATE = {
     enabled = false,          -- Feature toggle
