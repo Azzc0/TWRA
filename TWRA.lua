@@ -1287,32 +1287,20 @@ function TWRA:OnGroupChanged()
     
     -- Update the player table with current group information
     -- UpdatePlayerTable now checks TWRA_Assignments.isExample automatically
-    if self:UpdatePlayerTable() then
-        self:Debug("general", "Player table updated successfully")
-    end
-    
-    -- Process dynamic player info to update group-based relevance
-    if TWRA_Assignments and TWRA_Assignments.data then
-        -- First ensure all group rows are identified
-        self:EnsureGroupRowsIdentified()
-        
-        -- Then process dynamic player info (group-based relevance)
-        if self.ProcessDynamicPlayerInfo then
-            local success, errorMsg = pcall(function()
-                self:ProcessDynamicPlayerInfo()
-            end)
-            
-            if success then
-                self:Debug("general", "Dynamic player info updated successfully after group change")
-            else
-                self:Debug("error", "Error updating dynamic player info: " .. tostring(errorMsg))
+    self:UpdatePlayerTable()
+    self:RefreshPlayerInfo()
+    -- Update UI if main frame exists and is shown
+    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+        -- Update main frame content
+        if previousIndex ~= index or source == "reload" then
+            if self.FilterAndDisplayHandler then
+                self:FilterAndDisplayHandler(sectionName)
+                self:Debug("nav", "Updated main frame content for section: " .. sectionName)
+            elseif self.DisplayCurrentSection then
+                self:DisplayCurrentSection()
+                self:Debug("nav", "Updated main frame content using DisplayCurrentSection for section: " .. sectionName)
             end
         end
-        
-        -- Update OSD if it's visible
-        if self.OSD and self.OSD:IsVisible() and self.UpdateOSDContent then
-            self:UpdateOSDContent()
-            self:Debug("osd", "Updated OSD content after group change")
-        end
     end
+    TWRA:UpdateOSDContent(TWRA_Assignments.currentSectionName, TWRA_Assignments.currentSection)
 end
