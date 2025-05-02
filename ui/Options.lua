@@ -1006,22 +1006,17 @@ function TWRA:CreateOptionsInMainFrame()
         end
         
         -- Process player-relevant information for this newly imported data AFTER navigation is rebuilt
-        if self.ProcessPlayerInfo then
+        if self.UpdatePlayerInfo then 
             self:Debug("data", "Processing comprehensive player info after import")
             
             -- First ensure player table is up to date
             if self.UpdatePlayerTable then
                 self:UpdatePlayerTable()
             end
-            
-            -- First ensure all group rows are identified
-            if self.EnsureGroupRowsIdentified then
-                self:EnsureGroupRowsIdentified()
-            end
-            
+                        
             -- Then process ALL player info (static and dynamic)
             local success, errorMsg = pcall(function()
-                self:ProcessPlayerInfo()
+                self:UpdatePlayerInfo()
             end)
             
             if success then

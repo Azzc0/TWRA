@@ -165,10 +165,20 @@ function TWRA:ProcessStaticPlayerInfo(section)
     -- Get player info that we'll need for processing
     local playerName = UnitName("player")
     local _, playerClass = UnitClass("player")
-    playerClass = playerClass and string.upper(playerClass) or nil
+    -- Convert to player class group name (e.g., "WARRIOR" to "Warriors")
+    local playerClassGroup = nil
+    
+    -- Find the class group name for the player's class
+    for groupName, className in pairs(self.CLASS_GROUP_NAMES) do
+        if className == playerClass then
+            playerClassGroup = groupName
+            break
+        end
+    end
     
     self:Debug("data", "Static player info: " .. playerName .. 
-              ", class: " .. (playerClass or "unknown"))
+              ", class: " .. (playerClass or "unknown") .. 
+              ", class group: " .. (playerClassGroup or "unknown"))
     
     -- Skip if we don't have saved data
     if not TWRA_Assignments or not TWRA_Assignments.data then
@@ -181,14 +191,14 @@ function TWRA:ProcessStaticPlayerInfo(section)
     
     -- If a specific section was provided, just process that one
     if section and type(section) == "table" and section["Section Name"] then
-        self:ProcessStaticPlayerInfoForSection(section)
+        self:ProcessStaticPlayerInfoForSection(section, playerName, playerClass, playerClassGroup)
         sectionsProcessed = 1
     else
         -- Process all sections
         for _, sectionData in pairs(TWRA_Assignments.data) do
             -- We're only working with table sections (new format)
             if type(sectionData) == "table" and sectionData["Section Name"] then
-                self:ProcessStaticPlayerInfoForSection(sectionData)
+                self:ProcessStaticPlayerInfoForSection(sectionData, playerName, playerClass, playerClassGroup)
                 sectionsProcessed = sectionsProcessed + 1
             end
         end
@@ -199,56 +209,69 @@ function TWRA:ProcessStaticPlayerInfo(section)
 end
 
 -- Helper function to process static player info for a specific section
-function TWRA:ProcessStaticPlayerInfoForSection(section)
+function TWRA:ProcessStaticPlayerInfoForSection(section, playerName, playerClass, playerClassGroup)
     local sectionName = section["Section Name"]
     
     -- Ensure Section Player Info exists
     section["Section Player Info"] = section["Section Player Info"] or {}
     
-    -- Ensure Section Metadata exists, but no need to recreate it
-    -- since it's already processed during import in Base64.lua
+    -- Ensure Section Metadata exists
     section["Section Metadata"] = section["Section Metadata"] or {}
     
-    -- Access the metadata that was created during import
+    -- Access the metadata
     local metadata = section["Section Metadata"]
     local playerInfo = section["Section Player Info"]
     
-    -- Get tank columns from metadata if they exist, otherwise find them
-    metadata["Tank Columns"] = metadata["Tank Columns"] or self:FindTankRoleColumns(section)
-    local tanksCount = table.getn(metadata["Tank Columns"])
+    -- Get tank columns from metadata - no need to find them again
+    -- They should already be available in the metadata
     
-    -- Generate list of tank indices for debugging
-    local tanksList = ""
-    for i, tankIndex in ipairs(metadata["Tank Columns"]) do
-        tanksList = tanksList .. tankIndex
-        if i < tanksCount then
-            tanksList = tanksList .. ", "
+    -- Find rows relevant to the player by name or class group
+    local relevantRows = {}
+    
+    -- Scan each row in the section
+    if section["Section Rows"] then
+        for rowIndex, rowData in ipairs(section["Section Rows"]) do
+            if type(rowData) == "table" then
+                -- Skip special rows
+                if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
+                    local isRelevant = false
+                    
+                    -- Check each cell for player name or class group match
+                    -- Skip first two columns (icon and target) for both matching types
+                    for colIndex = 3, table.getn(rowData) do
+                        local cellValue = rowData[colIndex]
+                        -- Only process valid string cells
+                        if type(cellValue) == "string" and cellValue ~= "" then
+                            -- Check direct player name match or class group match in the same pass
+                            if cellValue == playerName or (playerClassGroup and cellValue == playerClassGroup) then
+                                local matchType = cellValue == playerName and "direct name match" or "class group match"
+                                isRelevant = true
+                                self:Debug("data", "Row " .. rowIndex .. " is relevant: " .. matchType .. " in column " .. colIndex, false, true)
+                                break
+                            end
+                        end
+                    end
+                    
+                    -- Add row to relevant rows if it matches
+                    if isRelevant then
+                        table.insert(relevantRows, rowIndex)
+                    end
+                end
+            end
         end
     end
     
-    if tanksCount > 0 then
-        self:Debug("data", "Section '" .. sectionName .. "': Found " .. tanksCount .. 
-                  " tank columns: [" .. tanksList .. "]", false, true)
-    end
+    -- Store the relevant rows in section's player info
+    playerInfo["Relevant Rows"] = relevantRows
     
-    -- Find relevant rows by player name or class
-    playerInfo["Relevant Rows"] = self:GetPlayerRelevantRowsForSection(section)
-    local relevantCount = table.getn(playerInfo["Relevant Rows"])
-    
-    -- Debug relevant rows for this section with detail flag
-    local rowsList = ""
-    for i, rowIndex in ipairs(playerInfo["Relevant Rows"]) do
-        rowsList = rowsList .. rowIndex
-        if i < table.getn(playerInfo["Relevant Rows"]) then
-            rowsList = rowsList .. ", "
-        end
-    end
-    
-    self:Debug("data", "Section '" .. sectionName .. "': Found " .. relevantCount .. 
-              " relevant rows: [" .. rowsList .. "]", false, true)
+    -- Log the number of relevant rows found
+    self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
+              table.getn(relevantRows) .. " rows relevant to player " .. playerName)
     
     -- Generate OSD info for static player assignments
-    playerInfo["OSD Assignments"] = self:GenerateOSDInfoForSection(section, playerInfo["Relevant Rows"], false)
+    playerInfo["OSD Assignments"] = self:GenerateOSDInfoForSection(section, relevantRows)
+    
+    return true
 end
 
 -- Process dynamic player information that changes when group composition changes
@@ -271,7 +294,7 @@ function TWRA:ProcessDynamicPlayerInfo(section)
         end
     end
     
-    self:Debug("data", "Dynamic player info: group: " .. (playerGroup or "none"))
+    self:Debug("data", "Dynamic player info: player name: " .. playerName .. ", group: " .. (playerGroup or "none"))
     
     -- Skip if we don't have saved data
     if not TWRA_Assignments or not TWRA_Assignments.data then
@@ -284,14 +307,14 @@ function TWRA:ProcessDynamicPlayerInfo(section)
     
     -- If a specific section was provided, just process that one
     if section and type(section) == "table" and section["Section Name"] then
-        self:ProcessDynamicPlayerInfoForSection(section)
+        self:ProcessDynamicPlayerInfoForSection(section, playerName, playerGroup)
         sectionsProcessed = 1
     else
         -- Process all sections
         for _, sectionData in pairs(TWRA_Assignments.data) do
             -- We're only working with table sections (new format)
             if type(sectionData) == "table" and sectionData["Section Name"] then
-                self:ProcessDynamicPlayerInfoForSection(sectionData)
+                self:ProcessDynamicPlayerInfoForSection(sectionData, playerName, playerGroup)
                 sectionsProcessed = sectionsProcessed + 1
             end
         end
@@ -302,7 +325,7 @@ function TWRA:ProcessDynamicPlayerInfo(section)
 end
 
 -- Helper function to process dynamic player info for a specific section
-function TWRA:ProcessDynamicPlayerInfoForSection(section)
+function TWRA:ProcessDynamicPlayerInfoForSection(section, playerName, playerGroup)
     local sectionName = section["Section Name"]
     
     -- Initialize the metadata and player info tables if needed
@@ -312,27 +335,86 @@ function TWRA:ProcessDynamicPlayerInfoForSection(section)
     local metadata = section["Section Metadata"]
     local playerInfo = section["Section Player Info"]
     
-    -- Identify all group rows (rows containing any group reference) - moved to section metadata
-    metadata["Group Rows"] = self:GetAllGroupRowsForSection(section)
+    -- Skip if player is not in a raid group
+    if not playerGroup then
+        self:Debug("data", "Player is not in a raid group - skipping dynamic player info for section: " .. sectionName)
+        playerInfo["Relevant Group Rows"] = {}
+        playerInfo["OSD Group Assignments"] = {}
+        return
+    end
     
-    -- Identify group rows relevant to player's current group
-    playerInfo["Relevant Group Rows"] = self:GetGroupRowsForSection(section)
+    -- Get group rows from metadata if they exist, otherwise find them
+    metadata["Group Rows"] = metadata["Group Rows"] or self:GetAllGroupRowsForSection(section)
     
-    -- Debug group rows for this section
-    local groupRowsList = ""
-    for i, rowIndex in ipairs(playerInfo["Relevant Group Rows"]) do
-        groupRowsList = groupRowsList .. rowIndex
-        if i < table.getn(playerInfo["Relevant Group Rows"]) then
-            groupRowsList = groupRowsList .. ", "
+    -- Find rows that match player's current group number
+    local relevantGroupRows = {}
+    
+    -- Look at each row in the section's Group Rows
+    for _, rowIndex in ipairs(metadata["Group Rows"]) do
+        local rowData = section["Section Rows"][rowIndex]
+        
+        -- Skip if the row is not valid
+        if type(rowData) ~= "table" then
+            self:Debug("data", "Invalid row data at index " .. rowIndex, false, true)
+        else
+            local isRelevant = false
+            
+            -- Check each cell for player's group number, skipping first two columns
+            for colIndex = 3, table.getn(rowData) do
+                local cellValue = rowData[colIndex]
+                -- Only process string cells with content
+                if type(cellValue) == "string" and cellValue ~= "" then
+                    -- Look for direct group number references
+                    if string.find(string.lower(cellValue), "group%s*" .. playerGroup) or
+                       string.find(string.lower(cellValue), "gr%.%s*" .. playerGroup) or
+                       string.find(string.lower(cellValue), "gr%s*" .. playerGroup) or
+                       string.find(string.lower(cellValue), "grp%s*" .. playerGroup) then
+                       
+                        isRelevant = true
+                        self:Debug("data", "Row " .. rowIndex .. " is relevant to group " .. playerGroup .. 
+                                   ": group match in column " .. colIndex, false, true)
+                        break
+                    end
+                    
+                    -- Check for numerical group references like "Groups 1, 3, 5"
+                    if string.find(cellValue, "Group") then
+                        local pos = 1
+                        local str = cellValue
+                        while pos <= string.len(str) do
+                            local digitStart, digitEnd = string.find(str, "%d+", pos)
+                            if not digitStart then break end
+                            
+                            local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
+                            if groupNum and groupNum == playerGroup then
+                                isRelevant = true
+                                self:Debug("data", "Row " .. rowIndex .. " is relevant to group " .. playerGroup ..
+                                           ": numeric group match in column " .. colIndex, false, true)
+                                break
+                            end
+                            pos = digitEnd + 1
+                        end
+                    end
+                end
+            end
+            
+            -- Add to our list if relevant
+            if isRelevant then
+                table.insert(relevantGroupRows, rowIndex)
+            end
         end
     end
     
+    -- Store the relevant group rows
+    playerInfo["Relevant Group Rows"] = relevantGroupRows
+    
+    -- Log the number of relevant group rows found
     self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
-              table.getn(playerInfo["Relevant Group Rows"]) .. 
-              " relevant group rows: [" .. groupRowsList .. "]", false, true)
+               table.getn(relevantGroupRows) .. " group rows relevant to player's group " .. playerGroup)
     
     -- Generate OSD info for group assignments
-    playerInfo["OSD Group Assignments"] = self:GenerateOSDInfoForSection(section, playerInfo["Relevant Group Rows"], true)
+    playerInfo["OSD Group Assignments"] = self:GenerateOSDInfoForSection(section, relevantGroupRows, true)
+    
+    return true
 end
 
 -- UpdatePlayerInfo - Refreshes player info and updates UI elements with improved debugging
@@ -643,7 +725,6 @@ function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp)
     TWRA_Assignments.isExample = false
     
     -- IMPORTANT: Also initialize TWRA_CompressedAssignments.sections here
-    -- This centralizes section placeholder creation in one place
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     TWRA_CompressedAssignments.timestamp = timestamp
     
@@ -1144,7 +1225,6 @@ function TWRA:GetPlayerRelevantRowsForSection(section)
 end
 
 -- GenerateOSDInfoForSection - Creates a compact representation of player's assignments
--- with proper tank information included as per Player-Relevant-Info.md
 function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignments)
     local osdInfo = {}
     
@@ -1160,51 +1240,41 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
     
     -- Get tank columns from section metadata
     local metadata = section["Section Metadata"] or {}
-    local tankColumns = metadata["Tank Columns"] or self:FindTankRoleColumns(section)
-    local playerName = UnitName("player")
+    local tankColumns = metadata["Tank Columns"] or {}
     
     -- For each relevant row, extract useful information
     for _, rowIndex in ipairs(relevantRows) do
         local rowData = section["Section Rows"][rowIndex]
         
         -- Skip this if we don't have valid row data
-        if not rowData then
+        if not rowData or type(rowData) ~= "table" then
             self:Debug("data", "Skipping invalid row " .. rowIndex, false, true)
-            -- Skip special rows
+        -- Skip special rows
+        elseif rowData[1] == "Note" or rowData[1] == "Warning" or rowData[1] == "GUID" then
+            self:Debug("data", "Skipping special row " .. rowIndex, false, true)
         else
             -- Extract target and icon info (columns 1 and 2)
             local icon = rowData[1] or ""
             local target = rowData[2] or ""
             
-            -- Find roles where player is mentioned in this row
-            -- One row can generate multiple OSD entries - one for each role
+            -- Find role columns where player is mentioned (columns 3+)
             local playerRoles = {}
+            
+            -- Start at column 3 (after icon and target)
             for colIndex = 3, table.getn(rowData) do
                 if colIndex <= table.getn(section["Section Header"]) then
                     local headerText = section["Section Header"][colIndex]
                     local cellText = rowData[colIndex]
                     
-                    -- For group assignments, we only care about cells with group references
-                    -- For personal assignments, we care about cells with player name or class
-                    local isRelevantCell = false
-                    
-                    if isGroupAssignments then
-                        -- For group assignments, check if cell contains player's group
-                        isRelevantCell = self:IsCellContainingPlayerGroup(cellText)
-                    else
-                        -- For personal assignments, check if cell contains player name or class group
-                        -- Pass false for isTargetColumn since we're processing role columns (3+) here
-                        isRelevantCell = self:IsCellContainingPlayerNameOrClass(cellText, false)
-                    end
-                    
-                    if isRelevantCell then
+                    -- For personal assignments or group assignments
+                    if (not isGroupAssignments and self:IsCellRelevantForPlayer(cellText)) or
+                       (isGroupAssignments and self:IsCellRelevantForPlayerGroup(cellText)) then
                         table.insert(playerRoles, {
                             role = headerText,
                             column = colIndex
                         })
-                        self:Debug("data", "Found " .. (isGroupAssignments and "group" or "personal") .. 
-                                 " role " .. headerText .. " in row " .. rowIndex .. 
-                                 ", column " .. colIndex, false, true)
+                        self:Debug("data", "Found role " .. headerText .. " in row " .. rowIndex .. 
+                                  ", column " .. colIndex, false, true)
                     end
                 end
             end
@@ -1214,10 +1284,10 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
             for _, tankCol in ipairs(tankColumns) do
                 if tankCol <= table.getn(rowData) and rowData[tankCol] and rowData[tankCol] ~= "" then
                     -- Avoid adding player's own name to tank list
-                    if rowData[tankCol] ~= playerName then
+                    if rowData[tankCol] ~= UnitName("player") then
                         table.insert(tankNames, rowData[tankCol])
                         self:Debug("data", "Found tank name " .. rowData[tankCol] .. 
-                                 " in row " .. rowIndex .. ", column " .. tankCol, false, true)
+                                  " in row " .. rowIndex .. ", column " .. tankCol, false, true)
                     end
                 end
             end
@@ -1227,11 +1297,7 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
                 -- Create a new entry for this role
                 local entry = {}
                 
-                -- Format as per Player-Relevant-Info.md:
-                -- 1. Role (column header where player was found)
-                -- 2. Icon from column 1
-                -- 3. Target from column 2
-                -- 4+ Tank names from tank columns
+                -- Format: [Role, Icon, Target, Tank1, Tank2, ...]
                 table.insert(entry, roleInfo.role)  -- Role
                 table.insert(entry, icon)           -- Icon
                 table.insert(entry, target)         -- Target
@@ -1244,13 +1310,14 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
                 -- Add the entry to our results
                 table.insert(osdInfo, entry)
                 
-                self:Debug("data", "Added OSD entry for " .. (isGroupAssignments and "group" or "personal") .. 
-                         " role " .. roleInfo.role .. " on target " .. target .. 
-                         " with " .. table.getn(tankNames) .. " tanks", false, true)
+                self:Debug("data", "Added OSD entry for role " .. roleInfo.role .. 
+                          " on target " .. target .. " with " .. 
+                          table.getn(tankNames) .. " tanks", false, true)
             end
         end
     end
     
+    self:Debug("data", "Generated " .. table.getn(osdInfo) .. " OSD info entries")
     return osdInfo
 end
 
@@ -1598,44 +1665,144 @@ function TWRA:EnsureGroupRowsIdentified()
     for sectionIdx, section in pairs(TWRA_Assignments.data) do
         -- Skip if not a table or doesn't have required keys
         if type(section) == "table" and section["Section Rows"] then
-            -- Initialize Section Metadata if not present
+            -- Ensure group rows are identified
             section["Section Metadata"] = section["Section Metadata"] or {}
-            local metadata = section["Section Metadata"]
+            section["Section Metadata"]["Group Rows"] = section["Section Metadata"]["Group Rows"] or self:GetAllGroupRowsForSection(section)
             
-            -- Only scan for group rows if they don't already exist
-            if not metadata["Group Rows"] or table.getn(metadata["Group Rows"]) == 0 then
-                metadata["Group Rows"] = self:GetAllGroupRowsForSection(section)
-                local sectionName = section["Section Name"] or tostring(sectionIdx)
-                
-                self:Debug("data", "Section '" .. sectionName .. "': Identified " .. 
-                          table.getn(metadata["Group Rows"]) .. " group rows during final processing")
-                
-                -- Print the actual group rows found for debugging
-                local groupRowsList = ""
-                for i, rowIndex in ipairs(metadata["Group Rows"]) do
-                    if rowIndex > 0 and rowIndex <= table.getn(section["Section Rows"]) then
-                        local rowData = section["Section Rows"][rowIndex]
-                        local rowContent = ""
-                        -- Get a summary of the row content
-                        if type(rowData) == "table" then
-                            for j = 1, math.min(5, table.getn(rowData)) do
-                                if rowData[j] and rowData[j] ~= "" then
-                                    rowContent = rowContent .. "[" .. j .. "]=" .. rowData[j] .. " "
-                                end
-                            end
-                        end
-                        groupRowsList = groupRowsList .. rowIndex .. "(" .. rowContent .. "), "
-                    else
-                        groupRowsList = groupRowsList .. rowIndex .. "(invalid), "
-                    end
-                end
-                
-                if table.getn(metadata["Group Rows"]) > 0 then
-                    self:Debug("data", "Group rows: " .. groupRowsList, false, true)
-                end
-            end
+            self:Debug("data", "Section '" .. (section["Section Name"] or tostring(sectionIdx)) .. 
+                      "': Identified " .. table.getn(section["Section Metadata"]["Group Rows"]) .. " group rows")
         end
     end
     
     return true
+end
+
+-- Helper function to find columns containing tank roles
+function TWRA:FindTankRoleColumns(section)
+    local tankColumns = {}
+    
+    -- Skip if no header or rows
+    if not section["Section Header"] then
+        return tankColumns
+    end
+    
+    -- Look through header to find any tank related column
+    for colIndex, headerText in ipairs(section["Section Header"]) do
+        -- Skip first two columns (icon and target)
+        if colIndex > 2 and type(headerText) == "string" then
+            -- Look for common tank role terms
+            local lowerHeader = string.lower(headerText)
+            if string.find(lowerHeader, "tank") or 
+               string.find(lowerHeader, "mt") or 
+               string.find(lowerHeader, "ot") or
+               string.find(lowerHeader, "maintank") or
+               string.find(lowerHeader, "main tank") or
+               string.find(lowerHeader, "offtank") or
+               string.find(lowerHeader, "off tank") or
+               string.find(lowerHeader, "t1") or
+               string.find(lowerHeader, "t2") or
+               string.find(lowerHeader, "t3") or
+               string.find(lowerHeader, "t4") or
+               string.find(lowerHeader, "tank1") or
+               string.find(lowerHeader, "tank2") or
+               string.find(lowerHeader, "tank3") or
+               string.find(lowerHeader, "tank4") then
+                
+                table.insert(tankColumns, colIndex)
+                self:Debug("data", "Found tank column at index " .. colIndex .. ": " .. headerText, false, true)
+            end
+        end
+    end
+    
+    self:Debug("data", "Found " .. table.getn(tankColumns) .. " tank columns in section")
+    return tankColumns
+end
+
+-- Helper function to check if a cell is relevant for the current player
+function TWRA:IsCellRelevantForPlayer(cellText)
+    -- Skip empty cells or non-string cells
+    if not cellText or type(cellText) ~= "string" or cellText == "" then
+        return false
+    end
+    
+    -- Get player info
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    playerClass = playerClass and string.upper(playerClass) or nil
+    
+    -- Direct player name match
+    if cellText == playerName then
+        self:Debug("data", "Cell relevant for player - direct name match: " .. cellText, false, true)
+        return true
+    end
+    
+    -- Class group match (e.g. "Warriors" for a Warrior)
+    if playerClass and self.CLASS_GROUP_NAMES then
+        for groupName, className in pairs(self.CLASS_GROUP_NAMES) do
+            if cellText == groupName and className == playerClass then
+                self:Debug("data", "Cell relevant for player - class group match: " .. cellText, false, true)
+                return true
+            end
+        end
+    end
+    
+    -- No match found
+    return false
+end
+
+-- Helper function to check if a cell is relevant for the player's current group
+function TWRA:IsCellRelevantForPlayerGroup(cellText)
+    -- Skip empty cells or non-string cells
+    if not cellText or type(cellText) ~= "string" or cellText == "" then
+        return false
+    end
+    
+    -- Find player's group number (1-8)
+    local playerGroup = nil
+    for i = 1, GetNumRaidMembers() do
+        local name, _, subgroup = GetRaidRosterInfo(i)
+        if name == UnitName("player") then
+            playerGroup = subgroup
+            break
+        end
+    end
+    
+    -- If not in a raid or no group found, return false
+    if not playerGroup then
+        return false
+    end
+    
+    -- Look for group references
+    local lowerCell = string.lower(cellText)
+    
+    -- Direct group reference (e.g. "Group 3")
+    if string.find(lowerCell, "group%s*" .. playerGroup) or
+       string.find(lowerCell, "gr%.%s*" .. playerGroup) or
+       string.find(lowerCell, "gr%s*" .. playerGroup) or
+       string.find(lowerCell, "grp%s*" .. playerGroup) then
+        
+        self:Debug("data", "Cell relevant for player's group " .. playerGroup .. ": " .. cellText, false, true)
+        return true
+    end
+    
+    -- Check for numeric references like "Groups 1, 3, 5"
+    if string.find(lowerCell, "group") then
+        local pos = 1
+        local str = lowerCell
+        while pos <= string.len(str) do
+            local digitStart, digitEnd = string.find(str, "%d+", pos)
+            if not digitStart then break end
+            
+            local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
+            if groupNum and groupNum == playerGroup then
+                self:Debug("data", "Cell relevant for player's group " .. playerGroup .. 
+                          " (numeric reference): " .. cellText, false, true)
+                return true
+            end
+            pos = digitEnd + 1
+        end
+    end
+    
+    -- No match found
+    return false
 end
