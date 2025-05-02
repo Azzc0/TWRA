@@ -968,22 +968,6 @@ function TWRA:ProcessSectionData(sectionIndex)
     
     self:Debug("data", "Processing section: " .. sectionName .. " (index: " .. sectionIndex .. ")")
     
-    -- IMPORTANT: Make a complete copy of the existing metadata before we do anything else
-    local existingMetadata = {}
-    if TWRA_Assignments.data[sectionIndex]["Section Metadata"] then
-        -- Deep copy all metadata fields to ensure nothing is lost
-        for key, value in pairs(TWRA_Assignments.data[sectionIndex]["Section Metadata"]) do
-            if type(value) == "table" then
-                existingMetadata[key] = {}
-                for k, v in pairs(value) do
-                    existingMetadata[key][k] = v
-                end
-            else
-                existingMetadata[key] = value
-            end
-        end
-    end
-    
     -- Decompress the section data
     local decompressedData = nil
     
@@ -1035,63 +1019,16 @@ function TWRA:ProcessSectionData(sectionIndex)
         decompressedData["Section Rows"] = decompressedData["Section Rows"] or {}
     end
     
-    -- Replace section content with decompressed data
-    for key, value in pairs(decompressedData) do
-        if key ~= "Section Metadata" then
-            TWRA_Assignments.data[sectionIndex][key] = value
-        end
-    end
+    -- Replace the entire section with decompressed data
+    TWRA_Assignments.data[sectionIndex] = decompressedData
     
-    -- Handle metadata carefully - create if it doesn't exist
-    if not TWRA_Assignments.data[sectionIndex]["Section Metadata"] then
-        TWRA_Assignments.data[sectionIndex]["Section Metadata"] = {}
-    end
-    
-    -- First transfer any metadata from the decompressed data (if it exists)
-    if decompressedData["Section Metadata"] then
-        for key, value in pairs(decompressedData["Section Metadata"]) do
-            TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] = value
-        end
-    end
-    
-    -- Then restore any existing critical metadata that might not be in the decompressed data
-    for key, value in pairs(existingMetadata) do
-        -- Critical metadata that must be preserved
-        if key == "GUID" or key == "Note" or key == "Warning" then
-            TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] = value
-            self:Debug("data", "Preserved existing " .. key .. " metadata for section " .. sectionName)
-        end
-        
-        -- For any other metadata fields, only copy if they don't exist in the decompressed data
-        if not TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] then
-            TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] = value
-            self:Debug("data", "Restored missing " .. key .. " metadata for section " .. sectionName)
-        end
-    end
-    
-    -- Ensure metadata arrays always exist
-    local criticalMetadata = {"Note", "Warning", "GUID", "Tank Columns", "Group Rows"}
-    for _, metaKey in ipairs(criticalMetadata) do
-        if not TWRA_Assignments.data[sectionIndex]["Section Metadata"][metaKey] then
-            TWRA_Assignments.data[sectionIndex]["Section Metadata"][metaKey] = {}
-            self:Debug("data", "Created empty " .. metaKey .. " metadata for section " .. sectionName)
-        end
-    end
-    
-    -- Log what metadata fields we have after processing
-    local metaKeys = ""
-    for key, _ in pairs(TWRA_Assignments.data[sectionIndex]["Section Metadata"]) do
-        metaKeys = metaKeys .. key .. ", "
-    end
-    self:Debug("data", "Final metadata keys: " .. metaKeys)
+    -- Restore the section name to ensure consistency
+    TWRA_Assignments.data[sectionIndex]["Section Name"] = sectionName
     
     -- Mark as processed
     TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = false
-    TWRA_Assignments.data[sectionIndex]["Section Name"] = sectionName
     
-    self:Debug("data", "Updated section at index " .. sectionIndex .. " with processed data")
-    
-    -- Process player-relevant info for this section
+    -- Process player-relevant info for this specific section
     if self.ProcessPlayerInfo then
         self:Debug("data", "Processing player-relevant info for section: " .. sectionName)
         

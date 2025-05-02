@@ -86,11 +86,9 @@ function TWRA:NavigateToSection(index, source)
     -- Check if section data needs processing
     needsProcessing = TWRA_Assignments.data[index]["NeedsProcessing"] or false
     if needsProcessing then
-        if self.ProcessSectionData then
+        if self.ProcessSectionData and not missingCompressedData then
             self:Debug("nav", "Processing section data for index: " .. index)
             self:ProcessSectionData(index)
-        else
-            self:Debug("error", "ProcessSectionData function not available")
         end
     end
     
