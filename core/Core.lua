@@ -855,37 +855,21 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
                     local sectionName = newSection["Section Name"]
                     
                     -- Look for matching section in existing data
-                    for _, oldSection in pairs(TWRA_Assignments.data) do
-                        if type(oldSection) == "table" and oldSection["Section Name"] == sectionName then
-                            -- Transfer section metadata if it exists
-                            if oldSection["Section Metadata"] and type(oldSection["Section Metadata"]) == "table" then
-                                newSection["Section Metadata"] = newSection["Section Metadata"] or {}
-                                
-                                -- Copy metadata arrays if they exist
-                                for key, array in pairs(oldSection["Section Metadata"]) do
-                                    if type(array) == "table" and (key == "Note" or key == "Warning" or key == "GUID") then
-                                        newSection["Section Metadata"][key] = newSection["Section Metadata"][key] or {}
-                                        
-                                        -- Copy array values if they don't already exist
-                                        for _, value in ipairs(array) do
-                                            local exists = false
-                                            for _, newValue in ipairs(newSection["Section Metadata"][key] or {}) do
-                                                if newValue == value then
-                                                    exists = true
-                                                    break
-                                                end
-                                            end
-                                            
-                                            if not exists then
-                                                table.insert(newSection["Section Metadata"][key], value)
-                                                self:Debug("data", "Preserved metadata " .. key .. " for section " .. sectionName)
-                                            end
-                                        end
-                                    end
-                                end
+                    for oldSectionIdx, oldSection in pairs(TWRA_Assignments.data) do
+                        if type(oldSection) == "table" and 
+                           oldSection["Section Name"] and 
+                           oldSection["Section Name"] == sectionName then
+                            
+                            self:Debug("data", "Found matching section '" .. sectionName .. "', preserving metadata")
+                            
+                            -- Preserve metadata if it exists
+                            if oldSection["Section Metadata"] then
+                                newSection["Section Metadata"] = self:DeepCopyTable(oldSection["Section Metadata"])
+                                self:Debug("data", "Preserved Section Metadata for " .. sectionName)
                             end
                             
-                            break -- Found matching section, no need to continue
+                            -- Break after finding a match
+                            break
                         end
                     end
                 end
@@ -893,190 +877,129 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         end
     end
     
-    -- Calculate timestamp (or use provided one)
-    local timestamp = originalTimestamp
-    if not timestamp then
-        if self:IsExampleData(data) then
-            timestamp = 0
-        else
-            timestamp = time()
-        end
-    end
-    
-    -- Get current section info before we save
-    local currentSectionName = nil
-    local currentSectionIndex = 1
-    
-    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-        currentSectionIndex = self.navigation.currentIndex
-        currentSectionName = self.navigation.handlers[currentSectionIndex]
-        self:Debug("nav", "SaveAssignments - Current section before update: " .. 
-                  currentSectionIndex .. " (" .. (currentSectionName or "unknown") .. ")")
-    end
-    
-    -- Remember the section name for post-import navigation
-    self.pendingSectionName = currentSectionName
-    self.pendingSectionIndex = currentSectionIndex
-    
-    -- Handle new format directly
+    -- Directly use the data object for new format
     if isNewFormat then
-        -- Clear current data for clean import
-        if self.ClearData then
-            self:Debug("data", "Clearing current data")
-            self:ClearData()
-            self:Debug("data", "Data cleared successfully")
+        -- Determine timestamp - either provided or current time
+        local timestamp = originalTimestamp or time()
+        local currentSectionIndex = 1
+        local currentSectionName = nil
+        
+        -- Try to maintain the current section if we have valid navigation
+        if self.navigation and self.navigation.currentIndex and 
+           self.navigation.handlers[self.navigation.currentIndex] then
+            currentSectionIndex = self.navigation.currentIndex
+            currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
         end
         
-        -- Direct assignment to SavedVariables for new format
+        self:Debug("nav", "SaveAssignments - Current section before import: " .. 
+                  currentSectionIndex .. " (" .. (currentSectionName or "unknown") .. ")")
+    
+        -- Remember the section name for post-import navigation
+        self.pendingSectionName = currentSectionName
+        self.pendingSectionIndex = currentSectionIndex
+        
+        -- Handle new format directly
+        if isNewFormat then
+            -- Clear current data for clean import
+            if self.ClearData then
+                self:Debug("data", "Clearing current data")
+                self:ClearData()
+                self:Debug("data", "Data cleared successfully")
+            end
+            
+            -- Direct assignment to SavedVariables for new format
+            TWRA_Assignments = {
+                data = data.data,
+                -- IMPORTANT: Don't store source string to save memory
+                timestamp = timestamp,
+                currentSection = 1,  -- Start at first section for new imports
+                version = 2,  -- Mark as new format
+                isExample = false  -- Always set to false for any non-example data
+            }
+            
+            -- IMPORTANT: Completely stop using old format data structure
+            -- Instead of maintaining minimal structure, fully remove it
+            if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
+                TWRA_SavedVariables.assignments = nil
+            end
+            
+            -- Build navigation structure
+            self:BuildNavigationFromNewFormat()
+            
+            -- If we have pending section information, try to navigate back to it
+            if self.pendingSectionName then
+                self:Debug("nav", "Attempting to restore navigation to section: " .. self.pendingSectionName)
+                
+                for idx, sectionName in ipairs(self.navigation.handlers) do
+                    if sectionName == self.pendingSectionName then
+                        self.navigation.currentIndex = idx
+                        TWRA_Assignments.currentSection = idx
+                        self:Debug("nav", "Successfully restored navigation to section: " .. 
+                                  sectionName .. " (index: " .. idx .. ")")
+                        break
+                    end
+                end
+                
+                -- Clear pending info
+                self.pendingSectionName = nil
+                self.pendingSectionIndex = nil
+            end
+            
+            -- Update current section information
+            if self.navigation and self.navigation.currentIndex then
+                currentSectionIndex = self.navigation.currentIndex
+                currentSectionName = self.navigation.handlers[currentSectionIndex]
+            end
+        end
+    else
+        -- Legacy format handling below
+        
+        -- Apply data cleaning to ensure consistent format
+        data = self:CleanAssignmentData(data)
+        
+        -- Check if we have actual content after cleaning
+        local contentFound = false
+        if type(data) == "table" then
+            contentFound = table.getn(data) > 0
+        end
+        
+        if not contentFound then
+            self:Debug("error", "No valid content found in input data")
+            return false
+        end
+        
+        -- Store in saved variables
+        self.fullData = data
+        
+        -- Set up saved variables structure if it doesn't exist
         TWRA_Assignments = {
-            data = data.data,
+            data = data,
             -- IMPORTANT: Don't store source string to save memory
             timestamp = timestamp,
-            currentSection = 1,  -- Start at first section for new imports
-            version = 2,  -- Mark as new format
-            isExample = false
+            currentSection = 1, -- Default to first section on import
+            version = 1, -- Mark as v1 (legacy) format
+            isExample = false -- Always set to false for any non-example data
         }
         
         -- IMPORTANT: Completely stop using old format data structure
         -- Instead of maintaining minimal structure, fully remove it
         if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
             TWRA_SavedVariables.assignments = nil
-            self:Debug("data", "Removed obsolete assignments data structure")
         end
         
-        -- IMPORTANT: Always use segmented compression first
-        if self.StoreSegmentedData and self.InitializeCompression then
-            self:Debug("data", "Generating segmented compressed data for future sync operations")
-            -- Initialize compression if needed
-            if not self.LibCompress then
-                self:InitializeCompression()
-            end
-            
-            -- Store segmented data for all sections
-            if self:StoreSegmentedData() then
-                self:Debug("data", "Generated and stored segmented compressed data successfully")
-            else
-                self:Debug("error", "Failed to generate segmented compressed data")
-                
-                -- Only fall back to legacy compression if segmented fails
-                if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
-                    self:Debug("data", "Falling back to legacy compression after segmented compression failed")
-                    local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
-                    local compressedData = self:CompressAssignmentsData(syncReadyData)
-                    if compressedData then
-                        self:StoreCompressedData(compressedData)
-                        self:Debug("data", "Legacy compressed data generated and stored")
-                    else
-                        self:Debug("error", "Failed to generate legacy compressed version of data")
-                    end
-                end
-            end
-        -- Fall back to legacy compression if segmented not available
-        elseif self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
-            self:Debug("data", "Segmented compression not available, using legacy compression")
-            local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
-            local compressedData = self:CompressAssignmentsData(syncReadyData)
-            if compressedData then
-                self:StoreCompressedData(compressedData)
-                self:Debug("data", "Compressed data generated and stored in TWRA_CompressedAssignments")
-            else
-                self:Debug("error", "Failed to generate compressed version of data")
-            end
-        else
-            self:Debug("error", "Missing compression functions - compressed data not generated")
+        -- Reset the navigation structure for the new content
+        if self.navigation then
+            self.navigation.handlers = {}
+            self.navigation.currentIndex = 1
         end
         
-        -- Build navigation from the imported sections
-        self:RebuildNavigation() -- Updated to use consolidated function
+        -- Rebuild navigation with the new data
+        self:RebuildNavigation()
         
-        self:Debug("data", "Assigned new format data directly to SavedVariables")
-        
-        -- Skip announcement if noAnnounce is true
-        if noAnnounce then return true end
-        
-        -- IMPORTANT: Don't announce in a party/raid during development
-        if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-            self:Debug("general", "Import detected while in party/raid - suppressing announcement")
-            return true
-        end
-        
-        -- Announce the import in chat
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Assigned imported data with " .. 
-                                     table.getn(self.navigation.handlers) .. " sections")
-        return true
-    end
-    
-    -- Legacy format handling
-    -- Clean the data using our centralized function
-    data = self:CleanAssignmentData(data)
-    
-    -- Check if we have actual content after cleaning
-    local contentFound = false
-    if type(data) == "table" then
-        contentFound = table.getn(data) > 0
-    end
-    
-    if not contentFound then
-        self:Debug("error", "No valid content found in input data")
-        return false
-    end
-    
-    -- Store in saved variables
-    self.fullData = data
-    
-    -- Set up saved variables structure if it doesn't exist
-    TWRA_Assignments = {
-        data = data,
-        -- IMPORTANT: Don't store source string to save memory
-        timestamp = timestamp,
-        currentSection = 1, -- Default to first section on import
-        version = 1 -- Mark as v1 (legacy) format
-    }
-    
-    -- IMPORTANT: Completely stop using old format data structure
-    -- Instead of maintaining minimal structure, fully remove it
-    if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-        TWRA_SavedVariables.assignments = nil
-        self:Debug("data", "Removed obsolete assignments data structure")
-    end
-    
-    -- IMPROVED: Try to generate segmented compressed data even for legacy format
-    if self.StoreSegmentedData and self.InitializeCompression then
-        self:Debug("data", "Attempting to generate segmented compressed data for legacy format")
-        -- Initialize compression if needed
-        if not self.LibCompress then
-            self:InitializeCompression()
-        end
-        
-        -- Store segmented data for all sections
-        if self:StoreSegmentedData() then
-            self:Debug("data", "Generated and stored segmented compressed data for legacy format")
-        else
-            self:Debug("error", "Failed to generate segmented compressed data for legacy format")
-            
-            -- Fall back to legacy compression if segmented fails
-            if self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
-                self:Debug("data", "Falling back to legacy compression for legacy format")
-                local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
-                local compressedData = self:CompressAssignmentsData(syncReadyData)
-                if compressedData then
-                    self:StoreCompressedData(compressedData)
-                    self:Debug("data", "Legacy compressed data generated and stored")
-                else
-                    self:Debug("error", "Failed to generate legacy compressed version of data")
-                end
-            end
-        end
-    -- Fall back to legacy compression if segmented not available
-    elseif self.PrepareDataForSync and self.CompressAssignmentsData and self.StoreCompressedData then
-        self:Debug("data", "Segmented compression not available for legacy format, using legacy compression")
-        local syncReadyData = self:PrepareDataForSync(TWRA_Assignments)
-        local compressedData = self:CompressAssignmentsData(syncReadyData)
-        if compressedData then
-            self:StoreCompressedData(compressedData)
-            self:Debug("data", "Legacy compressed data generated and stored")
-        else
-            self:Debug("error", "Failed to generate legacy compressed version of data")
+        -- Set in case we need it later
+        if self.navigation and self.navigation.currentIndex then
+            currentSectionIndex = self.navigation.currentIndex
+            currentSectionName = self.navigation.handlers[currentSectionIndex]
         end
     end
     

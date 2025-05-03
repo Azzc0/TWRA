@@ -491,15 +491,14 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     
     -- Update the saved variables
     TWRA_Assignments = TWRA_Assignments or {}
-    if data.data then
-        -- New format with structured data
-        TWRA_Assignments.data = data.data
-        TWRA_Assignments.version = 2
-    else
-        -- Legacy format with flattened data array
-        TWRA_Assignments.data = data
-        TWRA_Assignments.version = 1
+    -- Always ensure isExample is false for any saved data that's not from the example system
+    if not (self.usingExampleData) then
+        TWRA_Assignments.isExample = false
     end
+    
+    -- Set core properties
+    TWRA_Assignments.data = data.data
+    TWRA_Assignments.version = 2
     
     -- Store additional metadata
     TWRA_Assignments.timestamp = timestamp or time()

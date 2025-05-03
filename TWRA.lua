@@ -1323,3 +1323,79 @@ function TWRA:OnGroupChanged()
     end
     TWRA:UpdateOSDContent(TWRA_Assignments.currentSectionName, TWRA_Assignments.currentSection)
 end
+
+-- ImportString function
+function TWRA:ImportString(importString, isSync, syncTimestamp)
+    if not importString or type(importString) ~= "string" then
+        self:Debug("error", "Invalid import string provided")
+        return false
+    end
+    
+    local decoded = self:DecodeBase64(importString)
+    
+    if not decoded then
+        self:Debug("error", "Failed to decode import string: " .. importString:sub(1, 20) .. "...")
+        return false
+    end
+    
+    -- Check if we have compressed data (starts with specific marker)
+    if decoded:sub(1, 4) == "COMP" then
+        local success, decompressed = pcall(function()
+            return LibStub:GetLibrary("LibDeflate"):DecompressZlib(decoded:sub(5))
+        end)
+        
+        if success and decompressed then
+            decoded = decompressed
+        else
+            self:Debug("error", "Failed to decompress import data")
+            return false
+        end
+    end
+    
+    -- Now we should have a Lua table string, attempt to parse it
+    local func, errorMsg = loadstring("return " .. decoded)
+    if not func then
+        self:Debug("error", "Failed to parse import data: " .. (errorMsg or "Unknown error"))
+        return false
+    end
+    
+    local success, assignmentData = pcall(func)
+    if not success or not assignmentData then
+        self:Debug("error", "Failed to execute import data: " .. (assignmentData or "Unknown error"))
+        return false
+    end
+    
+    -- Get timestamp from sync or create new one
+    local timestamp = syncTimestamp or time()
+    
+    -- Save the imported assignments with proper timestamp
+    -- Explicitly set isExample to false for any imported data
+    if type(assignmentData) == "table" then
+        self:Debug("data", "Successfully parsed import data, saving assignments")
+        
+        -- Import handling for sync vs manual import
+        if isSync then
+            self:Debug("sync", "Processing sync import with timestamp: " .. timestamp)
+            -- For sync imports, we need to check if the incoming data is newer
+            if TWRA_Assignments and TWRA_Assignments.timestamp and 
+               TWRA_Assignments.timestamp >= timestamp then
+                -- Skip import if our data is newer
+                self:Debug("sync", "Skipping sync import as local data is newer")
+                return false
+            end
+        end
+        
+        -- Save and always set isExample to false for imported data
+        local result = self:SaveAssignments(assignmentData, importString, timestamp, isSync)
+        
+        -- Always ensure isExample is false for imports
+        if TWRA_Assignments then
+            TWRA_Assignments.isExample = false
+        end
+        
+        return result
+    else
+        self:Debug("error", "Import failed: Result is not a table")
+        return false
+    end
+end
