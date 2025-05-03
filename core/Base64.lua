@@ -197,6 +197,70 @@ function TWRA:DecompressAssignmentsData(compressedData)
         self:Debug("performance", "Data decompressed in " .. decompressionTime .. "ms")
     end
     
+    -- If this is not a sync operation with timestamp, handle it as manual import
+    if not syncTimestamp then
+        -- This is a manual import, use SaveAssignments to handle proper UI updates
+        if self.SaveAssignments then
+            local timestamp = time()
+            self:SaveAssignments(resultTable, "import", timestamp, noAnnounce)
+            
+            -- Explicitly ensure isExample is set to false for manual imports
+            if TWRA_Assignments then
+                TWRA_Assignments.isExample = false
+                self:Debug("data", "Explicitly set isExample = false for manual import")
+            end
+            
+            -- Reset UI state after import
+            if self.ShowMainView then
+                self:Debug("ui", "Resetting UI to main view after import")
+                self:ShowMainView()
+            end
+            
+            -- Make sure navigation is rebuilt
+            if self.RebuildNavigation then
+                self:Debug("nav", "Rebuilding navigation after import")
+                self:RebuildNavigation()
+            end
+            
+            -- Navigate to first section
+            if self.NavigateToSection then
+                self:Debug("nav", "Navigating to first section after import")
+                self:NavigateToSection(1)
+            end
+            
+            -- Clear import text box if it exists
+            if self.importEditBox then
+                self:Debug("ui", "Clearing import edit box")
+                self.importEditBox:SetText("")
+            end
+        else
+            self:Debug("error", "SaveAssignments function not found")
+        end
+    else
+        -- If this is a sync operation with timestamp, handle it directly
+        TWRA_Assignments.timestamp = syncTimestamp
+        TWRA_Assignments.version = 2
+        self:Debug("data", "Saved data to Assignments with timestamp: " .. syncTimestamp)
+        
+        -- Rebuild navigation after sync import
+        if self.RebuildNavigation then
+            self:Debug("nav", "Rebuilding navigation after sync import")
+            self:RebuildNavigation()
+        end
+        
+        -- Update dynamic player information after sync imports
+        if self.RefreshPlayerInfo then
+            self:RefreshPlayerInfo()
+            self:Debug("data", "Processed dynamic player information after sync import")
+        end
+        
+        -- Navigate to first section after sync import
+        if self.NavigateToSection then
+            self:Debug("nav", "Navigating to first section after sync import")
+            self:NavigateToSection(1)
+        end
+    end
+    
     return resultTable
 end
 
@@ -599,6 +663,12 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                 local timestamp = time()
                 self:SaveAssignments(decompressedData, "import", timestamp, noAnnounce)
                 
+                -- Explicitly ensure isExample is set to false for manual imports
+                if TWRA_Assignments then
+                    TWRA_Assignments.isExample = false
+                    self:Debug("data", "Explicitly set isExample = false for manual import")
+                end
+                
                 -- Reset UI state after import
                 if self.ShowMainView then
                     self:Debug("ui", "Resetting UI to main view after import")
@@ -930,6 +1000,12 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     if self.SaveAssignments then
                         -- IMPORTANT: Don't store the original source string to save memory
                         self:SaveAssignments(result, "import", timestamp, noAnnounce)
+                        
+                        -- Explicitly ensure isExample is set to false for manual imports
+                        if TWRA_Assignments then
+                            TWRA_Assignments.isExample = false
+                            self:Debug("data", "Explicitly set isExample = false for manual import")
+                        end
                         
                         -- IMPORTANT: Reset UI state after import
                         if self.ShowMainView then
