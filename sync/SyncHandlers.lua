@@ -439,21 +439,70 @@ function TWRA:HandleSectionResponseCommand(message, sender)
         self:Debug("sync", "Cancelled pending section response for " .. sectionIndex)
     end
     
+    -- IMPROVED: Create or ensure the section placeholder exists with NeedsProcessing flag explicitly set
+    self:CreateSectionPlaceholder(sectionIndex, timestamp)
+    
+    -- FIXED: Ensure the section is explicitly marked as needing processing in all relevant places
+    if TWRA_Assignments and TWRA_Assignments.data and TWRA_Assignments.data[sectionIndex] then
+        -- Double-check that NeedsProcessing is definitely set to true
+        TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
+        self:Debug("sync", "Explicitly marked section " .. sectionIndex .. " as needing processing after receiving data")
+    end
+    
+    -- IMPROVED: Hide the waiting for data message in UI if this is our current section
+    if self.mainFrame and self.mainFrame.processingWarningElements and 
+       self.navigation and self.navigation.currentIndex == sectionIndex then
+        
+        -- Hide the waiting message if visible
+        if self.mainFrame.processingWarningElements.infoText and 
+           self.mainFrame.processingWarningElements.infoText:IsShown() then
+            self.mainFrame.processingWarningElements.infoText:Hide()
+            self:Debug("sync", "Hiding 'Waiting for data' message after receiving section data")
+        end
+        
+        -- Force a refresh of the main UI to show that we're now processing the data
+        if self.RefreshAssignmentTable then
+            self:ScheduleTimer(function()
+                self:RefreshAssignmentTable()
+            end, 0.1) -- Small delay to ensure data is ready
+        end
+    end
+    
+    -- NEW: Try to process the section immediately if not in a pending operation
+    -- This ensures the section is processed as soon as possible rather than waiting for navigation
+    if not self.SYNC.pendingSection or tonumber(self.SYNC.pendingSection) ~= tonumber(sectionIndex) then
+        -- Process the section in the background with a small delay to avoid UI freezing
+        self:ScheduleTimer(function()
+            if self:ProcessSectionData(sectionIndex) then
+                self:Debug("sync", "Successfully processed section " .. sectionIndex .. " immediately after receiving")
+                
+                -- Refresh the UI if this is our current section
+                if self.navigation and self.navigation.currentIndex == sectionIndex then
+                    if self.RefreshAssignmentTable then
+                        self:RefreshAssignmentTable()
+                    end
+                end
+            else
+                self:Debug("error", "Failed to process section " .. sectionIndex .. " immediately")
+            end
+        end, 0.2)
+    end
+    
     -- If we have a pending section that we were waiting to navigate to,
     -- and we just received its data, navigate to it now
     if self.SYNC.pendingSection and tonumber(self.SYNC.pendingSection) == tonumber(sectionIndex) then
         self:Debug("sync", "Received data for pending section " .. sectionIndex .. ", proceeding with navigation")
         
-        -- Create or update the placeholder section entry with minimal metadata
-        self:CreateSectionPlaceholder(sectionIndex, timestamp)
-        
         -- Now we can navigate to this section - it will be processed on demand
         if self.NavigateToSection then
-            self:NavigateToSection(sectionIndex, self.SYNC.pendingSource or "fromSync")
-            
-            -- Clear pending section after navigation
-            self.SYNC.pendingSection = nil
-            self.SYNC.pendingSource = nil
+            -- Add a small delay to ensure the section data is ready
+            self:ScheduleTimer(function()
+                self:NavigateToSection(sectionIndex, self.SYNC.pendingSource or "fromSync")
+                
+                -- Clear pending section after navigation
+                self.SYNC.pendingSection = nil
+                self.SYNC.pendingSource = nil
+            end, 0.3)
         else
             self:Debug("error", "NavigateToSection function not available")
         end

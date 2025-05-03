@@ -949,6 +949,11 @@ function TWRA:ProcessSectionData(sectionIndex)
     -- Check if section data exists in TWRA_CompressedAssignments
     if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections or not TWRA_CompressedAssignments.sections[sectionIndex] then
         self:Debug("error", "No compressed data found for section " .. sectionIndex)
+        -- FIXED: Explicitly mark as needing processing since we don't have the data
+        if TWRA_Assignments.data[sectionIndex] then
+            TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
+            self:Debug("data", "Marked section " .. sectionIndex .. " as needing processing (no compressed data)")
+        end
         return false
     end
     
@@ -956,6 +961,11 @@ function TWRA:ProcessSectionData(sectionIndex)
     local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
     if not sectionData or sectionData == "" then
         self:Debug("error", "Empty compressed data for section " .. sectionIndex)
+        -- FIXED: Explicitly mark as needing processing for empty data
+        if TWRA_Assignments.data[sectionIndex] then
+            TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
+            self:Debug("data", "Marked section " .. sectionIndex .. " as needing processing (empty data)")
+        end
         return false
     end
     
@@ -967,6 +977,10 @@ function TWRA:ProcessSectionData(sectionIndex)
     end
     
     self:Debug("data", "Processing section: " .. sectionName .. " (index: " .. sectionIndex .. ")")
+    
+    -- IMPORTANT: Always mark as needing processing before attempting decompression
+    -- This ensures that if decompression fails, we won't have a false "processed" state
+    TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
     
     -- Decompress the section data
     local decompressedData = nil
@@ -992,17 +1006,23 @@ function TWRA:ProcessSectionData(sectionIndex)
             self:Debug("error", "Section data starts with '?' - may be incorrectly formatted Base64")
         end
         
+        -- FIXED: Ensure section is marked as needing processing
+        TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
         return false
     end
     
     -- Verify decompressed data is valid
     if not decompressedData then
         self:Debug("error", "Decompression returned nil for section " .. sectionName)
+        -- FIXED: Ensure section is marked as needing processing
+        TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
         return false
     end
     
     if type(decompressedData) ~= "table" then
         self:Debug("error", "Decompressed data is not a table but " .. type(decompressedData))
+        -- FIXED: Ensure section is marked as needing processing
+        TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
         return false
     end
     
@@ -1052,11 +1072,15 @@ function TWRA:ProcessSectionData(sectionIndex)
         self:Debug("data", "Section validation: " .. validRows .. " valid rows out of " .. totalRows .. " total rows")
     end
     
+    -- Preserve critical fields from existing section data
+    local preservedNeedsProcessing = TWRA_Assignments.data[sectionIndex]["NeedsProcessing"]
+    local preservedSectionName = TWRA_Assignments.data[sectionIndex]["Section Name"]
+    
     -- Replace the entire section with decompressed data
     TWRA_Assignments.data[sectionIndex] = decompressedData
     
     -- Restore the section name to ensure consistency
-    TWRA_Assignments.data[sectionIndex]["Section Name"] = sectionName
+    TWRA_Assignments.data[sectionIndex]["Section Name"] = preservedSectionName
     
     -- IMPROVED VALIDATION: Only mark as processed if all critical data was properly decompressed
     -- and we have at least one valid row with actual content
