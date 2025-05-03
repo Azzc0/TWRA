@@ -1007,16 +1007,49 @@ function TWRA:ProcessSectionData(sectionIndex)
     end
     
     -- Validate required section fields
+    local isValid = true
+    
     if not decompressedData["Section Header"] then
         self:Debug("error", "Decompressed data missing Section Header for " .. sectionName)
+        isValid = false
         -- Continue anyway and try to create it
         decompressedData["Section Header"] = decompressedData["Section Header"] or {"Icon", "Target"}
     end
     
     if not decompressedData["Section Rows"] then
         self:Debug("error", "Decompressed data missing Section Rows for " .. sectionName)
+        isValid = false
         -- Continue anyway and create empty rows
         decompressedData["Section Rows"] = decompressedData["Section Rows"] or {}
+    end
+    
+    -- ENHANCED VALIDATION: Check if section rows have proper content
+    local rowsHaveContent = false
+    local totalRows = 0
+    local validRows = 0
+    
+    if decompressedData["Section Rows"] and type(decompressedData["Section Rows"]) == "table" then
+        totalRows = table.getn(decompressedData["Section Rows"])
+        
+        -- Go through each row and validate it has proper content
+        for i, row in ipairs(decompressedData["Section Rows"]) do
+            if type(row) == "table" and table.getn(row) >= 2 then  -- At minimum should have Icon and Target
+                -- For normal rows, check that at least icon or target has content
+                if (row[1] and row[1] ~= "") or (row[2] and row[2] ~= "") then
+                    validRows = validRows + 1
+                end
+                
+                -- For special rows (Note, Warning, GUID), they're always valid if they have at least 2 columns
+                if row[1] == "Note" or row[1] == "Warning" or row[1] == "GUID" then
+                    validRows = validRows + 1
+                end
+            end
+        end
+        
+        -- We consider the section to have content if at least one row is valid
+        rowsHaveContent = (validRows > 0)
+        
+        self:Debug("data", "Section validation: " .. validRows .. " valid rows out of " .. totalRows .. " total rows")
     end
     
     -- Replace the entire section with decompressed data
@@ -1025,8 +1058,24 @@ function TWRA:ProcessSectionData(sectionIndex)
     -- Restore the section name to ensure consistency
     TWRA_Assignments.data[sectionIndex]["Section Name"] = sectionName
     
-    -- Mark as processed
-    TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = false
+    -- IMPROVED VALIDATION: Only mark as processed if all critical data was properly decompressed
+    -- and we have at least one valid row with actual content
+    if isValid and rowsHaveContent then
+        self:Debug("data", "Section " .. sectionName .. " processed successfully with " .. 
+                  validRows .. " valid rows, marking as complete")
+        TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = false
+    else
+        -- Better logging for why processing is needed
+        if not isValid then
+            self:Debug("error", "Section " .. sectionName .. " missing required fields, keeping NeedsProcessing flag true")
+        elseif not rowsHaveContent then
+            self:Debug("error", "Section " .. sectionName .. " has no valid rows with content, keeping NeedsProcessing flag true")
+        else
+            self:Debug("error", "Section " .. sectionName .. " incomplete for unknown reason, keeping NeedsProcessing flag true")
+        end
+        
+        TWRA_Assignments.data[sectionIndex]["NeedsProcessing"] = true
+    end
     
     -- Process player-relevant info for this specific section
     if self.ProcessPlayerInfo then
@@ -1037,12 +1086,10 @@ function TWRA:ProcessSectionData(sectionIndex)
         end)
         
         if not processSuccess then
-            self:Debug("error", "Error processing player info: " .. tostring(processError))
-            -- Continue anyway, we've already updated the section data
+            self:Debug("error", "Error processing player info for section " .. sectionName .. ": " .. tostring(processError))
         end
     end
     
-    self:Debug("data", "Successfully processed section " .. sectionName)
     return true
 end
 
