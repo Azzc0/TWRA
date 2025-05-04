@@ -1032,22 +1032,8 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
                (currentSectionName or "None") .. " (index: " .. currentSectionIndex .. ")")
     self:Debug("data", "Data saved with timestamp: " .. timestamp)
     
-    -- Skip announcement if noAnnounce is true
-    if noAnnounce then return true end
-    
-    -- IMPORTANT: Don't announce in a party/raid during development
-    if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-        self:Debug("general", "Import detected while in party/raid - suppressing announcement")
-        return true
-    end
-    
-    -- Rebuild navigation with the new data
-    self:RebuildNavigation()
-    
-    -- Announce the import in chat
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Imported " .. table.getn(self.fullData) .. 
-                                 " assignments in " ..
-                                 table.getn(self.navigation.handlers) .. " sections")
+    -- Skip announcement altogether - this is the key change to remove timestamp announcements
+    -- The previous code announced timestamps when not in a party/raid, which we now skip completely
     return true
 end
 

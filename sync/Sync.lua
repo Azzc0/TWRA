@@ -182,7 +182,7 @@ end
 
 -- Function to create an announcement message (ANC)
 function TWRA:CreateAnnounceMessage(timestamp)
-    return self.SYNC.COMMANDS.ANNOUNCE .. ":" .. timestamp
+    -- return self.SYNC.COMMANDS.ANNOUNCE .. ":" .. timestamp
 end
 
 -- Function to create a structure request message (SREQ)
@@ -326,8 +326,14 @@ function TWRA:BroadcastSectionChange(sectionIndex, timestamp)
     return self:SendAddonMessage(message)
 end
 
--- Process incoming addon communication messages with reduced debugging spam
+-- Process incoming addon communication messages with optimized self-message handling
 function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
+    -- OPTIMIZATION: Skip our own messages immediately without any processing
+    if sender == UnitName("player") then
+        -- Avoid even debug logging for our own messages to eliminate processing overhead
+        return
+    end
+    
     -- Only debug if it's our addon prefix or message monitoring is enabled
     local isOurPrefix = (prefix == self.SYNC.PREFIX)
     
@@ -345,12 +351,6 @@ function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
     
     -- If not our prefix, we're done
     if not isOurPrefix then return end
-    
-    -- Skip our own messages
-    if sender == UnitName("player") then 
-        self:Debug("sync", "Ignoring own message: " .. message)
-        return 
-    end
     
     -- Forward to our message handler - reduced debug output here
     if self.HandleAddonMessage then
@@ -945,8 +945,9 @@ function TWRA:SendAllSections()
     return true
 end
 
--- Function to send all sections to the group using bulk message type
+-- Function to send all sections to the group using bulk message type with optimized approach
 function TWRA:SendAllSectionsBulk()
+    -- Only log at the beginning of the operation
     self:Debug("sync", "Sending all sections in bulk mode to group")
     
     -- Skip if not in a group
@@ -1006,76 +1007,115 @@ function TWRA:SendAllSectionsBulk()
     self.SYNC.bulkSectionCount = sectionCount
     self.SYNC.bulkSectionsSent = 0
     
-    -- Send each section with a delay between them using a recursive approach
-    local sendNextSection
-    sendNextSection = function(index)
-        -- If we've sent all sections, we're done
-        if index > table.getn(sectionIndices) then
-            self:Debug("sync", "Completed sending sections in bulk mode. Successfully sent " .. 
-                      (self.SYNC.bulkSectionsSent or 0) .. " out of " .. sectionCount .. " sections.", true)
-            
-            -- Clear the bulk sending flags
-            self.SYNC.sendingBulkSections = nil
-            self.SYNC.bulkSectionCount = nil
-            self.SYNC.bulkSectionsSent = nil
-            
-            return
-        end
-        
-        -- Get the section index and data
-        local sectionIndex = sectionIndices[index]
+    -- OPTIMIZATION: Pre-generate all messages and pre-determine which need chunking
+    -- This avoids message generation and string length calculations during the send loop
+    self:Debug("sync", "Pre-generating all section messages")
+    local preparedMessages = {}
+    local usesChunking = {}
+    
+    -- First prepare all messages
+    for i, sectionIndex in ipairs(sectionIndices) do
         local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
         
         if sectionData and sectionData ~= "" then
-            self:Debug("sync", "Sending section " .. sectionIndex .. " (" .. index .. "/" .. sectionCount .. ") in bulk mode")
-            
             -- Create bulk section message
             local message = self:CreateBulkSectionMessage(timestamp, sectionIndex, sectionData)
             
-            -- Determine if we need to use chunk manager for large messages
-            if string.len(message) > 2000 then
-                self:Debug("sync", "Bulk section data too large (" .. string.len(message) .. " bytes), using chunk manager")
-                if self.chunkManager then
-                    local prefix = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":"
-                    local success = self.chunkManager:SendChunkedMessage(sectionData, prefix)
-                    
-                    if success then
-                        self.SYNC.bulkSectionsSent = (self.SYNC.bulkSectionsSent or 0) + 1
-                        self:Debug("sync", "Successfully sent bulk section " .. sectionIndex .. " via chunking")
-                    else
-                        self:Debug("error", "Failed to send bulk section " .. sectionIndex .. " via chunking")
-                    end
-                else
-                    self:Debug("error", "Chunk manager not available for large bulk section data")
-                end
+            -- Pre-determine if it needs chunking and save this info
+            local messageLength = string.len(message)
+            if messageLength > 2000 then
+                usesChunking[i] = true
+                -- For chunked messages, store the prefix and data separately
+                preparedMessages[i] = {
+                    prefix = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":",
+                    data = sectionData,
+                    sectionIndex = sectionIndex
+                }
             else
-                -- Send the message directly
-                local success = self:SendAddonMessage(message)
-                
-                if success then
-                    self.SYNC.bulkSectionsSent = (self.SYNC.bulkSectionsSent or 0) + 1
-                    self:Debug("sync", "Successfully sent bulk section " .. sectionIndex)
-                else
-                    self:Debug("error", "Failed to send bulk section " .. sectionIndex)
-                end
+                -- For normal messages, just store the complete message
+                preparedMessages[i] = {
+                    message = message,
+                    sectionIndex = sectionIndex
+                }
             end
         else
-            self:Debug("error", "Section " .. sectionIndex .. " data is empty or missing, skipping")
+            -- Mark empty sections
+            preparedMessages[i] = {
+                isEmpty = true,
+                sectionIndex = sectionIndex
+            }
         end
-        
-        -- Schedule the next section with a short delay
-        self:ScheduleTimer(function()
-            sendNextSection(index + 1)
-        end, 0.5)
     end
     
-    -- Start sending sections after a longer delay to ensure structure data is processed
-    -- This is critical to allow time for the structure to be fully processed by receivers
-    self:ScheduleTimer(function()
-        self:Debug("sync", "Starting to send " .. sectionCount .. " sections after waiting for structure processing")
-        sendNextSection(1)
-    end, 2.0) -- Wait 2 seconds after sending structure before starting sections
+    -- Inform the user that sync is starting
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Sending " .. sectionCount .. " sections to raid")
     
+    -- OPTIMIZATION: Remove timers between section sends - send all at once after structure delay
+    -- Wait for structure data to be processed, then send all sections without delays between them
+    self:ScheduleTimer(function()
+        self:Debug("sync", "Structure processed, now sending all sections without delays")
+        
+        local sentCount = 0
+        local emptyCount = 0
+        local errorCount = 0
+        
+        -- Send all sections in a single batch
+        for i, prepared in ipairs(preparedMessages) do
+            local sectionIndex = prepared.sectionIndex
+            
+            -- Skip empty sections
+            if prepared.isEmpty then
+                emptyCount = emptyCount + 1
+            else
+                local success = false
+                
+                -- Handle chunked messages differently
+                if usesChunking[i] then
+                    if self.chunkManager then
+                        success = self.chunkManager:SendChunkedMessage(prepared.data, prepared.prefix)
+                        if not success then
+                            errorCount = errorCount + 1
+                        end
+                    else
+                        self:Debug("error", "Chunk manager not available for large bulk section data")
+                        errorCount = errorCount + 1
+                    end
+                else
+                    -- Send regular messages directly
+                    success = self:SendAddonMessage(prepared.message)
+                    if not success then
+                        errorCount = errorCount + 1
+                    end
+                end
+                
+                if success then
+                    sentCount = sentCount + 1
+                end
+            end
+        end
+        
+        -- Report results at the end
+        self:Debug("sync", "Completed sending sections. Successfully sent " .. 
+                 sentCount .. " out of " .. sectionCount .. " sections. " ..
+                 emptyCount .. " empty sections skipped. " ..
+                 errorCount .. " errors.", true)
+        
+        -- Clear the bulk sending flags
+        self.SYNC.sendingBulkSections = nil
+        self.SYNC.bulkSectionCount = nil
+        self.SYNC.bulkSectionsSent = self.SYNC.bulkSectionsSent or 0
+        
+        -- Clear the temporary message cache to free memory
+        preparedMessages = nil
+        usesChunking = nil
+        
+        -- Final user notification
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Sent " .. sentCount .. " sections to raid")
+        
+    end, 2.0) -- Wait 2 seconds after sending structure before sending sections
+    self:Debug("sync", "garbage collection after sending all sections starting at " .. GetTime())
+    collectgarbage("collect")
+    self:Debug("sync", "garbage collection after sending all sections finished at " .. GetTime())
     return true
 end
 
