@@ -28,63 +28,152 @@ function TWRA:InitializeHandlerMap()
         DRES = self.UnusedCommand,
         BULKREQ = self.HandleBulkRequestCommand,
         BULKRES = self.HandleBulkResponseCommand,
+        BSEC = self.HandleBulkSectionCommand, -- Added BULK_SECTION handler
     }  
     self:Debug("sync", "Initialized message handler map with " .. self:GetTableSize(self.syncHandlers) .. " handlers")
 end
 
 -- Main addon message handler - routes messages to appropriate handlers
 function TWRA:HandleAddonMessage(message, distribution, sender)
-    -- Skip processing if message is empty
+    -- Shared initial processing for all message types
     if not message or message == "" then
-        self:Debug("sync", "Empty message from " .. sender .. ", skipping")
         return
     end
     
-    -- Log the full message for debugging if it's not from ourselves
-    if sender ~= UnitName("player") then
-        self:Debug("sync", "Received message from " .. sender .. ": " .. message, true)
+    -- Common parsing for all message types
+    local components = {}
+    local index = 1
+    
+    -- Parse message into components using ":" delimiter
+    for part in string.gfind(message, "([^:]+)") do
+        components[index] = part
+        index = index + 1
     end
     
-    -- Enhanced debug for the message parsing step
-    self:Debug("sync", "Parsing message: " .. message, true)
-    
-    -- More robust message parsing to avoid silent failures
-    local command, rest = nil, nil
-    local colonPos = string.find(message, ":", 1, true) -- Find first colon with plain search
-    
-    if colonPos and colonPos > 1 then
-        command = string.sub(message, 1, colonPos-1)
-        rest = string.sub(message, colonPos+1)
-        self:Debug("sync", "Parsed command: '" .. command .. "', rest: '" .. rest .. "'", true)
-    else
-        self:Debug("sync", "Malformed message, no colon found: " .. message, true)
+    if table.getn(components) < 1 then
+        self:Debug("sync", "Invalid message format: " .. message)
         return
     end
     
-    if not command or command == "" then
-        self:Debug("sync", "Malformed message, empty command: " .. message, true)
-        return
-    end
+    -- Extract command
+    local command = components[1]
     
-    -- Initialize handlers table if not already done
-    if not self.syncHandlers then
-        self:InitializeHandlerMap()
-    end
-    self:Debug("sync", "Command used:" .. command)
-    -- Route to the appropriate handler using the handler table
-    local handler = self.syncHandlers[command]
-    if handler then
-        -- Special cases for handlers that need the full message
-        if command == "DRES" or command == "SRES" or command == "SECRES" or command == "ANC" then
-            handler(self, rest, sender, message)
-        else
-            -- Standard handler call with just the rest of the message
-            handler(self, rest, sender)
+    -- Handle different command types
+    if command == self.SYNC.COMMANDS.SECTION then
+        -- Handle SECTION (navigation update)
+        if self.HandleSectionCommand then
+            self:HandleSectionCommand(components[2], components[3], sender)
+        end
+    elseif command == self.SYNC.COMMANDS.ANNOUNCE then
+        -- Handle ANNOUNCE (new import)
+        if self.HandleAnnounceCommand then
+            self:HandleAnnounceCommand(components[2], sender)
+        end
+    elseif command == self.SYNC.COMMANDS.STRUCTURE_REQUEST then
+        -- Handle SREQ (structure request)
+        if self.HandleStructureRequestCommand then
+            self:HandleStructureRequestCommand(components[2], sender)
+        end
+    elseif command == self.SYNC.COMMANDS.STRUCTURE_RESPONSE then
+        -- Handle SRES (structure response)
+        if self.HandleStructureResponseCommand then
+            self:HandleStructureResponseCommand(components[2], self:ExtractDataPortion(message, 3), sender)
+        end
+    elseif command == self.SYNC.COMMANDS.SECTION_REQUEST then
+        -- Handle SECREQ (section request)
+        if self.HandleSectionRequestCommand then
+            self:HandleSectionRequestCommand(components[2], components[3], sender)
+        end
+    elseif command == self.SYNC.COMMANDS.SECTION_RESPONSE then
+        -- Handle SECRES (section response)
+        if self.HandleSectionResponseCommand then
+            self:HandleSectionResponseCommand(components[2], components[3], self:ExtractDataPortion(message, 4), sender)
+        end
+    elseif command == self.SYNC.COMMANDS.BULK_SECTION then
+        -- Handle BSEC (bulk section transmission without processing)
+        if self.HandleBulkSectionCommand then
+            self:HandleBulkSectionCommand(components[2], components[3], self:ExtractDataPortion(message, 4), sender)
+        end
+    elseif command == self.SYNC.COMMANDS.VERSION then
+        -- Handle VER (version check)
+        if self.HandleVersionCommand then
+            self:HandleVersionCommand(components[2], sender)
         end
     else
-        -- Unknown command
-        self:Debug("sync", "Unknown command from " .. sender .. ": " .. command)
+        -- Unknown command - log it but don't act
+        self:Debug("sync", "Unknown command in message: " .. command)
     end
+end
+
+-- Utility function to extract the data portion of a message which may contain colons
+function TWRA:ExtractDataPortion(message, startComponent)
+    if not message or message == "" then
+        return ""
+    end
+    
+    local colonCount = 0
+    local dataStart = 1
+    
+    -- Find the position after the (startComponent-1)th colon
+    for i = 1, string.len(message) do
+        local char = string.sub(message, i, i)
+        if char == ":" then
+            colonCount = colonCount + 1
+            if colonCount == startComponent - 1 then
+                dataStart = i + 1
+                break
+            end
+        end
+    end
+    
+    return string.sub(message, dataStart)
+end
+
+-- Function to handle bulk section messages (BSEC)
+-- These are stored directly without processing
+function TWRA:HandleBulkSectionCommand(timestamp, sectionIndex, sectionData, sender)
+    self:Debug("sync", "Handling BULK_SECTION from " .. sender .. " for section " .. sectionIndex)
+    
+    -- Skip if we're missing required arguments
+    if not timestamp or not sectionIndex or not sectionData then
+        self:Debug("error", "Missing required arguments for BULK_SECTION handler")
+        return false
+    end
+    
+    -- Convert section index to number
+    sectionIndex = tonumber(sectionIndex)
+    if not sectionIndex then
+        self:Debug("error", "Invalid section index in BULK_SECTION: " .. tostring(sectionIndex))
+        return false
+    end
+    
+    -- Make sure TWRA_CompressedAssignments and its sections table exist
+    if not TWRA_CompressedAssignments then
+        TWRA_CompressedAssignments = {}
+    end
+    
+    if not TWRA_CompressedAssignments.sections then
+        TWRA_CompressedAssignments.sections = {}
+    end
+    
+    -- Store the data directly without processing it
+    TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
+    
+    -- Update the timestamp if it's newer than our current one
+    if TWRA_Assignments then
+        local currentTimestamp = TWRA_Assignments.timestamp or 0
+        if tonumber(timestamp) > currentTimestamp then
+            TWRA_Assignments.timestamp = tonumber(timestamp)
+        end
+    end
+    
+    self:Debug("sync", "Successfully stored bulk section " .. sectionIndex .. " data without processing")
+    
+    -- Add this section to our tracking of received sections
+    self.SYNC.receivedSectionResponses = self.SYNC.receivedSectionResponses or {}
+    self.SYNC.receivedSectionResponses[sectionIndex] = true
+    
+    return true
 end
 
 -- Helper function to extract timestamp from a message
@@ -163,25 +252,26 @@ function TWRA:CheckTimestampAndHandleResponse(remoteTimestamp, sender)
 end
 
 -- Handle a section change command received from another player
-function TWRA:HandleSectionCommand(message, sender)
-    if not message or type(message) ~= "string" then
-        self:Debug("sync", "Received invalid section command from " .. sender)
+function TWRA:HandleSectionCommand(timestamp, sectionIndex, sender)
+    -- Validate input parameters
+    if not timestamp or not sectionIndex then
+        self:Debug("sync", "Received invalid section command parameters from " .. sender)
         return false
     end
-    self:Debug("sync", "Welcome to the Section Coammand HAndler")
-    -- The message format is "timestamp:sectionIndex" 
-    -- Parse the timestamp and sectionIndex directly from the message
-    local timestamp, sectionIndex = self:ExtractTimestampFromMessage(message)
-
-    -- Extract parts
+    
+    self:Debug("sync", "Handling section command: timestamp=" .. timestamp .. ", section=" .. sectionIndex)
+    
+    -- Convert timestamp to number
+    timestamp = tonumber(timestamp)
+    sectionIndex = tonumber(sectionIndex)
+    
+    if not timestamp or not sectionIndex then
+        self:Debug("sync", "Invalid timestamp or section index format in command from " .. sender)
+        return false
+    end
+    
+    -- Compare timestamps to ensure data is synchronized
     local timestampComparison = self:CheckTimestampAndHandleResponse(timestamp, sender)
-    
-    if not sectionIndex then
-        self:Debug("sync", "Invalid section index in command from " .. sender)
-        return false
-    end
-    
-    self:Debug("sync", "Parsed section command with section:" .. sectionIndex)
     
     -- Store the section index before timestamp comparison
     self.SYNC.pendingSection = sectionIndex
@@ -189,12 +279,14 @@ function TWRA:HandleSectionCommand(message, sender)
     -- Compare timestamps - simplified comparison for now
     if timestampComparison == 0 then
         -- Our timestamp is equal - navigate to the section
-        self:NavigateToSection(tonumber(sectionIndex), "fromSync")  -- suppressSync=true
+        self:NavigateToSection(sectionIndex, "fromSync")  -- suppressSync=true
         self:Debug("sync", "Navigated to section " .. sectionIndex .. " from sync command by " .. sender)
     else 
         -- timestamp mismatch. CheckTimestampAndHandleResponse should already be trying to get us on the same timestamp
         self:Debug("sync", "Timestamp mismatch, not navigating.")
     end
+    
+    return true
 end
 
 -- Handle an announcement command from sync operations
@@ -269,7 +361,7 @@ function TWRA:HandleStructureRequestCommand(message, sender)
 end
 
 -- Handle structure response commands (SRES)
-function TWRA:HandleStructureResponseCommand(message, sender)
+function TWRA:HandleStructureResponseCommand(timestamp, structureData, sender)
     self:Debug("sync", "Received structure response from " .. sender)
     
     -- Cancel any pending structure request timeout
@@ -278,12 +370,17 @@ function TWRA:HandleStructureResponseCommand(message, sender)
         self.SYNC.structureRequestTimeout = nil
     end
     
-    -- Extract timestamp and structure data from the message using our helper
-    local timestamp, structureData = self:ExtractTimestampFromMessage(message)
-    
+    -- Validate parameters
     if not timestamp or not structureData or structureData == "" then
         self:Debug("sync", "Invalid structure response: missing timestamp or data")
-        return
+        return false
+    end
+    
+    -- Convert timestamp to number
+    timestamp = tonumber(timestamp)
+    if not timestamp then
+        self:Debug("sync", "Invalid timestamp format in structure response")
+        return false
     end
     
     self:Debug("sync", "Processing structure response with timestamp: " .. timestamp)
@@ -319,6 +416,8 @@ function TWRA:HandleStructureResponseCommand(message, sender)
         
         self:ProcessStructureData(structureData, timestamp, sender)
     end
+    
+    return true
 end
 
 -- Handle section request commands (SECREQ)

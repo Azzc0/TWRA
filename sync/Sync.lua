@@ -28,7 +28,8 @@ TWRA.SYNC.COMMANDS = {
     SECTION_REQUEST = "SECREQ",   -- Request specific section data
     SECTION_RESPONSE = "SECRES",  -- Send specific section data
     BULK_REQUEST = "BULK_REQ",     -- Request bulk data transfer
-    BULK_RESPONSE = "BULK_RES"     -- Bulk data transfer response
+    BULK_RESPONSE = "BULK_RES",     -- Bulk data transfer response
+    BULK_SECTION = "BSEC"        -- Bulk section transmission without processing
 }
 
 -- Function to register all sync-related events
@@ -230,6 +231,11 @@ end
 function TWRA:CreateBulkResponseMessage(timestamp, requestId, dataType, chunk, totalChunks, data)
     return self.SYNC.COMMANDS.BULK_RESPONSE .. ":" .. timestamp .. ":" .. requestId .. ":" .. 
            dataType .. ":" .. chunk .. ":" .. totalChunks .. ":" .. data
+end
+
+-- Function to create a bulk section message (BSEC)
+function TWRA:CreateBulkSectionMessage(timestamp, sectionIndex, sectionData)
+    return self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
 end
 
 -- Compare timestamps and return relationship between them
@@ -836,6 +842,242 @@ function TWRA:SendSectionData(sectionIndex)
     end
 end
 
+-- Function to send all sections to the group
+function TWRA:SendAllSections()
+    self:Debug("sync", "Sending all sections to group")
+    
+    -- Skip if not in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("error", "Cannot send all sections - not in a group")
+        return false
+    end
+    
+    -- Make sure we have compressed assignments data
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections then
+        self:Debug("error", "No compressed sections available to send")
+        return false
+    end
+    
+    -- Get current timestamp
+    local timestamp = 0
+    if TWRA_Assignments and TWRA_Assignments.timestamp then
+        timestamp = TWRA_Assignments.timestamp
+    end
+    
+    -- Count how many sections we have
+    local sectionCount = 0
+    local sectionIndices = {}
+    for sectionIndex, _ in pairs(TWRA_CompressedAssignments.sections) do
+        if type(sectionIndex) == "number" then
+            sectionCount = sectionCount + 1
+            table.insert(sectionIndices, sectionIndex)
+        end
+    end
+    
+    if sectionCount == 0 then
+        self:Debug("error", "No sections found to send")
+        return false
+    end
+    
+    self:Debug("sync", "Found " .. sectionCount .. " sections to send")
+    
+    -- Sort section indices numerically
+    table.sort(sectionIndices)
+    
+    -- First, send structure data to ensure receivers have the right structure
+    self:Debug("sync", "First sending structure data")
+    local structureSuccess = self:SendStructureData()
+    
+    -- Log structure data success/failure
+    if structureSuccess then
+        self:Debug("sync", "Structure data sent successfully, will now send sections after delay")
+    else
+        self:Debug("error", "Failed to send structure data, continuing with sections anyway")
+    end
+    
+    -- Force direct sending of sections without using a timer
+    -- This avoids potential issues with scheduled timers
+    self:Debug("sync", "Starting to send individual sections sequentially")
+    
+    local sentCount = 0
+    
+    -- Send each section with a delay between them using a recursive approach
+    local sendNextSection
+    sendNextSection = function(index)
+        -- If we've sent all sections, we're done
+        if index > table.getn(sectionIndices) then
+            self:Debug("sync", "Completed sending sections. Successfully sent " .. 
+                      sentCount .. " out of " .. sectionCount .. " sections.", true)
+            return
+        end
+        
+        -- Get the section index and data
+        local sectionIndex = sectionIndices[index]
+        local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
+        
+        if sectionData and sectionData ~= "" then
+            self:Debug("sync", "Sending section " .. sectionIndex .. " (" .. index .. "/" .. sectionCount .. ")")
+            
+            -- Use SendSectionResponse directly to bypass potential issues with SendSectionData
+            local success = self:SendSectionResponse(sectionIndex, timestamp)
+            
+            if success then
+                sentCount = sentCount + 1
+                self:Debug("sync", "Successfully sent section " .. sectionIndex)
+            else
+                self:Debug("error", "Failed to send section " .. sectionIndex)
+            end
+        else
+            self:Debug("error", "Section " .. sectionIndex .. " data is empty or missing, skipping")
+        end
+        
+        -- Schedule the next section with a short delay
+        self:ScheduleTimer(function()
+            sendNextSection(index + 1)
+        end, 0.3)
+    end
+    
+    -- Start sending sections after a short delay to allow structure data to be processed
+    self:ScheduleTimer(function()
+        sendNextSection(1)
+    end, 1.0)
+    
+    return true
+end
+
+-- Function to send all sections to the group using bulk message type
+function TWRA:SendAllSectionsBulk()
+    self:Debug("sync", "Sending all sections in bulk mode to group")
+    
+    -- Skip if not in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("error", "Cannot send all sections - not in a group")
+        return false
+    end
+    
+    -- Make sure we have compressed assignments data
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections then
+        self:Debug("error", "No compressed sections available to send")
+        return false
+    end
+    
+    -- Get current timestamp
+    local timestamp = 0
+    if TWRA_Assignments and TWRA_Assignments.timestamp then
+        timestamp = TWRA_Assignments.timestamp
+    end
+    
+    -- Count how many sections we have
+    local sectionCount = 0
+    local sectionIndices = {}
+    for sectionIndex, _ in pairs(TWRA_CompressedAssignments.sections) do
+        if type(sectionIndex) == "number" then
+            sectionCount = sectionCount + 1
+            table.insert(sectionIndices, sectionIndex)
+        end
+    end
+    
+    if sectionCount == 0 then
+        self:Debug("error", "No sections found to send")
+        return false
+    end
+    
+    self:Debug("sync", "Found " .. sectionCount .. " sections to send in bulk mode")
+    
+    -- Sort section indices numerically
+    table.sort(sectionIndices)
+    
+    -- IMPORTANT: First send the structure response (SRES) message
+    -- This ensures the structure is processed before any section data
+    self:Debug("sync", "First sending structure data (SRES)")
+    
+    -- Use SendStructureData which creates and sends the proper SRES message
+    local structureSuccess = self:SendStructureData()
+    
+    if not structureSuccess then
+        self:Debug("error", "Failed to send structure data, aborting bulk section send")
+        return false
+    else
+        self:Debug("sync", "Structure data (SRES) sent successfully, will wait before sending sections")
+    end
+    
+    -- Mark that we're about to send bulk sections
+    self.SYNC.sendingBulkSections = true
+    self.SYNC.bulkSectionCount = sectionCount
+    self.SYNC.bulkSectionsSent = 0
+    
+    -- Send each section with a delay between them using a recursive approach
+    local sendNextSection
+    sendNextSection = function(index)
+        -- If we've sent all sections, we're done
+        if index > table.getn(sectionIndices) then
+            self:Debug("sync", "Completed sending sections in bulk mode. Successfully sent " .. 
+                      (self.SYNC.bulkSectionsSent or 0) .. " out of " .. sectionCount .. " sections.", true)
+            
+            -- Clear the bulk sending flags
+            self.SYNC.sendingBulkSections = nil
+            self.SYNC.bulkSectionCount = nil
+            self.SYNC.bulkSectionsSent = nil
+            
+            return
+        end
+        
+        -- Get the section index and data
+        local sectionIndex = sectionIndices[index]
+        local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
+        
+        if sectionData and sectionData ~= "" then
+            self:Debug("sync", "Sending section " .. sectionIndex .. " (" .. index .. "/" .. sectionCount .. ") in bulk mode")
+            
+            -- Create bulk section message
+            local message = self:CreateBulkSectionMessage(timestamp, sectionIndex, sectionData)
+            
+            -- Determine if we need to use chunk manager for large messages
+            if string.len(message) > 2000 then
+                self:Debug("sync", "Bulk section data too large (" .. string.len(message) .. " bytes), using chunk manager")
+                if self.chunkManager then
+                    local prefix = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":"
+                    local success = self.chunkManager:SendChunkedMessage(sectionData, prefix)
+                    
+                    if success then
+                        self.SYNC.bulkSectionsSent = (self.SYNC.bulkSectionsSent or 0) + 1
+                        self:Debug("sync", "Successfully sent bulk section " .. sectionIndex .. " via chunking")
+                    else
+                        self:Debug("error", "Failed to send bulk section " .. sectionIndex .. " via chunking")
+                    end
+                else
+                    self:Debug("error", "Chunk manager not available for large bulk section data")
+                end
+            else
+                -- Send the message directly
+                local success = self:SendAddonMessage(message)
+                
+                if success then
+                    self.SYNC.bulkSectionsSent = (self.SYNC.bulkSectionsSent or 0) + 1
+                    self:Debug("sync", "Successfully sent bulk section " .. sectionIndex)
+                else
+                    self:Debug("error", "Failed to send bulk section " .. sectionIndex)
+                end
+            end
+        else
+            self:Debug("error", "Section " .. sectionIndex .. " data is empty or missing, skipping")
+        end
+        
+        -- Schedule the next section with a short delay
+        self:ScheduleTimer(function()
+            sendNextSection(index + 1)
+        end, 0.5)
+    end
+    
+    -- Start sending sections after a longer delay to ensure structure data is processed
+    -- This is critical to allow time for the structure to be fully processed by receivers
+    self:ScheduleTimer(function()
+        self:Debug("sync", "Starting to send " .. sectionCount .. " sections after waiting for structure processing")
+        sendNextSection(1)
+    end, 2.0) -- Wait 2 seconds after sending structure before starting sections
+    
+    return true
+end
 
 -- Helper function to serialize data for transmission
 function TWRA:SerializeData(data) -- How is this different from  TWRA:SerilizeTable(tbl) in Compression.lua?

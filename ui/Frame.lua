@@ -605,7 +605,7 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     local needsProcessing = sectionData and sectionData["NeedsProcessing"] == true
     local missingCompressedData = false
     
-    -- Check if compressed data is available for this section
+    -- Check if compressed data is available for this section, but ONLY if not using example data
     if not isExampleData and sectionIndex then
         -- First check if we have TWRA_CompressedAssignments structure
         if not TWRA_CompressedAssignments then
@@ -615,15 +615,29 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
             missingCompressedData = true
             self:Debug("ui", "TWRA_CompressedAssignments.sections is nil")
         else
-            -- Direct check if this section has compressed data
-            local hasData = TWRA_CompressedAssignments.sections[sectionIndex] and 
-                           TWRA_CompressedAssignments.sections[sectionIndex] ~= ""
+            -- Check compressed data more carefully, differentiating between:
+            -- 1. Non-existent key (nil)
+            -- 2. Empty string ("")
+            -- 3. Valid data (any non-empty string)
             
-            -- A section without data or with empty string is missing the compressed data
-            missingCompressedData = not hasData
+            local compressedData = TWRA_CompressedAssignments.sections[sectionIndex]
+            local dataExists = compressedData ~= nil
+            local dataNotEmpty = dataExists and compressedData ~= ""
+            
+            -- Log what we found for debugging
+            if not dataExists then
+                self:Debug("ui", "Section " .. currentHandler .. ": Compressed data key doesn't exist")
+            elseif not dataNotEmpty then
+                self:Debug("ui", "Section " .. currentHandler .. ": Compressed data is empty string")
+            else
+                self:Debug("ui", "Section " .. currentHandler .. ": Compressed data exists and is not empty")
+            end
+            
+            -- Only consider data missing if it doesn't exist or is empty
+            missingCompressedData = not dataNotEmpty
             
             self:Debug("ui", "Section " .. currentHandler .. " (" .. sectionIndex .. 
-                     ") - Has compressed data: " .. tostring(hasData) .. 
+                     ") - Has compressed data: " .. tostring(dataNotEmpty) .. 
                      ", missingCompressedData: " .. tostring(missingCompressedData))
         end
     end
@@ -631,8 +645,9 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
               ", missingCompressedData: " .. tostring(missingCompressedData))
     
-    -- Handle data processing requirements or missing data
-    if needsProcessing or (not isExampleData and missingCompressedData) then
+    -- Only show the warning and return early if explicitly needsProcessing is true
+    -- OR if missingCompressedData is true AND we're not using example data
+    if (needsProcessing) or (missingCompressedData and not isExampleData) then
         self:Debug("ui", "Section " .. currentHandler .. " - needsProcessing: " .. tostring(needsProcessing) .. 
                   ", missingCompressedData: " .. tostring(missingCompressedData))
         

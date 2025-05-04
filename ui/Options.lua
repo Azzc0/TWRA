@@ -890,6 +890,12 @@ function TWRA:CreateOptionsInMainFrame()
         
         self:Debug("data", "Importing data")
         
+        -- IMPORTANT: Explicitly clear TWRA_CompressedAssignments.sections to prevent accumulation
+        if TWRA_CompressedAssignments then
+            self:Debug("data", "Explicitly clearing TWRA_CompressedAssignments.sections before import")
+            TWRA_CompressedAssignments.sections = {}
+        end
+        
         -- Import using the new format
         local success = self:DirectImportNewFormat(importText)
         
