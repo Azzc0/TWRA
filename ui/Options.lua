@@ -890,11 +890,8 @@ function TWRA:CreateOptionsInMainFrame()
         
         self:Debug("data", "Importing data")
         
-        -- IMPORTANT: Explicitly clear TWRA_CompressedAssignments.sections to prevent accumulation
-        if TWRA_CompressedAssignments then
-            self:Debug("data", "Explicitly clearing TWRA_CompressedAssignments.sections before import")
-            TWRA_CompressedAssignments.sections = {}
-        end
+        -- Remove redundant clearing code - let DirectImportNewFormat handle it completely
+        -- The DirectImportNewFormat function properly recreates TWRA_CompressedAssignments
         
         -- Import using the new format
         local success = self:DirectImportNewFormat(importText)
@@ -1175,6 +1172,29 @@ end
 function TWRA:DirectImportNewFormat(importText)
     self:Debug("data", "Starting direct import of new format data")
     
+    -- CRITICAL FIX: Completely regenerate TWRA_CompressedAssignments from scratch
+    -- The issue is that setting TWRA_CompressedAssignments.sections = {} isn't sufficient
+    -- Create a completely new global variable instead
+    
+    -- Log the state before clearing
+    local oldSectionCount = 0
+    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
+        for _, _ in pairs(TWRA_CompressedAssignments.sections) do
+            oldSectionCount = oldSectionCount + 1
+        end
+    end
+    self:Debug("data", "Found " .. oldSectionCount .. " sections in TWRA_CompressedAssignments.sections before clearing")
+    
+    -- AGGRESSIVE FIX: Create a completely new table, don't try to modify the existing one
+    -- This ensures no references to the old data persist
+    TWRA_CompressedAssignments = {
+        sections = {},
+        structure = nil,
+        timestamp = nil,
+        useSectionCompression = true
+    }
+    self:Debug("data", "Created completely new TWRA_CompressedAssignments table")
+    
     -- Step 1: Decode the Base64 string
     local decodedString = self:DecodeBase64(importText)
     
@@ -1185,11 +1205,6 @@ function TWRA:DirectImportNewFormat(importText)
     
     -- Debug the decoded string beginning (only for diagnostics)
     self:Debug("data", "Decoded string length: " .. string.len(decodedString))
-    local previewText = string.sub(decodedString, 1, 40)
-    if string.len(decodedString) > 40 then
-        previewText = previewText .. "..."
-    end
-    self:Debug("data", "String begins with: " .. previewText)
     
     -- Step 2: Create a temporary environment to evaluate the string safely
     local env = {}
@@ -1243,7 +1258,7 @@ function TWRA:DirectImportNewFormat(importText)
     
     self:Debug("data", "Verified new data format structure with " .. sectionCount .. " sections")
     
-    -- Step 6: Save directly to TWRA_Assignments
+    -- Step 6: Create a completely new TWRA_Assignments with just the imported data
     local timestamp = time()
     
     TWRA_Assignments = {
@@ -1253,7 +1268,7 @@ function TWRA:DirectImportNewFormat(importText)
         currentSection = 1
     }
     
-    self:Debug("data", "Successfully assigned to TWRA_Assignments")
+    self:Debug("data", "Successfully created new TWRA_Assignments")
     
     -- Step 7: Build navigation from the imported data
     self.navigation = self.navigation or { handlers = {}, currentIndex = 1 }
@@ -1277,7 +1292,57 @@ function TWRA:DirectImportNewFormat(importText)
         self:Debug("nav", "Section names: " .. table.concat(sections, ", "))
     end
     
-    -- Step 8: Update UI
+    -- Step 8: Force generation of new compressed data
+    if self.StoreSegmentedData then
+        self:Debug("data", "Generating segmented compressed data for new assignments")
+        self:StoreSegmentedData()
+    elseif self.StoreCompressedData then
+        self:Debug("data", "Generating compressed data for new assignments")
+        self:StoreCompressedData()
+    end
+    
+    -- Step 8.5: Verify compressed sections were correctly generated
+    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.sections then
+        local compressedSectionCount = 0
+        for _, _ in pairs(TWRA_CompressedAssignments.sections) do
+            compressedSectionCount = compressedSectionCount + 1
+        end
+        self:Debug("data", "Verified compressed sections: " .. compressedSectionCount .. " (should match: " .. sectionCount .. ")")
+        
+        -- Double check in case of mismatch
+        if compressedSectionCount ~= sectionCount then
+            self:Debug("error", "Mismatch between compressed sections and assignments - forcing regeneration")
+            -- Create a completely new TWRA_CompressedAssignments again to ensure clean state
+            TWRA_CompressedAssignments = {
+                sections = {},
+                structure = nil,
+                timestamp = timestamp,
+                useSectionCompression = true
+            }
+            
+            -- Force regeneration of compressed data
+            if self.StoreSegmentedData then
+                self:StoreSegmentedData()
+            elseif self.StoreCompressedData then
+                self:StoreCompressedData()
+            end
+            
+            -- Verify again
+            compressedSectionCount = 0
+            for _, _ in pairs(TWRA_CompressedAssignments.sections) do
+                compressedSectionCount = compressedSectionCount + 1
+            end
+            self:Debug("data", "After forced regeneration: " .. compressedSectionCount .. " compressed sections")
+        end
+    end
+    
+    -- Step 9: Process player-specific info 
+    if self.ProcessPlayerInfo then
+        self:Debug("data", "Processing player-specific info after import")
+        pcall(function() self:ProcessPlayerInfo() end)
+    end
+    
+    -- Step 10: Update UI
     if self.DisplayCurrentSection then
         self:Debug("ui", "Updating display with new data")
         self:DisplayCurrentSection()

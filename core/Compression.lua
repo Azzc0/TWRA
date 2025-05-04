@@ -621,8 +621,15 @@ end
 
 -- Store segmented compressed data
 function TWRA:StoreSegmentedData()
-    -- Ensure our storage exists
-    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    -- CRITICAL FIX: Always create a completely fresh TWRA_CompressedAssignments structure
+    -- This ensures no stale sections remain across imports/rebuilds
+    TWRA_CompressedAssignments = {
+        sections = {},
+        structure = nil,
+        timestamp = nil,
+        useSectionCompression = true
+    }
+    self:Debug("compress", "Completely reset TWRA_CompressedAssignments at start of StoreSegmentedData")
     
     -- Check if we have assignments to compress
     if not TWRA_Assignments or not TWRA_Assignments.data then

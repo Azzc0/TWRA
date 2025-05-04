@@ -766,6 +766,16 @@ function TWRA:ProcessStructureData(structureData, timestamp, sender)
     self:Debug("sync", "ProcessStructureData: Processing structure data from " .. sender)
     self:Debug("data", "Structure data length: " .. string.len(structureData))
     
+    -- CRITICAL FIX: Always create a completely fresh TWRA_CompressedAssignments structure
+    -- This ensures no stale sections remain across structure imports
+    TWRA_CompressedAssignments = {
+        sections = {},
+        structure = nil,
+        timestamp = nil,
+        useSectionCompression = true
+    }
+    self:Debug("sync", "Completely reset TWRA_CompressedAssignments at start of ProcessStructureData")
+    
     -- First let's verify that the structure data is valid
     if not structureData or type(structureData) ~= "string" then
         self:Debug("sync", "Invalid structure data received from " .. sender)

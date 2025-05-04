@@ -626,6 +626,16 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return nil 
     end
     
+    -- CRITICAL FIX: Clear TWRA_CompressedAssignments completely at the beginning of the import
+    -- This ensures no stale compressed data persists across imports
+    TWRA_CompressedAssignments = {
+        sections = {},
+        structure = nil,
+        timestamp = nil,
+        useSectionCompression = true
+    }
+    self:Debug("data", "Completely reset TWRA_CompressedAssignments at start of decoding")
+    
     -- Check if this is compressed data from sync
     if string.sub(base64Str, 1, 5) == "COMP:" then
         self:Debug("data", "Detected compressed data format, processing with decompression")

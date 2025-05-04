@@ -826,6 +826,16 @@ end
 function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
     if not data then return end
     
+    -- CRITICAL FIX: Clear TWRA_CompressedAssignments completely at the start of any new import
+    -- This ensures no stale compressed data persists
+    TWRA_CompressedAssignments = {
+        sections = {},
+        structure = nil,
+        timestamp = nil,
+        useSectionCompression = true
+    }
+    self:Debug("data", "Completely reset TWRA_CompressedAssignments for clean import")
+    
     -- Check if this is our new format structure with ["data"] key
     local isNewFormat = false
     if type(data) == "table" and data.data and type(data.data) == "table" then
@@ -926,6 +936,12 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
             -- Build navigation structure
             self:BuildNavigationFromNewFormat()
             
+            -- After building navigation, regenerate compressed data if needed
+            if self.StoreSegmentedData then
+                self:Debug("data", "Generating new compressed data after import")
+                self:StoreSegmentedData()
+            end
+            
             -- If we have pending section information, try to navigate back to it
             if self.pendingSectionName then
                 self:Debug("nav", "Attempting to restore navigation to section: " .. self.pendingSectionName)
@@ -968,6 +984,9 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
             return false
         end
         
+        -- Determine timestamp
+        local timestamp = originalTimestamp or time()
+        
         -- Store in saved variables
         self.fullData = data
         
@@ -995,6 +1014,12 @@ function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
         
         -- Rebuild navigation with the new data
         self:RebuildNavigation()
+        
+        -- After building navigation, regenerate compressed data if needed
+        if self.StoreSegmentedData then
+            self:Debug("data", "Generating new compressed data after legacy import")
+            self:StoreSegmentedData()
+        end
         
         -- Set in case we need it later
         if self.navigation and self.navigation.currentIndex then
