@@ -30,6 +30,10 @@ TWRA.DEBUG_LEVELS = {
 TWRA.earlyErrors = TWRA.earlyErrors or {}
 TWRA.worldLoaded = false -- Track if player has entered world
 
+function TWRA:ClearCA()
+    TWRA_CompressedAssignments = {}
+end
+
 -- Global error handler to capture early errors 
 function TWRA_CaptureEarlyError(message)
     -- Create our addon table if it doesn't exist

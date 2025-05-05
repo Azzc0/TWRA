@@ -972,13 +972,7 @@ function TWRA:CreateOptionsInMainFrame()
             if self.OSD and self.OSD.isVisible and self.UpdateOSDContent then
                 self:UpdateOSDContent()
             end
-            
-            -- Announce the import to other clients if needed
-            if self.AnnounceDataImport then
-                self:Debug("sync", "Broadcasting import announcement")
-                self:AnnounceDataImport()
-            end
-            
+                        
             -- Switch to main view
             if self.ShowMainView then
                 self:ShowMainView()
@@ -986,7 +980,6 @@ function TWRA:CreateOptionsInMainFrame()
         else
             -- Import failed
             self:Debug("error", "Failed to import data - invalid format")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000TWRA:|r Import failed. The data appears to be in an invalid format.")
         end
     end)
     
@@ -1351,6 +1344,23 @@ function TWRA:DirectImportNewFormat(importText)
     -- Success message
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Successfully imported new format data with " .. 
         sectionCount .. " sections")
+    
+    -- Step 11 (NEW): NOW that all data processing is complete and structures are fully prepared,
+    -- send all sections in bulk to other players in the raid ONLY if we're in a raid
+    if GetNumRaidMembers() > 0 then
+        self:Debug("sync", "Import complete - now sending all sections to raid members")
+        if self.SendAllSections then
+            -- Create a slight delay to ensure all processing is fully complete
+            self:ScheduleTimer(function()
+                self:Debug("sync", "Executing SendAllSections as the final step of import")
+                self:SendAllSections()
+            end, 0.5) -- 0.5 second delay
+        else
+            self:Debug("error", "SendAllSectionsB function not available")
+        end
+    else
+        self:Debug("sync", "Not in a raid - skipping bulk sync after import")
+    end
     
     return true
 end

@@ -94,6 +94,19 @@ function TWRA:CreateMainFrame()
     local titleText = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     titleText:SetPoint("TOP", 0, -15)
     titleText:SetText("Raid Assignments")
+    
+    -- Add Sync All button in the top left corner
+    local syncAllButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
+    syncAllButton:SetWidth(70)
+    syncAllButton:SetHeight(20)
+    syncAllButton:SetPoint("TOPLEFT", 20, -15)
+    syncAllButton:SetText("Sync All")
+    syncAllButton:SetScript("OnClick", function() 
+        -- Close dropdown when syncing
+        self:CloseDropdownMenu()
+        self:SendAllSections()
+    end)
+    self.syncAllButton = syncAllButton  -- Store reference
 
     -- Options button
     local optionsButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
@@ -465,6 +478,7 @@ function TWRA:ShowMainView()
     -- Show other main view buttons
     if self.announceButton then self.announceButton:Show() end
     if self.updateTanksButton then self.updateTanksButton:Show() end
+    if self.syncAllButton then self.syncAllButton:Show() end
 
     -- Change button text if options button exists
     if self.optionsButton then

@@ -29,7 +29,8 @@ TWRA.SYNC.COMMANDS = {
     SECTION_RESPONSE = "SECRES",  -- Send specific section data
     BULK_REQUEST = "BULK_REQ",     -- Request bulk data transfer
     BULK_RESPONSE = "BULK_RES",     -- Bulk data transfer response
-    BULK_SECTION = "BSEC"        -- Bulk section transmission without processing
+    BULK_SECTION = "BSEC",        -- Bulk section transmission without processing
+    BULK_STRUCTURE = "BSTR"        -- Final structure transmission in bulk mode
 }
 
 -- Function to register all sync-related events
@@ -236,6 +237,11 @@ end
 -- Function to create a bulk section message (BSEC)
 function TWRA:CreateBulkSectionMessage(timestamp, sectionIndex, sectionData)
     return self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
+end
+
+-- Function to create a bulk structure message (BSTR)
+function TWRA:CreateBulkStructureMessage(timestamp, structureData)
+    return self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":" .. structureData
 end
 
 -- Compare timestamps and return relationship between them
@@ -842,13 +848,13 @@ function TWRA:SendSectionData(sectionIndex)
     end
 end
 
--- Function to send all sections to the group
+-- Function to send all sections to the group in bulk mode with reversed order (sections first, structure last)
 function TWRA:SendAllSections()
-    self:Debug("sync", "Sending all sections to group")
+    self:Debug("sync", "Sending all sections in reversed bulk mode (sections first, structure last)")
     
     -- Skip if not in a group
     if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        self:Debug("error", "Cannot send all sections - not in a group")
+        self:Debug("error", "Cannot send sections - not in a group")
         return false
     end
     
@@ -879,128 +885,10 @@ function TWRA:SendAllSections()
         return false
     end
     
-    self:Debug("sync", "Found " .. sectionCount .. " sections to send")
+    self:Debug("sync", "Found " .. sectionCount .. " sections to send in reversed bulk mode")
     
     -- Sort section indices numerically
     table.sort(sectionIndices)
-    
-    -- First, send structure data to ensure receivers have the right structure
-    self:Debug("sync", "First sending structure data")
-    local structureSuccess = self:SendStructureData()
-    
-    -- Log structure data success/failure
-    if structureSuccess then
-        self:Debug("sync", "Structure data sent successfully, will now send sections after delay")
-    else
-        self:Debug("error", "Failed to send structure data, continuing with sections anyway")
-    end
-    
-    -- Force direct sending of sections without using a timer
-    -- This avoids potential issues with scheduled timers
-    self:Debug("sync", "Starting to send individual sections sequentially")
-    
-    local sentCount = 0
-    
-    -- Send each section with a delay between them using a recursive approach
-    local sendNextSection
-    sendNextSection = function(index)
-        -- If we've sent all sections, we're done
-        if index > table.getn(sectionIndices) then
-            self:Debug("sync", "Completed sending sections. Successfully sent " .. 
-                      sentCount .. " out of " .. sectionCount .. " sections.", true)
-            return
-        end
-        
-        -- Get the section index and data
-        local sectionIndex = sectionIndices[index]
-        local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
-        
-        if sectionData and sectionData ~= "" then
-            self:Debug("sync", "Sending section " .. sectionIndex .. " (" .. index .. "/" .. sectionCount .. ")")
-            
-            -- Use SendSectionResponse directly to bypass potential issues with SendSectionData
-            local success = self:SendSectionResponse(sectionIndex, timestamp)
-            
-            if success then
-                sentCount = sentCount + 1
-                self:Debug("sync", "Successfully sent section " .. sectionIndex)
-            else
-                self:Debug("error", "Failed to send section " .. sectionIndex)
-            end
-        else
-            self:Debug("error", "Section " .. sectionIndex .. " data is empty or missing, skipping")
-        end
-        
-        -- Schedule the next section with a short delay
-        self:ScheduleTimer(function()
-            sendNextSection(index + 1)
-        end, 0.3)
-    end
-    
-    -- Start sending sections after a short delay to allow structure data to be processed
-    self:ScheduleTimer(function()
-        sendNextSection(1)
-    end, 1.0)
-    
-    return true
-end
-
--- Function to send all sections to the group using bulk message type with optimized approach
-function TWRA:SendAllSectionsBulk()
-    -- Only log at the beginning of the operation
-    self:Debug("sync", "Sending all sections in bulk mode to group")
-    
-    -- Skip if not in a group
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        self:Debug("error", "Cannot send all sections - not in a group")
-        return false
-    end
-    
-    -- Make sure we have compressed assignments data
-    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections then
-        self:Debug("error", "No compressed sections available to send")
-        return false
-    end
-    
-    -- Get current timestamp
-    local timestamp = 0
-    if TWRA_Assignments and TWRA_Assignments.timestamp then
-        timestamp = TWRA_Assignments.timestamp
-    end
-    
-    -- Count how many sections we have
-    local sectionCount = 0
-    local sectionIndices = {}
-    for sectionIndex, _ in pairs(TWRA_CompressedAssignments.sections) do
-        if type(sectionIndex) == "number" then
-            sectionCount = sectionCount + 1
-            table.insert(sectionIndices, sectionIndex)
-        end
-    end
-    
-    if sectionCount == 0 then
-        self:Debug("error", "No sections found to send")
-        return false
-    end
-    
-    self:Debug("sync", "Found " .. sectionCount .. " sections to send in bulk mode")
-    
-    -- Sort section indices numerically
-    table.sort(sectionIndices)
-    
-    -- IMPORTANT: First send the structure response (SRES) message
-    -- This ensures the structure is processed before any section data
-    self:Debug("sync", "First sending structure data (SRES)")
-    
-    -- Use SendStructureData which creates and sends the proper SRES message
-    local structureSuccess = self:SendStructureData()
-    
-    if not structureSuccess then
-        self:Debug("error", "Failed to send structure data, aborting bulk section send")
-        return false
-    else
-        self:Debug("sync", "Structure data (SRES) sent successfully, will wait before sending sections")
-    end
     
     -- Mark that we're about to send bulk sections
     self.SYNC.sendingBulkSections = true
@@ -1008,12 +896,11 @@ function TWRA:SendAllSectionsBulk()
     self.SYNC.bulkSectionsSent = 0
     
     -- OPTIMIZATION: Pre-generate all messages and pre-determine which need chunking
-    -- This avoids message generation and string length calculations during the send loop
     self:Debug("sync", "Pre-generating all section messages")
     local preparedMessages = {}
     local usesChunking = {}
     
-    -- First prepare all messages
+    -- First prepare all section messages
     for i, sectionIndex in ipairs(sectionIndices) do
         local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
         
@@ -1047,75 +934,104 @@ function TWRA:SendAllSectionsBulk()
         end
     end
     
-    -- Inform the user that sync is starting
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Sending " .. sectionCount .. " sections to raid")
+    -- REVERSED ORDER: Send sections first WITHOUT delay
+    self:Debug("sync", "REVERSED ORDER: Sending all sections first")
     
-    -- OPTIMIZATION: Remove timers between section sends - send all at once after structure delay
-    -- Wait for structure data to be processed, then send all sections without delays between them
-    self:ScheduleTimer(function()
-        self:Debug("sync", "Structure processed, now sending all sections without delays")
+    local sentCount = 0
+    local emptyCount = 0
+    local errorCount = 0
+    
+    -- Send all sections in a single batch
+    for i, prepared in ipairs(preparedMessages) do
+        local sectionIndex = prepared.sectionIndex
         
-        local sentCount = 0
-        local emptyCount = 0
-        local errorCount = 0
-        
-        -- Send all sections in a single batch
-        for i, prepared in ipairs(preparedMessages) do
-            local sectionIndex = prepared.sectionIndex
+        -- Skip empty sections
+        if prepared.isEmpty then
+            emptyCount = emptyCount + 1
+        else
+            local success = false
             
-            -- Skip empty sections
-            if prepared.isEmpty then
-                emptyCount = emptyCount + 1
-            else
-                local success = false
-                
-                -- Handle chunked messages differently
-                if usesChunking[i] then
-                    if self.chunkManager then
-                        success = self.chunkManager:SendChunkedMessage(prepared.data, prepared.prefix)
-                        if not success then
-                            errorCount = errorCount + 1
-                        end
-                    else
-                        self:Debug("error", "Chunk manager not available for large bulk section data")
-                        errorCount = errorCount + 1
-                    end
-                else
-                    -- Send regular messages directly
-                    success = self:SendAddonMessage(prepared.message)
+            -- Handle chunked messages differently
+            if usesChunking[i] then
+                if self.chunkManager then
+                    success = self.chunkManager:SendChunkedMessage(prepared.data, prepared.prefix)
                     if not success then
                         errorCount = errorCount + 1
                     end
+                else
+                    self:Debug("error", "Chunk manager not available for large bulk section data")
+                    errorCount = errorCount + 1
                 end
-                
-                if success then
-                    sentCount = sentCount + 1
+            else
+                -- Send regular messages directly
+                success = self:SendAddonMessage(prepared.message)
+                if not success then
+                    errorCount = errorCount + 1
                 end
             end
+            
+            if success then
+                sentCount = sentCount + 1
+            end
         end
-        
-        -- Report results at the end
-        self:Debug("sync", "Completed sending sections. Successfully sent " .. 
-                 sentCount .. " out of " .. sectionCount .. " sections. " ..
-                 emptyCount .. " empty sections skipped. " ..
-                 errorCount .. " errors.", true)
-        
-        -- Clear the bulk sending flags
-        self.SYNC.sendingBulkSections = nil
-        self.SYNC.bulkSectionCount = nil
-        self.SYNC.bulkSectionsSent = self.SYNC.bulkSectionsSent or 0
-        
-        -- Clear the temporary message cache to free memory
-        preparedMessages = nil
-        usesChunking = nil
-        
-        -- Final user notification
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Sent " .. sentCount .. " sections to raid")
-        
-    end, 2.0) -- Wait 2 seconds after sending structure before sending sections
-    self:Debug("sync", "garbage collection after sending all sections starting at " .. GetTime())
+    end
+    
+    -- Report section sending results
+    self:Debug("sync", "Completed sending sections. Successfully sent " .. 
+             sentCount .. " out of " .. sectionCount .. " sections. " ..
+             emptyCount .. " empty sections skipped. " ..
+             errorCount .. " errors.")
+    
+    -- REVERSED ORDER: Now get the structure data and send it LAST
+    local structureData = self:GetCompressedStructure()
+    if not structureData then
+        self:Debug("error", "No structure data available to send at end of bulk sync")
+        return false
+    end
+    
+    -- Create the bulk structure message - using the BULK_STRUCTURE command
+    local structureMessage = self:CreateBulkStructureMessage(timestamp, structureData)
+    
+    -- Check if structure message needs chunking
+    if string.len(structureMessage) > 2000 then
+        self:Debug("sync", "Structure data too large, using chunk manager for final structure message")
+        if self.chunkManager then
+            local prefix = self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":"
+            local success = self.chunkManager:SendChunkedMessage(structureData, prefix)
+            if success then
+                self:Debug("sync", "Successfully sent final structure message via chunk manager")
+            else
+                self:Debug("error", "Failed to send final structure message via chunk manager")
+                return false
+            end
+        else
+            self:Debug("error", "Chunk manager not available for large structure data")
+            return false
+        end
+    else
+        -- Send the structure message directly
+        local success = self:SendAddonMessage(structureMessage)
+        if success then
+            self:Debug("sync", "Successfully sent final structure message")
+        else
+            self:Debug("error", "Failed to send final structure message")
+            return false
+        end
+    end
+    
+    -- Clear the bulk sending flags
+    self.SYNC.sendingBulkSections = nil
+    self.SYNC.bulkSectionCount = nil
+    self.SYNC.bulkSectionsSent = 0
+    
+    -- Clear the temporary message cache to free memory
+    preparedMessages = nil
+    usesChunking = nil
+    
+    -- Final user notification
+    TWRA:Debug("sync", "Bulk sync complete with reversed order (sections first, structure last)!", true)
+    
     collectgarbage("collect")
-    self:Debug("sync", "garbage collection after sending all sections finished at " .. GetTime())
     return true
 end
 

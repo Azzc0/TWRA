@@ -708,7 +708,7 @@ function TWRA:ClearDataForStructureResponse()
 end
 
 -- Helper function to build skeleton structure from decoded structure data
-function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp)
+function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp, preserveCompressedData)
     if not decodedStructure or type(decodedStructure) ~= "table" then
         self:Debug("error", "BuildSkeletonFromStructure: Invalid structure data")
         return false
@@ -727,9 +727,11 @@ function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp)
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     TWRA_CompressedAssignments.timestamp = timestamp
     
-    -- CRITICAL: Explicitly clear existing sections and create a fresh table
-    -- This ensures a clean start without any stale section data
-    TWRA_CompressedAssignments.sections = {}
+    -- CRITICAL: Initialize sections table if it doesn't exist yet
+    if not TWRA_CompressedAssignments.sections then
+        self:Debug("data", "Creating fresh TWRA_CompressedAssignments.sections table")
+        TWRA_CompressedAssignments.sections = {}
+    end
     
     -- Build minimal skeleton sections
     local sectionsCount = 0
@@ -743,8 +745,11 @@ function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp)
             }
             
             -- Also create empty placeholder in TWRA_CompressedAssignments.sections
-            TWRA_CompressedAssignments.sections[index] = ""
-            
+            -- Only if preserveCompressedData is false or if the section doesn't already exist
+            if not preserveCompressedData or not TWRA_CompressedAssignments.sections[index] then
+                TWRA_CompressedAssignments.sections[index] = ""
+            end
+
             sectionsCount = sectionsCount + 1
         end
     end
@@ -756,7 +761,11 @@ function TWRA:BuildSkeletonFromStructure(decodedStructure, timestamp)
     end
     
     self:Debug("data", "Built minimal skeleton structure with " .. sectionsCount .. " sections")
-    self:Debug("data", "Created " .. compressedSectionCount .. " empty section placeholders in TWRA_CompressedAssignments.sections")
+    if not preserveCompressedData then
+        self:Debug("data", "Created " .. compressedSectionCount .. " empty section placeholders in TWRA_CompressedAssignments.sections")
+    else
+        self:Debug("data", "Preserved " .. compressedSectionCount .. " existing sections in TWRA_CompressedAssignments.sections")
+    end
     
     return true
 end
@@ -765,16 +774,6 @@ end
 function TWRA:ProcessStructureData(structureData, timestamp, sender)
     self:Debug("sync", "ProcessStructureData: Processing structure data from " .. sender)
     self:Debug("data", "Structure data length: " .. string.len(structureData))
-    
-    -- CRITICAL FIX: Always create a completely fresh TWRA_CompressedAssignments structure
-    -- This ensures no stale sections remain across structure imports
-    TWRA_CompressedAssignments = {
-        sections = {},
-        structure = nil,
-        timestamp = nil,
-        useSectionCompression = true
-    }
-    self:Debug("sync", "Completely reset TWRA_CompressedAssignments at start of ProcessStructureData")
     
     -- First let's verify that the structure data is valid
     if not structureData or type(structureData) ~= "string" then
