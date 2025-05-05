@@ -1,14 +1,13 @@
 -- TWRA AutoNavigate integration for SuperWoW
 TWRA = TWRA or {}
--- Is RAID_TARGET_UPDATE  an event we can use instead of the timer?
+-- Use RAID_TARGET_UPDATE event from TWRA.lua instead of timer-based scanning
 -- Store information about mob-to-section mapping
 TWRA.AUTONAVIGATE = {
     enabled = false,          -- Feature toggle
     hasSupported = false,     -- Whether SuperWoW features are available
     lastMarkedGuid = nil,     -- Last mob GUID we processed
     debug = false,            -- Enable debug messages
-    scanTimer = 0,            -- Timer for periodic scanning
-    scanFreq = 1              -- How often to scan (seconds)
+    initialized = false       -- Track if we've initialized
 }
 
 -- Check if SuperWoW is available using proper globals
@@ -35,7 +34,75 @@ function TWRA:CheckSuperWoWSupport(quiet)
     return hasSuperWow
 end
 
--- Register AutoNavigate events and hooks
+-- Main function called from RAID_TARGET_UPDATE event in TWRA.lua
+function TWRA:CheckSkullMarkedMob()
+    self:Debug("nav", "Checking for skull-marked mob")
+    
+    -- Early return if AutoNavigate is not enabled
+    if not self.AUTONAVIGATE.enabled then
+        self:Debug("nav", "DEBUG: Early return - AutoNavigate is not enabled")
+        return
+    end
+    
+    self:Debug("nav", "DEBUG: AutoNavigate is enabled, checking SuperWoW support...")
+    
+    -- Make sure SuperWoW is available
+    if not self:CheckSuperWoWSupport(true) then 
+        -- Throw an error as requested
+        self:Debug("error", "SuperWoW is required for AutoNavigate")
+        self:Debug("nav", "DEBUG: Early return - SuperWoW support check failed")
+        -- Disable AutoNavigate to prevent further errors
+        self.AUTONAVIGATE.enabled = false
+        if TWRA_SavedVariables and TWRA_SavedVariables.options then
+            TWRA_SavedVariables.options.autoNavigate = false
+        end
+        return
+    end
+    
+    self:Debug("nav", "DEBUG: SuperWoW support confirmed, checking for skull-marked unit...")
+    
+    -- Use direct mark8 reference for skull-marked units (SuperWoW feature)
+    local markUnitId = "mark8"  -- Skull is always mark8
+    
+    -- Check if mark8 exists and get its guid
+    local exists,guid = UnitExists("mark8")
+    if not exists then
+        self:Debug("nav", "DEBUG: No skull-marked unit exists")
+        if self.AUTONAVIGATE.debug and self.AUTONAVIGATE.lastMarkedGuid ~= "none" then
+            self:Debug("nav", "No skull-marked units found")
+            self.AUTONAVIGATE.lastMarkedGuid = "none" -- Use "none" as a marker so we don't spam this message
+        end
+        return
+    end
+    
+    self:Debug("nav", "DEBUG: Skull-marked unit exists, getting GUID...")
+    
+    -- Make sure we got a valid GUID
+    if not guid or guid == "" then
+        self:Debug("nav", "Unit exists but no GUID available for skull-marked unit")
+        return
+    end
+    
+    local name = UnitName("mark8")
+    
+    self:Debug("nav", "DEBUG: Successfully got name and GUID")
+    
+    if self.AUTONAVIGATE.debug then
+        self:Debug("nav", "Found skull-marked unit: " .. name .. " with GUID: " .. guid)
+    end
+    
+    -- Only process if this is a new GUID to avoid constant processing
+    if guid ~= self.AUTONAVIGATE.lastMarkedGuid then
+        if self.AUTONAVIGATE.debug then
+            self:Debug("nav", "Processing new skull-marked unit")
+        end
+        
+        self:ProcessMarkedMob(name, guid)
+        self.AUTONAVIGATE.lastMarkedGuid = guid
+    end
+end
+
+-- Register AutoNavigate events and hooks - simplified now that we use RAID_TARGET_UPDATE
 function TWRA:RegisterAutoNavigateEvents()
     self:Debug("nav", "Registering AutoNavigate events")
     
@@ -84,7 +151,7 @@ function TWRA:RegisterAutoNavigateEvents()
     end, 1)
 end
 
--- Improved initialization for AutoNavigate
+-- Simplified initialization function that no longer needs to set up scanning
 function TWRA:InitializeAutoNavigate()
     self:Debug("nav", "Initializing AutoNavigate module")
     
@@ -93,10 +160,17 @@ function TWRA:InitializeAutoNavigate()
         self:Debug("nav", "AutoNavigate already initialized, refreshing settings")
     end
     
-    -- Clear any existing timer
-    if self.AUTONAVIGATE.timer then
-        self:CancelTimer(self.AUTONAVIGATE.timer)
-        self.AUTONAVIGATE.timer = nil
+    -- Check SuperWoW support early to handle error cases
+    local hasSupport = self:CheckSuperWoWSupport()
+    if not hasSupport then
+        self:Debug("error", "SuperWoW is required for AutoNavigate")
+        
+        -- Disable AutoNavigate if SuperWoW isn't available
+        if TWRA_SavedVariables and TWRA_SavedVariables.options then
+            TWRA_SavedVariables.options.autoNavigate = false
+        end
+        self.AUTONAVIGATE.enabled = false
+        return false
     end
     
     -- Load enabled state from SavedVariables
@@ -117,39 +191,18 @@ function TWRA:InitializeAutoNavigate()
             end
         end
         
-        -- Load scan frequency
-        if TWRA_SavedVariables.options.scanFrequency then
-            self.AUTONAVIGATE.scanFreq = TWRA_SavedVariables.options.scanFrequency
-        end
-        
         -- Update the runtime state to match saved settings
         self.AUTONAVIGATE.enabled = autoNavigateEnabled
         
         -- Output debug message about the loaded state
         self:Debug("nav", "AutoNavigate " .. (autoNavigateEnabled and "enabled" or "disabled"))
-        
-        -- Start scanning if enabled
-        if autoNavigateEnabled then
-            if self:CheckSuperWoWSupport() then
-                self:StartAutoNavigateScan()
-                self:Debug("nav", "AutoNavigate scanning started during initialization")
-            else
-                -- SuperWoW not available, reset the state
-                self.AUTONAVIGATE.enabled = false
-                TWRA_SavedVariables.options.autoNavigate = false
-                self:Debug("nav", "AutoNavigate disabled: SuperWoW not available")
-            end
-        else
-            -- Make sure scanning is stopped if disabled
-            self:StopAutoNavigateScan()
-        end
     end
 
     -- Ensure initialization completes properly
     self.AUTONAVIGATE.initialized = true
+    self:Debug("nav", "AutoNavigate initialized")
     
-    self:Debug("nav", "AutoNavigate initialized with scan frequency: " .. 
-               (self.AUTONAVIGATE.scanFreq or "default") .. "s")
+    return true
 end
 
 -- Toggle AutoNavigate feature on/off with explicit debugging
@@ -157,6 +210,18 @@ function TWRA:ToggleAutoNavigate(state)
     -- Debug the function call with explicit information
     self:Debug("nav", "ToggleAutoNavigate called with state: " .. tostring(state) .. 
                " (current state: " .. tostring(self.AUTONAVIGATE.enabled) .. ")")
+    
+    -- Check SuperWoW support first
+    if not self:CheckSuperWoWSupport() then
+        self:Debug("error", "SuperWoW is required for AutoNavigate")
+        
+        -- Disable AutoNavigate if SuperWoW isn't available
+        if TWRA_SavedVariables and TWRA_SavedVariables.options then
+            TWRA_SavedVariables.options.autoNavigate = false
+        end
+        self.AUTONAVIGATE.enabled = false
+        return false
+    end
     
     -- Determine the new state
     local newState
@@ -185,156 +250,15 @@ function TWRA:ToggleAutoNavigate(state)
     self:Debug("nav", "AutoNavigate " .. (newState and "enabled" or "disabled") .. 
               " (saved value: " .. tostring(TWRA_SavedVariables.options.autoNavigate) .. ")")
     
-    -- Start or stop scanning based on new state
+    -- Run a check immediately if enabled
     if newState then
-        -- First check SuperWoW support
-        if self:CheckSuperWoWSupport() then
-            self:StartAutoNavigateScan()
-            self:Debug("nav", "AutoNavigate scanning activated with frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
-        else
-            self:Debug("nav", "AutoNavigate enabled but SuperWoW not available, scanning disabled")
-            -- If SuperWoW is not available, reset the enabled state
-            self.AUTONAVIGATE.enabled = false
-            TWRA_SavedVariables.options.autoNavigate = false
-        end
+        self:CheckSkullMarkedMob()
     else
-        self:StopAutoNavigateScan()
-        self:Debug("nav", "AutoNavigate scanning deactivated")
+        -- Reset tracking variables when disabled
+        self.AUTONAVIGATE.lastMarkedGuid = nil
     end
     
     return self.AUTONAVIGATE.enabled
-end
-
--- Start the AutoNavigate scanning - make sure this function works independently
-function TWRA:StartAutoNavigateScan()
-    -- Debug output to verify this function is being called
-    self:Debug("nav", "StartAutoNavigateScan called")
-
-    -- Clear any existing timer to avoid duplicates
-    if self.AUTONAVIGATE.timer then
-        self:CancelTimer(self.AUTONAVIGATE.timer)
-        self.AUTONAVIGATE.timer = nil
-        self:Debug("nav", "Cleared existing AutoNavigate timer")
-    end
-    
-    -- Get scan frequency from settings or use default
-    local scanFreq = self.AUTONAVIGATE.scanFreq or 1
-    
-    -- Create and configure the scan frame if it doesn't exist
-    if not self.AUTONAVIGATE.scanFrame then
-        self.AUTONAVIGATE.scanFrame = CreateFrame("Frame", "TWRAAutoNavigateFrame", UIParent)
-        self.AUTONAVIGATE.lastUpdate = GetTime()
-        
-        -- Use SetScript to handle frame updates
-        self.AUTONAVIGATE.scanFrame:SetScript("OnUpdate", function()
-            -- Only proceed if auto navigate is actually enabled
-            if not TWRA.AUTONAVIGATE or not TWRA.AUTONAVIGATE.enabled then
-                return
-            end
-            
-            -- Check if enough time has passed since last scan
-            local currentTime = GetTime()
-            local elapsed = currentTime - (TWRA.AUTONAVIGATE.lastUpdate or 0)
-            
-            -- Only scan when we've waited long enough
-            if elapsed >= TWRA.AUTONAVIGATE.scanFreq then
-                -- Reset the timer
-                TWRA.AUTONAVIGATE.lastUpdate = currentTime
-                
-                -- Debug output if in debug mode
-                if TWRA.AUTONAVIGATE.debug then
-                    TWRA:Debug("nav", "Auto scan triggering after " .. string.format("%.1f", elapsed) .. "s")
-                end
-                
-                -- Perform the actual scan
-                TWRA:ScanMarkedTargets()
-            end
-        end)
-    end
-    
-    -- Reset last update time to ensure first scan happens quickly
-    self.AUTONAVIGATE.lastUpdate = GetTime()
-    
-    -- Perform an initial scan immediately
-    self:ScanMarkedTargets()
-    
-    -- Ensure the scan frame is shown and working
-    self.AUTONAVIGATE.scanFrame:Show()
-    
-    self:Debug("nav", "AutoNavigate continuous scanning active with " .. scanFreq .. "s interval")
-    return true
-end
-
--- Stop scanning for marked targets
-function TWRA:StopAutoNavigateScan()
-    -- Debug output to verify this function is being called
-    self:Debug("nav", "StopAutoNavigateScan called")
-    
-    -- Hide the scan frame to stop OnUpdate processing
-    if self.AUTONAVIGATE.scanFrame then
-        self.AUTONAVIGATE.scanFrame:Hide()
-        self:Debug("nav", "AutoNavigate scan frame hidden")
-    end
-    
-    -- Clear any existing timer
-    if self.AUTONAVIGATE.timer then
-        self:CancelTimer(self.AUTONAVIGATE.timer)
-        self.AUTONAVIGATE.timer = nil
-    end
-    
-    -- Reset tracking variables
-    self.AUTONAVIGATE.lastMarkedGuid = nil
-    
-    self:Debug("nav", "AutoNavigate scan stopped")
-end
-
--- Simplified scan function that uses only the direct SuperWoW approach
-function TWRA:ScanMarkedTargets()
-    -- Add debug message to confirm scan is running
-    self:Debug("nav", "Scanning for marked targets...")
-    
-    -- Make sure SuperWoW is available
-    if not self:CheckSuperWoWSupport(true) then 
-        if self.AUTONAVIGATE.debug == true then
-            self:Debug("nav", "SuperWoW not available, skipping scan")
-        end
-        return 
-    end
-    
-    -- Use direct mark8 reference for skull-marked units (SuperWoW feature)
-    local markUnitId = "mark8"  -- Skull is always mark8
-    
-    -- Check if mark8 exists and get its guid
-    local exists, guid = UnitExists("mark8")
-    if not exists then
-        if self.AUTONAVIGATE.debug and self.AUTONAVIGATE.lastMarkedGuid ~= "none" then
-            self:Debug("nav", "No skull-marked units found")
-            self.AUTONAVIGATE.lastMarkedGuid = "none" -- Use "none" as a marker so we don't spam this message
-        end
-        return
-    end
-    
-    -- Make sure we got a valid GUID
-    if not guid or guid == "" then
-        self:Debug("nav", "Unit exists but no GUID available for skull-marked unit")
-        return
-    end
-    
-    local name = UnitName("mark8")
-    
-    if self.AUTONAVIGATE.debug then
-        self:Debug("nav", "Found skull-marked unit: " .. name .. " with GUID: " .. guid)
-    end
-    
-    -- Only process if this is a new GUID to avoid constant processing
-    if guid ~= self.AUTONAVIGATE.lastMarkedGuid then
-        if self.AUTONAVIGATE.debug then
-            self:Debug("nav", "Processing new skull-marked unit")
-        end
-        
-        self:ProcessMarkedMob(name, guid)
-        self.AUTONAVIGATE.lastMarkedGuid = guid
-    end
 end
 
 -- Process a skull-marked mob and navigate to its section if matched
@@ -423,13 +347,13 @@ function TWRA:FindSectionByGuid(guid)
         local savedData = TWRA_Assignments.data
         
         if self.AUTONAVIGATE.debug then
-            self:Debug("nav", "Checking assignment data for GUIDs in Section Metadata...")
+            self:Debug("nav", "Checking assignment data for GUIDs in new format...")
         end
         
         -- New data format: Check each section's metadata for GUIDs
         for _, section in pairs(savedData) do
-            -- Skip if not a properly formatted section
-            if not (type(section) ~= "table" or not section["Section Name"]) then
+            -- Only process properly structured sections
+            if type(section) == "table" and section["Section Name"] then
                 local sectionName = section["Section Name"]
                 
                 -- Check if this section has metadata with GUIDs
@@ -480,76 +404,76 @@ function TWRA:FindSectionByGuid(guid)
                     end
                 end
             end
-            -- No goto continue needed - the loop will naturally continue to the next section
         end
         
-        -- Fall back to legacy format if no match found and the data might be in the old format
-        local isLegacyFormat = false
-        for i = 1, table.getn(savedData) do
-            if type(savedData[i]) == "table" and not savedData[i]["Section Name"] then
-                isLegacyFormat = true
+        -- Fall back to legacy format if no match found
+        if self.AUTONAVIGATE.debug then
+            self:Debug("nav", "No match found in new format, checking legacy format...")
+        end
+        
+        -- Check for presence of legacy format data
+        local hasLegacyFormat = false
+        for i, row in pairs(savedData) do
+            if type(row) == "table" and type(i) == "number" and row[2] == "GUID" then
+                hasLegacyFormat = true
                 break
             end
         end
         
-        if isLegacyFormat then
-            if self.AUTONAVIGATE.debug then
-                self:Debug("nav", "No match found in new format, checking legacy format...")
-            end
-            
+        if hasLegacyFormat then
             -- Legacy format: Track current section while iterating through the flat array
             local currentSection = nil
             
             -- Iterate through all rows
-            for i = 1, table.getn(savedData) do
-                local row = savedData[i]
-                
-                -- Update current section name if this row has one
-                if type(row) == "table" and row[1] and row[1] ~= "" then
-                    currentSection = row[1]
-                end
-                
-                -- Check if it's a GUID row - in flat data structure the GUID is in column 2
-                if type(row) == "table" and row[2] == "GUID" then
-                    if self.AUTONAVIGATE.debug and currentSection then
-                        self:Debug("nav", "Found GUID row in legacy format section: " .. currentSection)
+            for i, row in pairs(savedData) do
+                if type(row) == "table" and type(i) == "number" then
+                    -- Update current section name if this row has one
+                    if row[1] and row[1] ~= "" then
+                        currentSection = row[1]
                     end
                     
-                    -- Check each cell in the row for GUIDs
-                    for j = 3, table.getn(row) do
-                        local rowGuid = row[j]
-                        if rowGuid and rowGuid ~= "" then
-                            if self.AUTONAVIGATE.debug then
-                                self:Debug("nav", "Checking legacy GUID: " .. rowGuid)
-                            end
-                            
-                            -- Normalize for comparison
-                            local normalizedRowGuid = string.lower(rowGuid)
-                            local rowGuidWithoutPrefix = normalizedRowGuid
-                            if string.sub(normalizedRowGuid, 1, 2) == "0x" then
-                                rowGuidWithoutPrefix = string.sub(normalizedRowGuid, 3)
-                            end
-                            
-                            -- Try exact matches first
-                            if normalizedRowGuid == normalizedGuid or 
-                               rowGuidWithoutPrefix == guidWithoutPrefix then
+                    -- Check if it's a GUID row - in flat data structure the GUID is in column 2
+                    if row[2] == "GUID" then
+                        if self.AUTONAVIGATE.debug and currentSection then
+                            self:Debug("nav", "Found GUID row in legacy format section: " .. currentSection)
+                        end
+                        
+                        -- Check each cell in the row for GUIDs
+                        for j = 3, table.getn(row) do
+                            local rowGuid = row[j]
+                            if rowGuid and rowGuid ~= "" then
                                 if self.AUTONAVIGATE.debug then
-                                    self:Debug("nav", "Found exact GUID match in legacy format for " .. 
-                                        currentSection .. ": " .. rowGuid)
+                                    self:Debug("nav", "Checking legacy GUID: " .. rowGuid)
                                 end
-                                return currentSection
-                            end
-                            
-                            -- Try partial matching with the end of the GUID
-                            if shortGuid and string.len(normalizedRowGuid) >= 8 then
-                                local shortRowGuid = string.sub(normalizedRowGuid, -12)
-                                if string.find(shortRowGuid, shortGuid, 1, true) or 
-                                   string.find(shortGuid, shortRowGuid, 1, true) then
+                                
+                                -- Normalize for comparison
+                                local normalizedRowGuid = string.lower(rowGuid)
+                                local rowGuidWithoutPrefix = normalizedRowGuid
+                                if string.sub(normalizedRowGuid, 1, 2) == "0x" then
+                                    rowGuidWithoutPrefix = string.sub(normalizedRowGuid, 3)
+                                end
+                                
+                                -- Try exact matches first
+                                if normalizedRowGuid == normalizedGuid or 
+                                   rowGuidWithoutPrefix == guidWithoutPrefix then
                                     if self.AUTONAVIGATE.debug then
-                                        self:Debug("nav", "Found partial GUID match in legacy format for " .. 
-                                            currentSection .. ": " .. shortRowGuid .. " ~ " .. shortGuid)
+                                        self:Debug("nav", "Found exact GUID match in legacy format for " .. 
+                                            currentSection .. ": " .. rowGuid)
                                     end
                                     return currentSection
+                                end
+                                
+                                -- Try partial matching with the end of the GUID
+                                if shortGuid and string.len(normalizedRowGuid) >= 8 then
+                                    local shortRowGuid = string.sub(normalizedRowGuid, -12)
+                                    if string.find(shortRowGuid, shortGuid, 1, true) or 
+                                       string.find(shortGuid, shortRowGuid, 1, true) then
+                                        if self.AUTONAVIGATE.debug then
+                                            self:Debug("nav", "Found partial GUID match in legacy format for " .. 
+                                                currentSection .. ": " .. shortRowGuid .. " ~ " .. shortGuid)
+                                        end
+                                        return currentSection
+                                    end
                                 end
                             end
                         end
@@ -634,18 +558,6 @@ function TWRA:CheckCurrentTarget()
     end
 end
 
--- Add toggle function for UI
-function TWRA:ToggleAutoNavigate()
-    if not self:CheckSuperWoWSupport() then
-        self:Debug("error", "AutoNavigate requires SuperWoW, but it's not available")
-        return
-    end
-    
-    self.AUTONAVIGATE.enabled = not self.AUTONAVIGATE.enabled
-    self:Debug("nav", "AutoNavigate " .. 
-        (self.AUTONAVIGATE.enabled and "enabled" or "disabled"))
-end
-
 -- Toggle debug mode with enhanced info
 function TWRA:ToggleAutoNavigateDebug()
     self.AUTONAVIGATE.debug = not self.AUTONAVIGATE.debug
@@ -709,37 +621,28 @@ function TWRA:ListAllGuids()
     
     local savedData = TWRA_Assignments.data
     local guidCount = 0
-    local currentSection = nil
     local guidsBySection = {}
     
-    -- First pass: collect all GUIDs by section
-    for i = 1, table.getn(savedData) do
-        local row = savedData[i]
-        
-        -- Skip if not a table
-        if type(row) ~= "table" then
-            self:Debug("nav", "Warning: Found non-table row at index " .. i)
-            self:Debug("nav", "  Value: " .. tostring(row))
-            self:Debug("nav", "  Type: " .. type(row))
-            -- Continue to next iteration
-        else
-            -- Update current section name if this row has one
-            if row[1] and row[1] ~= "" then
-                currentSection = row[1]
-            end
+    -- Iterate through the assignment data (new structure)
+    for index, section in pairs(savedData) do
+        -- Only process properly structured sections
+        if type(section) == "table" and section["Section Name"] then
+            local sectionName = section["Section Name"]
             
-            -- Check if it's a GUID row - in flat data structure the GUID is in column 2
-            if row[2] == "GUID" then
-                -- Make sure we have a section table
-                if not guidsBySection[currentSection] then
-                    guidsBySection[currentSection] = {}
+            -- Check if this section has metadata with GUIDs
+            if section["Section Metadata"] and section["Section Metadata"]["GUID"] then
+                -- Get the GUID list
+                local guidList = section["Section Metadata"]["GUID"]
+                
+                -- Initialize section in our tracking table
+                if not guidsBySection[sectionName] then
+                    guidsBySection[sectionName] = {}
                 end
                 
-                -- Add each GUID in this row
-                for j = 3, table.getn(row) do
-                    local guid = row[j]
+                -- Add each GUID in this section
+                for _, guid in ipairs(guidList) do
                     if guid and guid ~= "" then
-                        table.insert(guidsBySection[currentSection], guid)
+                        table.insert(guidsBySection[sectionName], guid)
                         guidCount = guidCount + 1
                     end
                 end
@@ -747,14 +650,13 @@ function TWRA:ListAllGuids()
         end
     end
     
-    -- Second pass: display the results
+    -- Display the results
     if guidCount == 0 then
         self:Debug("nav", "No GUIDs found in the data")
         return
     end
     
-    self:Debug("nav", "Found " .. guidCount .. " GUIDs in " .. 
-                                 table.getn(guidsBySection) .. " sections")
+    self:Debug("nav", "Found " .. guidCount .. " GUIDs in " .. self:GetTableSize(guidsBySection) .. " sections")
     
     -- Sort the sections alphabetically for easier reading
     local sortedSections = {}

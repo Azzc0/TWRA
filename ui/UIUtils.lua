@@ -205,43 +205,11 @@ function TWRA.UI:ApplyClassColoring(textObj, playerName, playerClass, isInRaid, 
     if playerName and not playerClass then
         -- Check if this is a class group name
         local classFromGroup = TWRA.CLASS_GROUP_NAMES and TWRA.CLASS_GROUP_NAMES[playerName]
-        if classFromGroup then
-            -- Use direct class coloring for class groups
-            playerClass = classFromGroup
-            isInRaid = true
-            isOnline = true
-        else
-            -- Use GetPlayerStatus to handle both real players and example data
-            local inRaid, online = TWRA:GetPlayerStatus(playerName)
-            isInRaid = inRaid
-            isOnline = online
-            
-            -- Try to get the player's class
-            if TWRA.usingExampleData and TWRA.EXAMPLE_PLAYERS and TWRA.EXAMPLE_PLAYERS[playerName] then
-                -- Extract class from example players
-                local classInfo = TWRA.EXAMPLE_PLAYERS[playerName]
-                if classInfo then
-                    playerClass = string.gsub(classInfo or "", "|OFFLINE", "")
-                    
-                    -- Add extra debug when using example data
-                    TWRA:Debug("ui", "Example player " .. playerName .. ": class=" .. 
-                              tostring(playerClass) .. ", online=" .. tostring(isOnline))
-                end
-            elseif playerName == UnitName("player") then
-                -- Get current player's class
-                local _, class = UnitClass("player")
-                playerClass = class
-            else
-                -- Scan raid roster
-                for i = 1, GetNumRaidMembers() do
-                    local name, _, _, _, _, class = GetRaidRosterInfo(i)
-                    if name == playerName then
-                        playerClass = class
-                        break
-                    end
-                end
-            end
-        end
+  
+        -- Use direct class coloring for class groups
+        playerClass = classFromGroup
+        isInRaid = true
+        isOnline = true
     end
     
     -- Default colors

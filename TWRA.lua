@@ -199,6 +199,7 @@ function TWRA:Initialize()
     frame:RegisterEvent("CHAT_MSG_ADDON")
     frame:RegisterEvent("UPDATE_BINDINGS")
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")  -- Add this to catch UI reloads
+    frame:RegisterEvent("RAID_TARGET_UPDATE")  
     
     -- Store a reference to TWRA for the event handler to use
     local addon = self
@@ -281,6 +282,11 @@ function TWRA:Initialize()
             -- Handle keybinding updates
             if addon.UpdateBindings then
                 addon:UpdateBindings()
+            end
+        elseif event == "RAID_TARGET_UPDATE" then
+            if self:CheckSkullMarkedMob() then
+                -- Check if we have
+                TWRA:CheckSkullMarkedMob()
             end
         end
     end)
@@ -475,7 +481,7 @@ function TWRA:LoadSavedAssignments()
     
     -- Handle new format (version 2+)
     self:Debug("data", "Loading new format data")
-    return self:BuildNavigationFromNewFormat()
+    return self:RebuildNavigation()
 end
 
 -- Function to check if we're dealing with example data
@@ -492,40 +498,6 @@ function TWRA:IsExampleData(data)
     end
     
     return false
-end
-
--- Enhanced GetPlayerStatus function to handle example data
-function TWRA:GetPlayerStatus(name)
-    self:Debug("error", "GetPlayerStatus called from TWRA.lua")
-    -- Safety checks
-    if not name or name == "" then return false, nil end
-    if UnitName("player") == name then return true, true end
-    
-    -- Check if we're using example data
-    if self.usingExampleData and self.EXAMPLE_PLAYERS then
-        local classInfo = self.EXAMPLE_PLAYERS[name]
-        if classInfo then
-            -- Consider player "in raid" with online status based on absence of |OFFLINE flag
-            local isOnline = not string.find(classInfo, "|OFFLINE")
-            return true, isOnline
-        end
-    end
-    
-    -- Regular player status checks
-    for i = 1, GetNumRaidMembers() do
-        if GetRaidRosterInfo(i) == name then
-            local _, _, _, _, _, _, _, online = GetRaidRosterInfo(i)
-            return true, online
-        end
-    end
-    
-    for i = 1, GetNumPartyMembers() do
-        if UnitName("party"..i) == name then
-            return true, UnitIsConnected("party"..i)
-        end
-    end
-    
-    return false, nil
 end
 
 -- Announcement functionality - completely rewritten
@@ -966,61 +938,6 @@ function TWRA:SectionDropdownSelected(index)
     self:NavigateToSection(index)  -- This will now save the section
 end
 
--- Enhanced ToggleMainFrame function with better debugging
-function TWRA:ToggleMainFrame()
-    -- Make sure frame exists
-    if not self.mainFrame then
-        self:Debug("ui", "Main frame doesn't exist - creating it")
-        if self.CreateMainFrame then
-            self:CreateMainFrame()
-        else
-            self:Error("Unable to create main frame - function not found")
-            return
-        end
-    end
-    
-    if self.mainFrame:IsShown() then
-        self.mainFrame:Hide()
-        self:Debug("ui", "Window hidden")
-    else
-        self.mainFrame:Show()
-        
-        -- Debug current view status
-        self:Debug("ui", "Current view is: " .. (self.currentView or "nil"))
-        
-        -- Initialize if needed
-        if not self.initialized then
-            self:LoadSavedAssignments()
-            self.initialized = true
-        end
-        
-        -- Force update content
-        if self.currentView == "options" then
-            self:Debug("ui", "Switching to main view from options view")
-            self:ShowMainView()
-        else
-            self:Debug("ui", "Already in main view - refreshing content")
-            -- Use FilterAndDisplayHandler directly instead of RefreshAssignmentTable
-            -- This ensures we always display the current section properly
-            if self.navigation and self.navigation.handlers and 
-               self.navigation.currentIndex and 
-               self.navigation.handlers[self.navigation.currentIndex] then
-                local currentSection = self.navigation.handlers[self.navigation.currentIndex]
-                self:Debug("ui", "Displaying current section: " .. currentSection)
-                self:FilterAndDisplayHandler(currentSection)
-            else
-                self:Debug("error", "Cannot display section - navigation data incomplete")
-                -- Attempt to refresh the table using the legacy method as fallback
-                if self.RefreshAssignmentTable then
-                    self:RefreshAssignmentTable()
-                end
-            end
-        end
-        
-        self:Debug("ui", "Window shown")
-    end
-end
-
 -- Improve ShowOptionsView to properly set current view and safely handle UI elements
 function TWRA:ShowOptionsView()
     -- Set view state first
@@ -1066,48 +983,6 @@ function TWRA:ShowOptionsView()
     end
     
     self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
-end
-
--- Fix ShowMainView to better handle section restoration after imports
-function TWRA:ShowMainView()
-    -- Set view state first
-    self.currentView = "main"
-    
-    -- Hide options UI elements if they exist
-    if self.optionsElements then
-        for _, element in pairs(self.optionsElements) do
-            if element.Hide then
-                element:Hide()
-            end
-        end
-    end
-    
-    -- Show navigation elements if they exist
-    if self.navigation then
-        if self.navigation.prevButton then self.navigation.prevButton:Show() end
-        if self.navigation.nextButton then self.navigation.nextButton:Show() end
-        if self.navigation.menuButton then self.navigation.menuButton:Show() end
-        if self.navigation.handlerText then self.navigation.handlerText:Show() end
-        if self.navigation.dropdown and self.navigation.dropdown.container then
-            self.navigation.dropdown.container:Show()
-        end
-    end
-    
-    -- Show other main view buttons
-    if self.announceButton then self.announceButton:Show() end
-    if self.updateTanksButton then self.updateTanksButton:Show() end
-
-    -- Change button text if options button exists
-    if self.optionsButton then
-        self.optionsButton:SetText("Options")
-    end
-    
-    -- Display current section content
-    if self.DisplayCurrentSection then
-        self:DisplayCurrentSection()
-    end
-    
-    self:Debug("ui", "Switched to main view - final currentView = " .. self.currentView)
 end
 
 -- Find rows relevant to the current player (either by name or class group)
@@ -1399,50 +1274,4 @@ function TWRA:ImportString(importString, isSync, syncTimestamp)
         self:Debug("error", "Import failed: Result is not a table")
         return false
     end
-end
-
--- Add a function to load initial content when the frame is first shown
-function TWRA:LoadInitialContent()
-    self:Debug("ui", "LoadInitialContent called")
-    
-    -- Make sure we have navigation data
-    if not self.navigation or not self.navigation.handlers or table.getn(self.navigation.handlers) == 0 then
-        self:Debug("error", "LoadInitialContent: No navigation handlers available")
-        return false
-    end
-    
-    -- Ensure we have a valid current index
-    if not self.navigation.currentIndex or 
-       self.navigation.currentIndex < 1 or 
-       self.navigation.currentIndex > table.getn(self.navigation.handlers) then
-        self:Debug("ui", "LoadInitialContent: Invalid index, resetting to 1")
-        self.navigation.currentIndex = 1
-    end
-    
-    local currentSection = self.navigation.handlers[self.navigation.currentIndex]
-    if not currentSection then
-        self:Debug("error", "LoadInitialContent: No section found at index " .. self.navigation.currentIndex)
-        return false
-    end
-    
-    self:Debug("ui", "LoadInitialContent: Loading section: " .. currentSection)
-    
-    -- Clear any existing content first to prevent duplication
-    self:ClearRows()
-    self:ClearFooters()
-    
-    -- Update UI elements
-    if self.navigation.handlerText then
-        self.navigation.handlerText:SetText(currentSection)
-    end
-    
-    if self.navigation.menuButton and self.navigation.menuButton.text then
-        self.navigation.menuButton.text:SetText(currentSection)
-    end
-    
-    -- Use DisplayCurrentSection to load content 
-    self:DisplayCurrentSection()
-    
-    self:Debug("ui", "LoadInitialContent complete")
-    return true
 end

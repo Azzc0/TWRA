@@ -686,33 +686,6 @@ local function getUniqueHandlers(data)
     return handlers
 end
 
--- Replace NavigateHandler to use event system
-function TWRA:NavigateHandler(delta)
-    -- Safety checks
-    if not self.navigation or not self.navigation.handlers then
-        self:Debug("error", "NavigateHandler: No navigation or handlers")
-        return
-    end
-    
-    if not self.navigation.currentIndex then
-        self.navigation.currentIndex = 1
-    end
-    
-    -- Calculate the new index with bounds checking
-    local newIndex = self.navigation.currentIndex + delta
-    local maxIndex = table.getn(self.navigation.handlers)
-    
-    -- Wrap around navigation
-    if newIndex < 1 then
-        newIndex = maxIndex
-    elseif newIndex > maxIndex then
-        newIndex = 1
-    end
-    
-    -- Use NavigateToSection for consistent event dispatching
-    self:NavigateToSection(newIndex)
-end
-
 -- Replace FilterAndDisplayHandler to use dynamic column widths and hide headers when data needs processing
 function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Debug entry

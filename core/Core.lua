@@ -515,28 +515,30 @@ function TWRA:ToggleMainFrame()
     end
 end
 
--- Add navigation handler for navigating to the previous or next section
+-- Replace NavigateHandler to use event system
 function TWRA:NavigateHandler(delta)
-    -- Ensure navigation exists
-    if not self.navigation then
-        self.navigation = { handlers = {}, currentIndex = 1 }
-    end
-    
-    local nav = self.navigation
-    
-    -- Safety check for handlers
-    if not nav.handlers or table.getn(nav.handlers) == 0 then
-        self:Debug("nav", "No sections available to navigate")
+    -- Safety checks
+    if not self.navigation or not self.navigation.handlers then
+        self:Debug("error", "NavigateHandler: No navigation or handlers")
         return
     end
     
-    local newIndex = nav.currentIndex + delta
-    if newIndex < 1 then 
-        newIndex = table.getn(nav.handlers)
-    elseif newIndex > table.getn(nav.handlers) then
+    if not self.navigation.currentIndex then
+        self.navigation.currentIndex = 1
+    end
+    
+    -- Calculate the new index with bounds checking
+    local newIndex = self.navigation.currentIndex + delta
+    local maxIndex = table.getn(self.navigation.handlers)
+    
+    -- Wrap around navigation
+    if newIndex < 1 then
+        newIndex = maxIndex
+    elseif newIndex > maxIndex then
         newIndex = 1
     end
-    -- Use the central NavigateToSection function that handles syncing
+    
+    -- Use NavigateToSection for consistent event dispatching
     self:NavigateToSection(newIndex)
 end
 
@@ -716,49 +718,6 @@ function TWRA:EnsureUIUtils()
 end
 TWRA:EnsureUIUtils()
 
--- Add a function to check and debug the options system
-function TWRA:DebugOptions()
-    self:Debug("ui", "Debug options called")
-    
-    -- Check if options initialization exists
-    self:Debug("ui", "InitOptions exists: " .. tostring(self.InitOptions ~= nil))
-    
-    -- Check if Options.lua implementation exists
-    self:Debug("ui", "CreateOptionsInMainFrame exists: " .. tostring(self.CreateOptionsInMainFrame ~= nil))
-    
-    -- Check current view
-    self:Debug("ui", "Current view: " .. (self.currentView or "nil"))
-    
-    -- Check options elements
-    if self.optionsElements then
-        self:Debug("ui", "Options elements count: " .. table.getn(self.optionsElements))
-    else
-        self:Debug("ui", "Options elements table doesn't exist")
-    end
-    
-    -- Check if options are visible
-    if self.optionsContainer then
-        self:Debug("ui", "Options container exists and is " .. 
-            (self.optionsContainer:IsShown() and "visible" or "hidden"))
-    else
-        self:Debug("ui", "Options container doesn't exist")
-    end
-    
-    -- Search for rogue frames
-    if self.mainFrame then
-        self:Debug("ui", "Searching for InterfaceOptionsFrame children in mainFrame...")
-        for i, child in ipairs({self.mainFrame:GetChildren()}) do
-            if child:GetName() then
-                self:Debug("ui", "Child " .. i .. ": " .. child:GetName() .. " (visible: " .. tostring(child:IsShown()) .. ")")
-            else
-                self:Debug("ui", "Child " .. i .. ": unnamed (visible: " .. tostring(child:IsShown()) .. ")")
-            end
-        end
-    end
-    
-    return true
-end
-
 -- Add emergency reset command for when things go wrong
 function TWRA:ResetUI()
     self:Debug("ui", "Performing emergency UI reset")
@@ -784,231 +743,11 @@ function TWRA:ResetUI()
     self:Debug("ui", "UI reset complete")
 end
 
--- Consolidated SaveAssignments function incorporating both implementations
-function TWRA:SaveAssignments(data, sourceString, originalTimestamp, noAnnounce)
-    if not data then return end
-    
-    -- CRITICAL FIX: Clear TWRA_CompressedAssignments completely at the start of any new import
-    -- This ensures no stale compressed data persists
-    TWRA_CompressedAssignments = {
-        sections = {},
-        structure = nil,
-        timestamp = nil,
-        useSectionCompression = true
-    }
-    self:Debug("data", "Completely reset TWRA_CompressedAssignments for clean import")
-    
-    -- Check if this is our new format structure with ["data"] key
-    local isNewFormat = false
-    if type(data) == "table" and data.data and type(data.data) == "table" then
-        isNewFormat = true
-        self:Debug("data", "Detected new format structure in SaveAssignments")
-        
-        -- Make one final pass with EnsureCompleteRows to guarantee all indices are filled before saving
-        if self.EnsureCompleteRows then
-            data = self:EnsureCompleteRows(data)
-            self:Debug("data", "Applied EnsureCompleteRows during SaveAssignments for new format")
-        else
-            self:Debug("error", "EnsureCompleteRows function not found during SaveAssignments")
-        end
-        
-        -- NEW: Process special rows (Notes, Warnings, GUIDs) and move them to metadata
-        if self.CaptureSpecialRows then
-            data = self:CaptureSpecialRows(data)
-            self:Debug("data", "Applied CaptureSpecialRows to extract special rows as metadata")
-        end
-        
-        -- CRITICAL ADDITION: Preserve Section Metadata from existing sections
-        if TWRA_Assignments and TWRA_Assignments.data and type(TWRA_Assignments.data) == "table" then
-            self:Debug("data", "Preserving metadata from existing sections")
-            
-            for newSectionIdx, newSection in pairs(data.data) do
-                if type(newSection) == "table" and newSection["Section Name"] then
-                    local sectionName = newSection["Section Name"]
-                    
-                    -- Look for matching section in existing data
-                    for oldSectionIdx, oldSection in pairs(TWRA_Assignments.data) do
-                        if type(oldSection) == "table" and 
-                           oldSection["Section Name"] and 
-                           oldSection["Section Name"] == sectionName then
-                            
-                            self:Debug("data", "Found matching section '" .. sectionName .. "', preserving metadata")
-                            
-                            -- Preserve metadata if it exists
-                            if oldSection["Section Metadata"] then
-                                newSection["Section Metadata"] = self:DeepCopyTable(oldSection["Section Metadata"])
-                                self:Debug("data", "Preserved Section Metadata for " .. sectionName)
-                            end
-                            
-                            -- Break after finding a match
-                            break
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Directly use the data object for new format
-    if isNewFormat then
-        -- Determine timestamp - either provided or current time
-        local timestamp = originalTimestamp or time()
-        local currentSectionIndex = 1
-        local currentSectionName = nil
-        
-        -- Try to maintain the current section if we have valid navigation
-        if self.navigation and self.navigation.currentIndex and 
-           self.navigation.handlers[self.navigation.currentIndex] then
-            currentSectionIndex = self.navigation.currentIndex
-            currentSectionName = self.navigation.handlers[self.navigation.currentIndex]
-        end
-        
-        self:Debug("nav", "SaveAssignments - Current section before import: " .. 
-                  currentSectionIndex .. " (" .. (currentSectionName or "unknown") .. ")")
-    
-        -- Remember the section name for post-import navigation
-        self.pendingSectionName = currentSectionName
-        self.pendingSectionIndex = currentSectionIndex
-        
-        -- Handle new format directly
-        if isNewFormat then
-            -- Clear current data for clean import
-            if self.ClearData then
-                self:Debug("data", "Clearing current data")
-                self:ClearData()
-                self:Debug("data", "Data cleared successfully")
-            end
-            
-            -- Direct assignment to SavedVariables for new format
-            TWRA_Assignments = {
-                data = data.data,
-                -- IMPORTANT: Don't store source string to save memory
-                timestamp = timestamp,
-                currentSection = 1,  -- Start at first section for new imports
-                version = 2,  -- Mark as new format
-                isExample = false  -- Always set to false for any non-example data
-            }
-            
-            -- IMPORTANT: Completely stop using old format data structure
-            -- Instead of maintaining minimal structure, fully remove it
-            if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-                TWRA_SavedVariables.assignments = nil
-            end
-            
-            -- Build navigation structure
-            self:BuildNavigationFromNewFormat()
-            
-            -- After building navigation, regenerate compressed data if needed
-            if self.StoreSegmentedData then
-                self:Debug("data", "Generating new compressed data after import")
-                self:StoreSegmentedData()
-            end
-            
-            -- If we have pending section information, try to navigate back to it
-            if self.pendingSectionName then
-                self:Debug("nav", "Attempting to restore navigation to section: " .. self.pendingSectionName)
-                
-                for idx, sectionName in ipairs(self.navigation.handlers) do
-                    if sectionName == self.pendingSectionName then
-                        self.navigation.currentIndex = idx
-                        TWRA_Assignments.currentSection = idx
-                        self:Debug("nav", "Successfully restored navigation to section: " .. 
-                                  sectionName .. " (index: " .. idx .. ")")
-                        break
-                    end
-                end
-                
-                -- Clear pending info
-                self.pendingSectionName = nil
-                self.pendingSectionIndex = nil
-            end
-            
-            -- Update current section information
-            if self.navigation and self.navigation.currentIndex then
-                currentSectionIndex = self.navigation.currentIndex
-                currentSectionName = self.navigation.handlers[currentSectionIndex]
-            end
-        end
-    else
-        -- Legacy format handling below
-        
-        -- Apply data cleaning to ensure consistent format
-        data = self:CleanAssignmentData(data)
-        
-        -- Check if we have actual content after cleaning
-        local contentFound = false
-        if type(data) == "table" then
-            contentFound = table.getn(data) > 0
-        end
-        
-        if not contentFound then
-            self:Debug("error", "No valid content found in input data")
-            return false
-        end
-        
-        -- Determine timestamp
-        local timestamp = originalTimestamp or time()
-        
-        -- Store in saved variables
-        self.fullData = data
-        
-        -- Set up saved variables structure if it doesn't exist
-        TWRA_Assignments = {
-            data = data,
-            -- IMPORTANT: Don't store source string to save memory
-            timestamp = timestamp,
-            currentSection = 1, -- Default to first section on import
-            version = 1, -- Mark as v1 (legacy) format
-            isExample = false -- Always set to false for any non-example data
-        }
-        
-        -- IMPORTANT: Completely stop using old format data structure
-        -- Instead of maintaining minimal structure, fully remove it
-        if TWRA_SavedVariables and TWRA_SavedVariables.assignments then
-            TWRA_SavedVariables.assignments = nil
-        end
-        
-        -- Reset the navigation structure for the new content
-        if self.navigation then
-            self.navigation.handlers = {}
-            self.navigation.currentIndex = 1
-        end
-        
-        -- Rebuild navigation with the new data
-        self:RebuildNavigation()
-        
-        -- After building navigation, regenerate compressed data if needed
-        if self.StoreSegmentedData then
-            self:Debug("data", "Generating new compressed data after legacy import")
-            self:StoreSegmentedData()
-        end
-        
-        -- Set in case we need it later
-        if self.navigation and self.navigation.currentIndex then
-            currentSectionIndex = self.navigation.currentIndex
-            currentSectionName = self.navigation.handlers[currentSectionIndex]
-        end
-    end
-    
-    self:Debug("nav", "SaveAssignments - Saved with section: " .. 
-               (currentSectionName or "None") .. " (index: " .. currentSectionIndex .. ")")
-    self:Debug("data", "Data saved with timestamp: " .. timestamp)
-    
-    -- Skip announcement altogether - this is the key change to remove timestamp announcements
-    -- The previous code announced timestamps when not in a party/raid, which we now skip completely
-    return true
-end
-
 -- Add helper function for the new format navigation
 function TWRA:BuildNavigationFromNewFormat()
-    -- Forward to the canonical implementation in DataUtility.lua
-    if TWRA.DataUtility and TWRA.DataUtility.BuildNavigationFromNewFormat then
-        return TWRA.DataUtility:BuildNavigationFromNewFormat()
-    end
-    
-    -- If DataUtility namespace doesn't exist, call directly
-    self:Debug("nav", "Forwarding to canonical BuildNavigationFromNewFormat implementation in DataUtility.lua")
-    return self:DataUtility_BuildNavigationFromNewFormat()
+    -- Forward to the canonical implementation
+    self:Debug("nav", "BuildNavigationFromNewFormat is deprecated - forwarding to RebuildNavigation")
+    return self:RebuildNavigation()
 end
 
 -- Add CreateMinimapButton function - moved from OSD.lua to TWRA.lua as requested

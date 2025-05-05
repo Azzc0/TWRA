@@ -293,7 +293,7 @@ function TWRA:ClearData()
                     local normalizedMetadata = self:NormalizeMetadataKeys(section["Section Metadata"])
                     
                     -- Then deep copy the normalized metadata
-                    metadataToPreserve[sectionName] = self:DeepCopyTable(normalizedMetadata)
+                    metadataToPreserve[sectionName] = self:DeepCopy(normalizedMetadata)
                     
                     -- Log what we're preserving
                     local metadataKeys = ""
@@ -311,7 +311,7 @@ function TWRA:ClearData()
                 -- PRESERVE PLAYER INFO: Separately preserve the player info
                 playerInfoToPreserve[sectionName] = {}
                 if section["Section Player Info"] and type(section["Section Player Info"]) == "table" then
-                    playerInfoToPreserve[sectionName] = self:DeepCopyTable(section["Section Player Info"])
+                    playerInfoToPreserve[sectionName] = self:DeepCopy(section["Section Player Info"])
                     
                     -- Log what we're preserving
                     local playerInfoKeys = ""
@@ -369,7 +369,7 @@ function TWRA:ClearData()
                             if not section["Section Metadata"][key] or 
                                (type(section["Section Metadata"][key]) == "table" and table.getn(section["Section Metadata"][key]) == 0) then
                                 
-                                section["Section Metadata"][key] = self:DeepCopyTable(value)
+                                section["Section Metadata"][key] = self:DeepCopy(value)
                                 self:Debug("data", "Restored " .. key .. " metadata for section " .. sectionName)
                             end
                         end
@@ -383,7 +383,7 @@ function TWRA:ClearData()
                         -- Merge the preserved player info with any new player info
                         for key, value in pairs(self.pendingPlayerInfoRestore[sectionName]) do
                             -- Always restore player info since it's computed from scratch
-                            section["Section Player Info"][key] = self:DeepCopyTable(value)
+                            section["Section Player Info"][key] = self:DeepCopy(value)
                         end
                         
                         self:Debug("data", "Restored player info for section " .. sectionName)
@@ -417,14 +417,14 @@ function TWRA:ClearData()
     return true
 end
 
--- Helper function to deep copy a table (used for metadata preservation)
-function TWRA:DeepCopyTable(orig)
+-- Helper function to deep copy a table
+function TWRA:DeepCopy(orig)
     local orig_type = type(orig)
     local copy
     if orig_type == 'table' then
         copy = {}
         for orig_key, orig_value in pairs(orig) do
-            copy[orig_key] = self:DeepCopyTable(orig_value)
+            copy[orig_key] = self:DeepCopy(orig_value)
         end
     else
         -- Simple value - just return it directly
