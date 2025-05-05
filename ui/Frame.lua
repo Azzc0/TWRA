@@ -222,16 +222,139 @@ function TWRA:CreateMainFrame()
     local dropdownMenu = CreateFrame("Frame", nil, self.mainFrame) 
     dropdownMenu:SetFrameStrata("DIALOG")
     dropdownMenu:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true,
-        tileSize = 32,
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, 
+        tileSize = 16, 
         edgeSize = 16,
         insets = { left = 5, right = 5, top = 5, bottom = 5 }
     })
+    dropdownMenu:SetBackdropColor(0, 0, 0, 0.9)  -- Darker background for better contrast
+    dropdownMenu:SetBackdropBorderColor(1, 1, 1, 0.7)  -- White border with slight transparency
     dropdownMenu:Hide()
     self.navigation.dropdownMenu = dropdownMenu
     dropdownMenu.buttons = {}
+    
+    -- Constants for dropdown
+    local MAX_VISIBLE_BUTTONS = 15  -- Maximum number of buttons to show at once
+    local BUTTON_HEIGHT = 20  -- Height of each dropdown button
+    local BUTTON_SPACING = 0  -- No additional spacing between buttons
+    local DROPDOWN_PADDING = 10  -- 5px top and 5px bottom padding
+    
+    -- Add navigation state
+    dropdownMenu.offset = 0  -- Starting offset for visible buttons
+    
+    -- Create up arrow button
+    local upButton = CreateFrame("Button", nil, dropdownMenu)
+    upButton:SetPoint("TOPLEFT", dropdownMenu, "TOPLEFT", 5, -5)
+    upButton:SetWidth(20)
+    upButton:SetHeight(20)
+    upButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Up")
+    upButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollUp-Down")
+    upButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    upButton:SetFrameLevel(dropdownMenu:GetFrameLevel() + 5)
+    upButton:Hide()  -- Initially hidden
+    dropdownMenu.upButton = upButton
+    
+    -- Create down arrow button
+    local downButton = CreateFrame("Button", nil, dropdownMenu)
+    downButton:SetPoint("BOTTOMLEFT", dropdownMenu, "BOTTOMLEFT", 5, 5)
+    downButton:SetWidth(20)
+    downButton:SetHeight(20)
+    downButton:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
+    downButton:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Down")
+    downButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    downButton:SetFrameLevel(dropdownMenu:GetFrameLevel() + 5)
+    downButton:Hide()  -- Initially hidden
+    dropdownMenu.downButton = downButton
+    
+    -- Set click handlers for navigation buttons
+    upButton:SetScript("OnClick", function()
+        if dropdownMenu.offset <= 0 then return end
+        dropdownMenu.offset = dropdownMenu.offset - 1
+        dropdownMenu:UpdateVisibleButtons()
+    end)
+    
+    downButton:SetScript("OnClick", function()
+        local maxOffset = table.getn(self.navigation.handlers) - MAX_VISIBLE_BUTTONS
+        if dropdownMenu.offset >= maxOffset then return end
+        dropdownMenu.offset = dropdownMenu.offset + 1
+        dropdownMenu:UpdateVisibleButtons()
+    end)
+    
+    -- Function to update which buttons are visible based on current offset
+    function dropdownMenu:UpdateVisibleButtons()
+        if not TWRA.navigation or not TWRA.navigation.handlers then return end
+        
+        local numSections = table.getn(TWRA.navigation.handlers)
+        local maxOffset = math.max(0, numSections - MAX_VISIBLE_BUTTONS)
+        
+        -- Clamp offset to valid range
+        self.offset = math.max(0, math.min(self.offset, maxOffset))
+        
+        -- Show/hide up button based on offset
+        if self.offset > 0 then
+            self.upButton:Show()
+        else
+            self.upButton:Hide()
+        end
+        
+        -- Show/hide down button based on offset
+        if self.offset < maxOffset then
+            self.downButton:Show()
+        else
+            self.downButton:Hide()
+        end
+        
+        -- Update button visibility and content
+        for i = 1, MAX_VISIBLE_BUTTONS do
+            local sectionIndex = i + self.offset
+            local button = self.buttons[i]
+            
+            if sectionIndex <= numSections then
+                local sectionName = TWRA.navigation.handlers[sectionIndex]
+                -- Add section index to the display text
+                button.text:SetText(sectionIndex .. ". " .. sectionName)
+                button.sectionIndex = sectionIndex
+                
+                -- Highlight current section
+                if sectionIndex == TWRA.navigation.currentIndex then
+                    button.text:SetTextColor(1, 0.82, 0) -- Gold for current section
+                    button:SetNormalTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                    local normalTex = button:GetNormalTexture()
+                    normalTex:SetVertexColor(1, 0.82, 0, 0.4)
+                else
+                    button.text:SetTextColor(1, 1, 1) -- White for other sections
+                    button:SetNormalTexture(nil)
+                end
+                
+                button:Show()
+            else
+                button:Hide()
+            end
+        end
+    end
+    
+    -- Enable mousewheel for navigation
+    dropdownMenu:EnableMouseWheel(true)
+    dropdownMenu:SetScript("OnMouseWheel", function()
+        local delta = arg1 -- In WoW 1.12, delta is passed via arg1
+        
+        if delta > 0 then
+            -- Wheel up = navigate up the list (decrease offset)
+            if dropdownMenu.offset > 0 then
+                dropdownMenu.offset = dropdownMenu.offset - 1
+                dropdownMenu:UpdateVisibleButtons()
+            end
+        else
+            -- Wheel down = navigate down the list (increase offset)
+            local maxOffset = table.getn(TWRA.navigation.handlers) - MAX_VISIBLE_BUTTONS
+            if dropdownMenu.offset < maxOffset then
+                dropdownMenu.offset = dropdownMenu.offset + 1
+                dropdownMenu:UpdateVisibleButtons()
+            end
+        end
+    end)
     
     -- Create simple dropdown functionality
     menuButton:SetScript("OnClick", function()
@@ -247,66 +370,80 @@ function TWRA:CreateMainFrame()
                 dropdownMenu.buttons[i]:Hide()
             end
         end
-        dropdownMenu.buttons = {}
         
-        -- Position menu
+        -- If we need to create buttons for the first time
+        if table.getn(dropdownMenu.buttons) == 0 then
+            for i = 1, MAX_VISIBLE_BUTTONS do
+                -- Create button
+                local button = CreateFrame("Button", nil, dropdownMenu)
+                button:SetHeight(BUTTON_HEIGHT)
+                button:SetPoint("TOPLEFT", dropdownMenu, "TOPLEFT", 30, -5 - ((i-1) * BUTTON_HEIGHT))
+                button:SetPoint("TOPRIGHT", dropdownMenu, "TOPRIGHT", -5, -5 - ((i-1) * BUTTON_HEIGHT))
+                
+                -- Highlight texture
+                button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+                
+                -- Button text
+                local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                buttonText:SetPoint("LEFT", 5, 0)
+                buttonText:SetPoint("RIGHT", -5, 0)
+                buttonText:SetJustifyH("LEFT")
+                button.text = buttonText
+                
+                -- Click handler for dropdown menu items
+                button:SetScript("OnClick", function()
+                    local sectionIndex = button.sectionIndex
+                    if sectionIndex then
+                        -- Use the centralized NavigateToSection function with user source
+                        TWRA:NavigateToSection(sectionIndex, "user")
+                        
+                        -- Hide the dropdown
+                        dropdownMenu:Hide()
+                    end
+                end)
+                
+                table.insert(dropdownMenu.buttons, button)
+            end
+        end
+        
+        -- Calculate optimal dropdown height
+        local numHandlers = table.getn(self.navigation.handlers)
+        local visibleButtons = math.min(numHandlers, MAX_VISIBLE_BUTTONS)
+        local contentHeight = (visibleButtons * BUTTON_HEIGHT) + DROPDOWN_PADDING
+        
+        -- Make room for scroll buttons if needed
+        if numHandlers > MAX_VISIBLE_BUTTONS then
+            contentHeight = contentHeight + 10  -- Extra space for scroll buttons
+        end
+        
+        -- Position menu and set dimensions
         dropdownMenu:ClearAllPoints()
         dropdownMenu:SetPoint("TOP", menuButton, "BOTTOM", 0, -2)
         dropdownMenu:SetWidth(menuButton:GetWidth())
+        dropdownMenu:SetHeight(contentHeight)
         
-        -- Calculate menu height
-        local buttonHeight = 20
-        local padding = 10  -- 5px top and bottom
-        local menuHeight = (buttonHeight * table.getn(self.navigation.handlers)) + padding
-        dropdownMenu:SetHeight(menuHeight)
-        
-        -- Create menu items
-        for i = 1, table.getn(self.navigation.handlers) do
-            local handler = self.navigation.handlers[i]
+        -- Reset offset to ensure current section is visible
+        if self.navigation.currentIndex then
+            -- Calculate appropriate offset to show current section
+            local currentIndex = self.navigation.currentIndex
             
-            -- Create button
-            local button = CreateFrame("Button", nil, dropdownMenu)
-            button:SetHeight(buttonHeight)
-            button:SetPoint("TOPLEFT", dropdownMenu, "TOPLEFT", 5, -5 - ((i-1) * buttonHeight))
-            button:SetPoint("TOPRIGHT", dropdownMenu, "TOPRIGHT", -5, -5 - ((i-1) * buttonHeight))
-            
-            -- Highlight texture
-            button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-            
-            -- Button text
-            local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            buttonText:SetPoint("LEFT", 5, 0)
-            buttonText:SetPoint("RIGHT", -5, 0)
-            buttonText:SetText(handler)
-            buttonText:SetJustifyH("LEFT")
-            
-            -- Indicate current selection
-            if i == self.navigation.currentIndex then
-                button:SetNormalTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-                local normalTex = button:GetNormalTexture()
-                normalTex:SetVertexColor(1, 0.82, 0, 0.4)
+            -- Make sure current section is visible in the window
+            if currentIndex > MAX_VISIBLE_BUTTONS then
+                -- Center the current index in the visible window if possible
+                dropdownMenu.offset = math.max(0, currentIndex - math.floor(MAX_VISIBLE_BUTTONS / 2))
+                
+                -- Make sure offset doesn't go past maximum
+                local maxOffset = math.max(0, table.getn(self.navigation.handlers) - MAX_VISIBLE_BUTTONS)
+                dropdownMenu.offset = math.min(dropdownMenu.offset, maxOffset)
+            else
+                dropdownMenu.offset = 0
             end
-            
-            -- Click handler for dropdown menu items - UPDATED TO USE EventSystem
-            button:SetScript("OnClick", function()
-                -- Update text immediately for responsive UI
-                menuText:SetText(handler)
-                
-                -- Find the correct index for this handler
-                for idx = 1, table.getn(self.navigation.handlers) do
-                    if self.navigation.handlers[idx] == handler then
-                        -- Use the centralized NavigateToSection function with user source
-                        self:NavigateToSection(idx, "user")
-                        break
-                    end
-                end
-                
-                -- Hide the dropdown
-                dropdownMenu:Hide()
-            end)
-            
-            table.insert(dropdownMenu.buttons, button)
+        else
+            dropdownMenu.offset = 0
         end
+        
+        -- Update buttons before showing
+        dropdownMenu:UpdateVisibleButtons()
         
         dropdownMenu:Show()
     end)
