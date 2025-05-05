@@ -496,6 +496,7 @@ end
 
 -- Enhanced GetPlayerStatus function to handle example data
 function TWRA:GetPlayerStatus(name)
+    self:Debug("error", "GetPlayerStatus called from TWRA.lua")
     -- Safety checks
     if not name or name == "" then return false, nil end
     if UnitName("player") == name then return true, true end

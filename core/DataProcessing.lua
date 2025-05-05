@@ -1756,15 +1756,15 @@ function TWRA:IsCellRelevantForPlayer(cellText)
     
     -- Direct player name match
     if cellText == playerName then
-        self:Debug("data", "Cell relevant for player - direct name match: " .. cellText, false, true)
+        self:Debug("data", "Cell contains direct player name match: " .. cellText, false, true)
         return true
     end
     
     -- Class group match (e.g. "Warriors" for a Warrior)
     if playerClass and self.CLASS_GROUP_NAMES then
         for groupName, className in pairs(self.CLASS_GROUP_NAMES) do
-            if cellText == groupName and className == playerClass then
-                self:Debug("data", "Cell relevant for player - class group match: " .. cellText, false, true)
+            if cellText == groupName and string.upper(className) == playerClass then
+                self:Debug("data", "Cell contains class group match: " .. cellText, false, true)
                 return true
             end
         end

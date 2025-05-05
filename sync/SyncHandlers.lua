@@ -135,6 +135,75 @@ function TWRA:ExtractDataPortion(message, startComponent)
     return string.sub(message, dataStart)
 end
 
+-- Handle section change commands
+function TWRA:HandleSectionCommand(timestamp, sectionIndex, sender)
+    -- Add debug statement right at the start
+    self:Debug("sync", "HandleSectionCommand called with sectionIndex: " .. sectionIndex .. 
+              ", timestamp: " .. timestamp .. " from " .. sender, true)
+    
+    -- Convert to numbers (default to 0 if conversion fails)
+    local sectionIndexNum = tonumber(sectionIndex)
+    local timestampNum = tonumber(timestamp)
+    
+    if not sectionIndexNum then
+        self:Debug("sync", "Failed to convert section index to number: " .. sectionIndex, true)
+        return
+    end
+    
+    if not timestampNum then
+        self:Debug("sync", "Failed to convert timestamp to number: " .. timestamp, true)
+        return
+    end
+    
+    sectionIndex = sectionIndexNum
+    timestamp = timestampNum
+    
+    -- Always debug what we received
+    self:Debug("sync", string.format("Section change from %s (index: %d, timestamp: %d)", 
+        sender, sectionIndex, timestamp), true)
+    
+    -- Get our own timestamp for comparison
+    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
+
+    -- Debug the timestamp comparison
+    self:Debug("sync", "Comparing timestamps - Received: " .. timestamp .. 
+               " vs Our: " .. ourTimestamp, true)
+    
+    -- Compare timestamps and act accordingly
+    local comparisonResult = self:CompareTimestamps(ourTimestamp, timestamp)
+    
+    if comparisonResult == 0 then
+        -- Timestamps match - navigate to the section
+        self:Debug("sync", "Timestamps match - navigating to section " .. sectionIndex, true)
+        self:NavigateToSection(sectionIndex, "fromSync")
+        
+    elseif comparisonResult > 0 then
+        -- We have a newer version - just log it and don't navigate
+        self:Debug("sync", "We have a newer version (timestamp " .. ourTimestamp .. 
+                  " > " .. timestamp .. "), ignoring section change", true)
+    
+    else -- comparisonResult < 0
+        -- They have a newer version - request their data
+        self:Debug("sync", "Detected newer data from " .. sender .. " (timestamp " .. 
+                  timestamp .. " > " .. ourTimestamp .. "), requesting data", true)
+        
+        -- Store the section index to navigate to after sync completes
+        self.SYNC.pendingSection = sectionIndex
+        self:Debug("sync", "Stored pending section index " .. sectionIndex .. " to navigate after sync", true)
+        
+        -- Request the data using the RECEIVED timestamp (not our own)
+        -- Use segmented sync if available, otherwise fall back to legacy sync
+        if self.SYNC.useSegmentedSync and self.RequestStructureSync then
+            self:Debug("sync", "Using segmented sync for newer data")
+            self:RequestStructureSync(timestamp)
+        else
+            self:Debug("sync", "Falling back to legacy sync for newer data")
+            -- Legacy sync is not implemented in this version, so log that
+            self:Debug("sync", "Legacy sync not available in this version", true)
+        end
+    end
+end
+
 -- Function to handle bulk section messages (BSEC)
 -- These are stored directly without processing
 function TWRA:HandleBulkSectionCommand(timestamp, sectionIndex, sectionData, sender)

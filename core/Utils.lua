@@ -52,27 +52,41 @@ function TWRA:TruncateText(text, length)
     return string.sub(text, 1, length) .. "..."
 end
 
--- Timer functionality for older WoW versions
-function TWRA:ScheduleTimer(func, delay)
-    local timer = CreateFrame("Frame")
-    timer.start = GetTime()
-    timer.delay = delay
-    timer.func = func
+function TWRA:ScheduleTimer(callback, delay)
+    if not callback or type(delay) ~= "number" then return end
     
-    timer:SetScript("OnUpdate", function()
-        local elapsed = GetTime() - timer.start
-        if elapsed >= timer.delay then
-            timer:SetScript("OnUpdate", nil)
-            timer.func()
-        end
-    end)
+    -- Create a unique ID for this timer
+    local id = tostring({})  -- Simple way to get a unique string
     
-    return timer
+    -- Store the timer info
+    self.timers[id] = {
+        callback = callback,
+        expires = GetTime() + delay
+    }
+    
+    -- If this is our first timer, start the update frame, create it if needed
+    if not self.timerFrame then
+        self.timerFrame = CreateFrame("Frame")
+        self.timerFrame:SetScript("OnUpdate", function()
+            -- Check all timers on each frame update
+            local now = GetTime()
+            for timerId, timer in pairs(TWRA.timers) do
+                if timer.expires <= now then
+                    -- Call the callback
+                    timer.callback()
+                    -- Remove the timer
+                    TWRA.timers[timerId] = nil
+                end
+            end
+        end)
+    end
+    
+    return id
 end
 
-function TWRA:CancelTimer(timer)
-    if timer then
-        timer:SetScript("OnUpdate", nil)
+function TWRA:CancelTimer(timerId)
+    if timerId then
+        self.timers[timerId] = nil
     end
 end
 
@@ -94,6 +108,7 @@ end
 
 -- Get player status (in raid and online status)
 function TWRA:GetPlayerStatus(name)
+    self:Debug("error", "GetPlayerStatus called from Utils.lua")
     -- Check for valid name
     if not name or name == "" then return false, nil end
     
