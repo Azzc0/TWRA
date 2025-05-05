@@ -3,65 +3,202 @@
 
 TWRA = TWRA or {}
 
+-- Add tracking variables to prevent duplicate creation
+TWRA.minimapState = {
+    buttonCreated = false,
+    lastCreationTime = 0,
+    creationCooldown = 2, -- Seconds between allowed creations
+    zoneChangeHandled = false
+}
+
+-- Function to properly destroy the minimap button
+function TWRA:DestroyMinimapButton()
+    -- Only attempt destruction if we have a button
+    if not self.minimapButton then 
+        self:Debug("ui", "No minimap button to destroy")
+        return false
+    end
+    
+    -- Hide any dropdown if it exists
+    if self.minimapButton.dropdown then
+        self.minimapButton.dropdown:Hide()
+        
+        -- Clean up dropdown buttons
+        if self.minimapButton.dropdown.buttons then
+            for i, button in ipairs(self.minimapButton.dropdown.buttons) do
+                button:Hide()
+                button:SetParent(nil)
+                self.minimapButton.dropdown.buttons[i] = nil
+            end
+        end
+        
+        -- Remove dropdown itself
+        self.minimapButton.dropdown:SetParent(nil)
+        self.minimapButton.dropdown = nil
+    end
+    
+    -- Clear all scripts to prevent any lingering callbacks
+    self.minimapButton:SetScript("OnClick", nil)
+    self.minimapButton:SetScript("OnEnter", nil)
+    self.minimapButton:SetScript("OnLeave", nil)
+    self.minimapButton:SetScript("OnDragStart", nil)
+    self.minimapButton:SetScript("OnDragStop", nil)
+    self.minimapButton:SetScript("OnMouseWheel", nil)
+    self.minimapButton:SetScript("OnUpdate", nil)
+    
+    -- Remove any textures
+    if self.minimapButton.icon then
+        self.minimapButton.icon:SetParent(nil)
+        self.minimapButton.icon = nil
+    end
+    
+    if self.minimapButton.highlight then
+        self.minimapButton.highlight:SetParent(nil)
+        self.minimapButton.highlight = nil
+    end
+    
+    -- Hide and remove the button
+    self.minimapButton:Hide()
+    self.minimapButton:SetParent(nil)
+    self.minimapButton:ClearAllPoints()
+    
+    -- Clear our reference
+    self.minimapButton = nil
+    
+    -- Update state
+    self.minimapState.buttonCreated = false
+    
+    self:Debug("ui", "Minimap button destroyed successfully")
+    return true
+end
+
 -- Initialize the minimap functionality
 function TWRA:InitializeMinimapButton()
-    -- Create minimap button if it doesn't exist
-    if not self.minimapButton then
-        self:CreateMinimapButton()
+    -- Check if we already have a button or creation is on cooldown
+    local currentTime = GetTime()
+    if self.minimapState.buttonCreated and self.minimapButton then
+        self:Debug("ui", "Minimap button already exists - skipping initialization")
+        return true
     end
     
-    -- Register for section changes to update dropdown highlighting
-    if self.RegisterEvent then
-        self:Debug("ui", "Registering minimap section change handler")
+    -- Check if we're on creation cooldown
+    if (currentTime - self.minimapState.lastCreationTime) < self.minimapState.creationCooldown then
+        self:Debug("ui", "Minimap button creation on cooldown - skipping initialization")
+        return false
+    end
+    
+    -- Force proper cleanup of any existing button (even if reference is broken)
+    self:DestroyMinimapButton()
+    
+    -- Look for any orphaned buttons with our name and remove them
+    local existingButton = _G["TWRAMinimapButton"]
+    if existingButton then
+        self:Debug("ui", "Found orphaned minimap button - cleaning up")
+        existingButton:Hide()
+        existingButton:SetParent(nil)
+        existingButton:ClearAllPoints()
+        _G["TWRAMinimapButton"] = nil
+    end
+    
+    -- Create new minimap button
+    self:Debug("ui", "Creating new minimap button")
+    local success = self:CreateMinimapButton()
+    
+    if success then
+        -- Update state
+        self.minimapState.buttonCreated = true
+        self.minimapState.lastCreationTime = currentTime
+        self:Debug("ui", "Minimap button created successfully")
         
-        self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
-            self:Debug("ui", "Minimap received SECTION_CHANGED: " .. sectionName .. " (" .. currentIndex .. ")")
+        -- Register for section changes to update dropdown highlighting
+        if self.RegisterEvent then
+            self:Debug("ui", "Registering minimap section change handler")
             
-            -- If dropdown exists and is visible, update the highlighting
-            if self.minimapButton and self.minimapButton.dropdown then
-                -- Always update the selection highlight regardless of visibility
-                if self.minimapButton.dropdown.UpdateVisibleButtons then
-                    -- Calculate appropriate offset to ensure current section is visible
-                    if currentIndex then
-                        local maxVisibleButtons = self.minimapButton.dropdown.MAX_VISIBLE_BUTTONS or 10
-                        
-                        -- Only adjust offset if dropdown is visible
-                        if self.minimapButton.dropdown:IsShown() then
-                            -- Only adjust offset if current section would be outside visible range
-                            if currentIndex <= self.minimapButton.dropdown.offset or 
-                               currentIndex > (self.minimapButton.dropdown.offset + maxVisibleButtons) then
-                                
-                                -- Try to center the current section in the visible window
-                                self.minimapButton.dropdown.offset = math.max(0, currentIndex - math.floor(maxVisibleButtons / 2))
-                                
-                                -- Make sure offset doesn't go past maximum
-                                local maxOffset = math.max(0, table.getn(self.navigation.handlers) - maxVisibleButtons)
-                                self.minimapButton.dropdown.offset = math.min(self.minimapButton.dropdown.offset, maxOffset)
-                                
-                                self:Debug("ui", "Adjusted dropdown offset to " .. self.minimapButton.dropdown.offset .. 
-                                          " for section " .. currentIndex)
+            self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
+                self:Debug("ui", "Minimap received SECTION_CHANGED: " .. sectionName .. " (" .. currentIndex .. ")")
+                
+                -- If dropdown exists and is visible, update the highlighting
+                if self.minimapButton and self.minimapButton.dropdown then
+                    -- Always update the selection highlight regardless of visibility
+                    if self.minimapButton.dropdown.UpdateVisibleButtons then
+                        -- Calculate appropriate offset to ensure current section is visible
+                        if currentIndex then
+                            local maxVisibleButtons = self.minimapButton.dropdown.MAX_VISIBLE_BUTTONS or 10
+                            
+                            -- Only adjust offset if dropdown is visible
+                            if self.minimapButton.dropdown:IsShown() then
+                                -- Only adjust offset if current section would be outside visible range
+                                if currentIndex <= self.minimapButton.dropdown.offset or 
+                                   currentIndex > (self.minimapButton.dropdown.offset + maxVisibleButtons) then
+                                    
+                                    -- Try to center the current section in the visible window
+                                    self.minimapButton.dropdown.offset = math.max(0, currentIndex - math.floor(maxVisibleButtons / 2))
+                                    
+                                    -- Make sure offset doesn't go past maximum
+                                    local maxOffset = math.max(0, table.getn(self.navigation.handlers) - maxVisibleButtons)
+                                    self.minimapButton.dropdown.offset = math.min(self.minimapButton.dropdown.offset, maxOffset)
+                                    
+                                    self:Debug("ui", "Adjusted dropdown offset to " .. self.minimapButton.dropdown.offset .. 
+                                              " for section " .. currentIndex)
+                                end
                             end
+                            
+                            -- Always update the highlight (regardless of visibility)
+                            self.minimapButton.dropdown:UpdateVisibleButtons()
+                            
+                            self:Debug("ui", "Updated dropdown highlighting for section: " .. sectionName)
                         end
-                        
-                        -- Always update the highlight (regardless of visibility)
-                        self.minimapButton.dropdown:UpdateVisibleButtons()
-                        
-                        self:Debug("ui", "Updated dropdown highlighting for section: " .. sectionName)
                     end
                 end
-            end
-        end, "MinimapDropdown")
+            end, "MinimapDropdown")
+        end
+        
+        -- Register for PLAYER_ENTERING_WORLD to prevent duplicate buttons
+        if self.RegisterEvent then
+            self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+                -- Reset zone change handled flag
+                self.minimapState.zoneChangeHandled = false
+                
+                -- Use a timer to handle zone changes in stages
+                self:ScheduleTimer(function()
+                    -- Only process if not already handled for this zone change
+                    if self.minimapState.zoneChangeHandled then
+                        self:Debug("ui", "Zone change already handled - skipping")
+                        return
+                    end
+                    
+                    -- Mark as handled
+                    self.minimapState.zoneChangeHandled = true
+                    
+                    -- Check button state
+                    if not self.minimapButton then
+                        self:Debug("ui", "No minimap button after zone change - recreating")
+                        self:InitializeMinimapButton()
+                    else
+                        self:Debug("ui", "Minimap button exists after zone change")
+                    end
+                end, 1.0)
+            end, "MinimapZoneChange")
+        end
+        
+        return true
+    else
+        self:Debug("error", "Failed to create minimap button")
+        return false
     end
-    
-    self:Debug("ui", "Minimap button initialized")
-    return true
 end
 
 -- Create the minimap button
 function TWRA:CreateMinimapButton()
     self:Debug("general", "Creating minimap button")
     
-    -- Create a frame for our minimap button
+    -- Final check for existing button before creating
+    if self.minimapButton then
+        self:Debug("ui", "Button already exists - destroying before recreation")
+        self:DestroyMinimapButton()
+    end
+    
+    -- Create a frame for our minimap button (with explicit global name for cleanup)
     local miniButton = CreateFrame("Button", "TWRAMinimapButton", Minimap)
     miniButton:SetWidth(32)
     miniButton:SetHeight(32)
@@ -163,6 +300,7 @@ function TWRA:CreateMinimapButton()
         GameTooltip:AddLine("Left-click: Toggle assignments window", 1, 1, 1)
         GameTooltip:AddLine("Right-click: Toggle options", 1, 1, 1)
         GameTooltip:AddLine("Mousewheel: Navigate sections", 1, 1, 1)
+        GameTooltip:AddLine("Drag: Move button", 1, 1, 1)
         GameTooltip:Show()
     end)
     
@@ -307,28 +445,102 @@ function TWRA:CreateMinimapButton()
         end
     end)
     
-    -- Make the button draggable
+    -- Make the button draggable around the minimap
     miniButton:RegisterForDrag("LeftButton")
+    
+    -- Variables to track drag state
+    miniButton.isDragging = false
+    miniButton.dragStartTime = 0
+    
+    -- Add OnUpdate handler for real-time dragging
+    miniButton:SetScript("OnUpdate", function()
+        -- Only process if we're currently dragging
+        if miniButton.isDragging then
+            -- Calculate position around minimap in real-time
+            local xpos, ypos = GetCursorPosition()
+            local scale = UIParent:GetEffectiveScale()
+            xpos = xpos / scale
+            ypos = ypos / scale
+            
+            -- Get minimap center
+            local minimapCenterX, minimapCenterY = Minimap:GetCenter()
+            
+            -- Convert cursor position to angle
+            local dx = xpos - minimapCenterX
+            local dy = ypos - minimapCenterY
+            local angle = math.deg(math.atan2(dy, dx))
+            
+            -- Position the button along the minimap's edge in real-time
+            local radius = 80 -- Distance from center of minimap
+            local radian = math.rad(angle)
+            local x = math.cos(radian) * radius
+            local y = math.sin(radian) * radius
+            
+            miniButton:ClearAllPoints()
+            miniButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
+            
+            -- Store current angle for OnDragStop to use
+            miniButton.currentAngle = angle
+        end
+    end)
+    
     miniButton:SetScript("OnDragStart", function()
-        this:LockHighlight()
-        this:StartMoving()
+        -- Record when the drag started
+        miniButton.isDragging = true
+        miniButton.dragStartTime = GetTime()
+        
+        -- Visual feedback
+        miniButton:LockHighlight()
+        
         -- Hide dropdown while dragging
         if miniButton.dropdown then
             miniButton.dropdown:Hide()
         end
     end)
+    
     miniButton:SetScript("OnDragStop", function()
-        this:StopMovingOrSizing()
-        this:UnlockHighlight()
+        -- Visual feedback
+        miniButton:UnlockHighlight()
         
-        -- Calculate and save angle
-        local x, y = this:GetCenter()
-        local mx, my = Minimap:GetCenter()
-        local angle = math.deg(math.atan2(y - my, x - mx))
+        -- Get the final angle (already calculated in OnUpdate)
+        local angle = miniButton.currentAngle or 180
         
-        -- Save to settings
+        -- Stop the dragging state
+        miniButton.isDragging = false
+        
+        -- Save the angle in saved variables
         if TWRA_SavedVariables and TWRA_SavedVariables.options then
             TWRA_SavedVariables.options.minimapAngle = angle
+        end
+        
+        -- Check if this was a short drag (click) or a real drag
+        local dragDuration = GetTime() - miniButton.dragStartTime
+        
+        -- If it was a very short drag, treat it as a click
+        if dragDuration < 0.2 then
+            -- Simulate the click behavior
+            local button = "LeftButton" -- It was registered as a left button drag
+            TWRA:Debug("ui", "Short drag detected, treating as " .. button .. "-click")
+            
+            -- Toggle main frame in main view (similar to click handler)
+            if not TWRA.mainFrame then
+                if TWRA.CreateMainFrame then
+                    TWRA:CreateMainFrame()
+                else
+                    return
+                end
+            end
+            
+            -- If frame is shown and already in main view, hide it
+            if TWRA.mainFrame:IsShown() and TWRA.currentView == "main" then
+                TWRA.mainFrame:Hide()
+            else
+                -- Otherwise show frame and ensure we're in main view
+                TWRA.mainFrame:Show()
+                if TWRA.ShowMainView then
+                    TWRA:ShowMainView()
+                end
+            end
         end
     end)
     
@@ -338,34 +550,9 @@ function TWRA:CreateMinimapButton()
             -- Add highly visible debug message to verify event registration
             TWRA:Debug("ui", "MINIMAP SECTION CHANGE DETECTED: Section " .. currentIndex .. 
                       " (" .. sectionName .. ") of " .. totalSections)
-            -- DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00TWRA:|r Minimap detected section change to: " .. sectionName)
             
             -- Always update the minimap dropdown if it's showing
             TWRA.minimapButton.dropdown:UpdateVisibleButtons()
-            -- if miniButton.dropdown and miniButton.dropdown:IsShown() then
-            --     -- Ensure the current section is visible in the dropdown (auto-scroll)
-            --     if currentIndex and miniButton.dropdown.UpdateVisibleButtons then
-            --         -- Calculate proper offset to ensure current section is visible
-            --         local maxVisibleButtons = 10 -- Match the MAX_VISIBLE_BUTTONS constant
-                    
-            --         -- Only adjust offset if current section would be outside visible range
-            --         if currentIndex <= miniButton.dropdown.offset or 
-            --            currentIndex > (miniButton.dropdown.offset + maxVisibleButtons) then
-            --             -- Try to center the current section in the visible window
-            --             miniButton.dropdown.offset = math.max(0, currentIndex - math.floor(maxVisibleButtons / 2))
-                        
-            --             -- Make sure offset doesn't go past maximum
-            --             local maxOffset = math.max(0, table.getn(TWRA.navigation.handlers) - maxVisibleButtons)
-            --             miniButton.dropdown.offset = math.min(miniButton.dropdown.offset, maxOffset)
-            --         end
-                    
-            --         -- Update the buttons to reflect the new section highlight
-            --         miniButton.dropdown:UpdateVisibleButtons()
-                    
-            --         TWRA:Debug("ui", "Updated dropdown highlighting for section change to: " .. sectionName .. 
-            --                   " (index: " .. currentIndex .. ", offset: " .. miniButton.dropdown.offset .. ")")
-            --     end
-            -- end
         end, "MinimapDropdownHighlight")
     end
     
