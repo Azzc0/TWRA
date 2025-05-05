@@ -36,21 +36,20 @@ end
 
 -- Main function called from RAID_TARGET_UPDATE event in TWRA.lua
 function TWRA:CheckSkullMarkedMob()
-    self:Debug("nav", "Checking for skull-marked mob")
+    self:Debug("nav", "Checking for skull-marked mob", false, true)
     
     -- Early return if AutoNavigate is not enabled
     if not self.AUTONAVIGATE.enabled then
-        self:Debug("nav", "DEBUG: Early return - AutoNavigate is not enabled")
+        self:Debug("nav", "DEBUG: Early return - AutoNavigate is not enabled", false, true)
         return
     end
     
-    self:Debug("nav", "DEBUG: AutoNavigate is enabled, checking SuperWoW support...")
+    self:Debug("nav", "DEBUG: AutoNavigate is enabled, checking SuperWoW support...", false, true)
     
     -- Make sure SuperWoW is available
     if not self:CheckSuperWoWSupport(true) then 
         -- Throw an error as requested
         self:Debug("error", "SuperWoW is required for AutoNavigate")
-        self:Debug("nav", "DEBUG: Early return - SuperWoW support check failed")
         -- Disable AutoNavigate to prevent further errors
         self.AUTONAVIGATE.enabled = false
         if TWRA_SavedVariables and TWRA_SavedVariables.options then
@@ -59,7 +58,7 @@ function TWRA:CheckSkullMarkedMob()
         return
     end
     
-    self:Debug("nav", "DEBUG: SuperWoW support confirmed, checking for skull-marked unit...")
+    self:Debug("nav", "DEBUG: SuperWoW support confirmed, checking for skull-marked unit...", false, true)
     
     -- Use direct mark8 reference for skull-marked units (SuperWoW feature)
     local markUnitId = "mark8"  -- Skull is always mark8
@@ -67,34 +66,34 @@ function TWRA:CheckSkullMarkedMob()
     -- Check if mark8 exists and get its guid
     local exists,guid = UnitExists("mark8")
     if not exists then
-        self:Debug("nav", "DEBUG: No skull-marked unit exists")
+        self:Debug("nav", "DEBUG: No skull-marked unit exists", false, true)
         if self.AUTONAVIGATE.debug and self.AUTONAVIGATE.lastMarkedGuid ~= "none" then
-            self:Debug("nav", "No skull-marked units found")
+            self:Debug("nav", "No skull-marked units found", false, true)
             self.AUTONAVIGATE.lastMarkedGuid = "none" -- Use "none" as a marker so we don't spam this message
         end
         return
     end
     
-    self:Debug("nav", "DEBUG: Skull-marked unit exists, getting GUID...")
+    self:Debug("nav", "DEBUG: Skull-marked unit exists, getting GUID...", false, true)
     
     -- Make sure we got a valid GUID
     if not guid or guid == "" then
-        self:Debug("nav", "Unit exists but no GUID available for skull-marked unit")
+        self:Debug("nav", "Unit exists but no GUID available for skull-marked unit", false, true)
         return
     end
     
     local name = UnitName("mark8")
     
-    self:Debug("nav", "DEBUG: Successfully got name and GUID")
+    self:Debug("nav", "DEBUG: Successfully got name and GUID", false, true)
     
     if self.AUTONAVIGATE.debug then
-        self:Debug("nav", "Found skull-marked unit: " .. name .. " with GUID: " .. guid)
+        self:Debug("nav", "Found skull-marked unit: " .. name .. " with GUID: " .. guid, false, true)
     end
     
     -- Only process if this is a new GUID to avoid constant processing
     if guid ~= self.AUTONAVIGATE.lastMarkedGuid then
         if self.AUTONAVIGATE.debug then
-            self:Debug("nav", "Processing new skull-marked unit")
+            self:Debug("nav", "Processing new skull-marked unit", false, true)
         end
         
         self:ProcessMarkedMob(name, guid)
@@ -405,82 +404,6 @@ function TWRA:FindSectionByGuid(guid)
                 end
             end
         end
-        
-        -- Fall back to legacy format if no match found
-        if self.AUTONAVIGATE.debug then
-            self:Debug("nav", "No match found in new format, checking legacy format...")
-        end
-        
-        -- Check for presence of legacy format data
-        local hasLegacyFormat = false
-        for i, row in pairs(savedData) do
-            if type(row) == "table" and type(i) == "number" and row[2] == "GUID" then
-                hasLegacyFormat = true
-                break
-            end
-        end
-        
-        if hasLegacyFormat then
-            -- Legacy format: Track current section while iterating through the flat array
-            local currentSection = nil
-            
-            -- Iterate through all rows
-            for i, row in pairs(savedData) do
-                if type(row) == "table" and type(i) == "number" then
-                    -- Update current section name if this row has one
-                    if row[1] and row[1] ~= "" then
-                        currentSection = row[1]
-                    end
-                    
-                    -- Check if it's a GUID row - in flat data structure the GUID is in column 2
-                    if row[2] == "GUID" then
-                        if self.AUTONAVIGATE.debug and currentSection then
-                            self:Debug("nav", "Found GUID row in legacy format section: " .. currentSection)
-                        end
-                        
-                        -- Check each cell in the row for GUIDs
-                        for j = 3, table.getn(row) do
-                            local rowGuid = row[j]
-                            if rowGuid and rowGuid ~= "" then
-                                if self.AUTONAVIGATE.debug then
-                                    self:Debug("nav", "Checking legacy GUID: " .. rowGuid)
-                                end
-                                
-                                -- Normalize for comparison
-                                local normalizedRowGuid = string.lower(rowGuid)
-                                local rowGuidWithoutPrefix = normalizedRowGuid
-                                if string.sub(normalizedRowGuid, 1, 2) == "0x" then
-                                    rowGuidWithoutPrefix = string.sub(normalizedRowGuid, 3)
-                                end
-                                
-                                -- Try exact matches first
-                                if normalizedRowGuid == normalizedGuid or 
-                                   rowGuidWithoutPrefix == guidWithoutPrefix then
-                                    if self.AUTONAVIGATE.debug then
-                                        self:Debug("nav", "Found exact GUID match in legacy format for " .. 
-                                            currentSection .. ": " .. rowGuid)
-                                    end
-                                    return currentSection
-                                end
-                                
-                                -- Try partial matching with the end of the GUID
-                                if shortGuid and string.len(normalizedRowGuid) >= 8 then
-                                    local shortRowGuid = string.sub(normalizedRowGuid, -12)
-                                    if string.find(shortRowGuid, shortGuid, 1, true) or 
-                                       string.find(shortGuid, shortRowGuid, 1, true) then
-                                        if self.AUTONAVIGATE.debug then
-                                            self:Debug("nav", "Found partial GUID match in legacy format for " .. 
-                                                currentSection .. ": " .. shortRowGuid .. " ~ " .. shortGuid)
-                                        end
-                                        return currentSection
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
     else
         if self.AUTONAVIGATE.debug then
             self:Debug("nav", "No saved assignments data available")
@@ -534,30 +457,6 @@ function TWRA:TestCurrentTarget()
     self:ProcessMarkedMob(name, guid)
 end
 
--- Add a function to check current target for debugging
-function TWRA:CheckCurrentTarget()
-    local exists, guid = UnitExists("target")
-    
-    if not exists then
-        self:Debug("nav", "No target selected")
-        return
-    end
-    
-    local name = UnitName("target")
-    
-    self:Debug("nav", "Target: " .. name .. " (" .. (guid or "no GUID") .. ")")
-    
-    if guid then
-        -- Try to find the section directly
-        local targetSection = self:FindSectionByGuid(guid)
-        if targetSection then
-            self:Debug("nav", "Found mapping to section: " .. targetSection)
-        else
-            self:Debug("nav", "No mapping found")
-        end
-    end
-end
-
 -- Toggle debug mode with enhanced info
 function TWRA:ToggleAutoNavigateDebug()
     self.AUTONAVIGATE.debug = not self.AUTONAVIGATE.debug
@@ -581,30 +480,33 @@ function TWRA:ToggleAutoNavigateDebug()
             self:Debug("nav", "No navigation data available")
         end
         
-        -- Show GUID mappings (Updated for flat data structure)
+        -- Show GUID mappings
         if TWRA_Assignments and TWRA_Assignments.data then
             local savedData = TWRA_Assignments.data
-            local currentSection = nil
             
-            self:Debug("nav", "Checking for GUIDs:")
-            for i = 1, table.getn(savedData) do
-                local row = savedData[i]
-                
-                -- Track current section
-                if type(row) == "table" and row[1] and row[1] ~= "" then
-                    currentSection = row[1]
-                end
-                
-                -- Look for GUID rows in this section
-                if type(row) == "table" and row[2] == "GUID" then
-                    self:Debug("nav", "  Section '" .. (currentSection or "Unknown") .. "' GUIDs:")
-                    for j = 3, table.getn(row) do
-                        if row[j] and row[j] ~= "" then
-                            self:Debug("nav", "    " .. row[j])
+            self:Debug("nav", "Checking for GUIDs in sections:")
+            for _, section in pairs(savedData) do
+                -- Only process properly structured sections
+                if type(section) == "table" and section["Section Name"] then
+                    local sectionName = section["Section Name"]
+                    
+                    -- Check if this section has metadata with GUIDs
+                    if section["Section Metadata"] and section["Section Metadata"]["GUID"] then
+                        local guidList = section["Section Metadata"]["GUID"]
+                        
+                        if table.getn(guidList) > 0 then
+                            self:Debug("nav", "  Section '" .. sectionName .. "' GUIDs:")
+                            for _, guid in ipairs(guidList) do
+                                if guid and guid ~= "" then
+                                    self:Debug("nav", "    " .. guid)
+                                end
+                            end
                         end
                     end
                 end
             end
+        else
+            self:Debug("nav", "No assignment data available")
         end
     end
 end
@@ -623,7 +525,7 @@ function TWRA:ListAllGuids()
     local guidCount = 0
     local guidsBySection = {}
     
-    -- Iterate through the assignment data (new structure)
+    -- Iterate through the assignment data
     for index, section in pairs(savedData) do
         -- Only process properly structured sections
         if type(section) == "table" and section["Section Name"] then

@@ -106,33 +106,6 @@ function TWRA:EnsureCompleteRows(data)
         end
     end
 
-    -- For legacy format
-    if type(data) == "table" and not data.data then
-        -- Find max columns in any row
-        local maxColumns = 0
-        for i = 1, table.getn(data) do
-            local row = data[i]
-            if type(row) == "table" then
-                local rowLen = table.getn(row)
-                if rowLen > maxColumns then
-                    maxColumns = rowLen
-                end
-            end
-        end
-        
-        -- Normalize rows
-        for i = 1, table.getn(data) do
-            local row = data[i]
-            if type(row) == "table" then
-                for j = 1, maxColumns do
-                    if not row[j] then
-                        row[j] = ""
-                    end
-                end
-            end
-        end
-    end
-    
     return data
 end
 

@@ -889,12 +889,9 @@ function TWRA:CreateOptionsInMainFrame()
         end
         
         self:Debug("data", "Importing data")
-        
-        -- Remove redundant clearing code - let DirectImportNewFormat handle it completely
-        -- The DirectImportNewFormat function properly recreates TWRA_CompressedAssignments
-        
+                
         -- Import using the new format
-        local success = self:DirectImportNewFormat(importText)
+        local success = self:DirectImport(importText)
         
         if success then
             -- Clear the import box and remove focus
@@ -1162,7 +1159,7 @@ function TWRA:ApplyInitialSettings()
 end
 
 -- Add this function to handle direct import of new format data
-function TWRA:DirectImportNewFormat(importText)
+function TWRA:DirectImport(importText)
     self:Debug("data", "Starting direct import of new format data")
     
     -- CRITICAL FIX: Completely regenerate TWRA_CompressedAssignments from scratch
