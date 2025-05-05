@@ -80,19 +80,6 @@ function TWRA:FixSpecialCharacters(data)
     return result
 end
 
--- Build navigation from the new data format
-function TWRA:BuildNavigationFromNewFormat()
-    -- Forward to the canonical implementation in Core.lua
-    self:Debug("nav", "BuildNavigationFromNewFormat is deprecated - forwarding to RebuildNavigation")
-    return self:RebuildNavigation()
-end
-
--- Get section by index
-function TWRA:GetNewFormatSection(index)
-    return TWRA_Assignments.data[index]
-end
-
--- Simplify GetCurrentSectionData to always assume new format
 function TWRA:GetCurrentSectionData()
     -- Check if we have assignment data
     if not TWRA_Assignments or not TWRA_Assignments.data then
@@ -129,7 +116,6 @@ function TWRA:GetCurrentSectionData()
     return nil
 end
 
--- Simplify DisplayCurrentSection to always use new format
 function TWRA:DisplayCurrentSection()
     local sectionData = self:GetCurrentSectionData()
     if not sectionData then
@@ -601,83 +587,6 @@ function TWRA:ProcessImportedData(data)
     return processedData
 end
 
--- Verify and log the new data structure
-function TWRA:VerifyNewDataStructure()
-    if not TWRA_Assignments then
-        self:Debug("error", "TWRA_Assignments not found")
-        return false
-    end
-    
-    self:Debug("data", "Verifying assignments structure:")
-    self:Debug("data", "  version: " .. (TWRA_Assignments.version or "nil"))
-    self:Debug("data", "  timestamp: " .. (TWRA_Assignments.timestamp or "nil"))
-    self:Debug("data", "  currentSection: " .. (TWRA_Assignments.currentSection or "nil"))
-    
-    if not TWRA_Assignments.data then
-        self:Debug("error", "TWRA_Assignments.data is nil")
-        return false
-    end
-    
-    if type(TWRA_Assignments.data) ~= "table" then
-        self:Debug("error", "TWRA_Assignments.data is not a table, but " .. type(TWRA_Assignments.data))
-        return false
-    end
-    
-    local count = 0
-    for idx, section in pairs(TWRA_Assignments.data) do
-        count = count + 1
-        self:Debug("data", "  Section " .. idx .. ": " .. 
-                  (section["Section Name"] or "unnamed"))
-    end
-    
-    self:Debug("data", "Found " .. count .. " sections in TWRA_Assignments.data")
-    
-   
-    return true
-end
-
--- Function to add a special row directly to section metadata
-function TWRA:AddSpecialRowToMetadata(sectionName, rowType, content)
-    if not sectionName or not rowType or not content then
-        self:Debug("error", "Missing required parameters for AddSpecialRowToMetadata")
-        return false
-    end
-    
-    -- Validate rowType is valid
-    if rowType ~= "Note" and rowType ~= "Warning" and rowType ~= "GUID" then
-        self:Debug("error", "Invalid special row type: " .. rowType)
-        return false
-    end
-    
-    -- Ensure saved variables exist
-    TWRA_Assignments = TWRA_Assignments or {}
-    TWRA_Assignments.data = TWRA_Assignments.data or {}
-    
-    -- Find the section by name
-    local sectionFound = false
-    for sectionIdx, section in pairs(TWRA_Assignments.data) do
-        if type(section) == "table" and section["Section Name"] == sectionName then
-            -- Ensure Section Metadata structure exists
-            section["Section Metadata"] = section["Section Metadata"] or {}
-            section["Section Metadata"][rowType] = section["Section Metadata"][rowType] or {}
-            
-            -- Add the content to the appropriate metadata array
-            table.insert(section["Section Metadata"][rowType], content)
-            
-            self:Debug("data", "Added " .. rowType .. " to section '" .. sectionName .. "': " .. content)
-            sectionFound = true
-            break
-        end
-    end
-    
-    if not sectionFound then
-        self:Debug("error", "Section '" .. sectionName .. "' not found for adding " .. rowType)
-        return false
-    end
-    
-    return true
-end
-
 -- CaptureSpecialRows: Process and move special rows (Notes, Warnings, GUIDs) to section metadata
 function TWRA:CaptureSpecialRows(data)
     if not data or not data.data or type(data.data) ~= "table" then
@@ -818,6 +727,3 @@ function TWRA:CaptureSpecialRows(data)
     
     return data
 end
-
--- Initialize diagnostics when this file loads
-TWRA:VerifyNewDataStructure()

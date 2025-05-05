@@ -140,6 +140,42 @@ function TWRA:IsORA2Available()
     return oRA and oRA.maintanktable ~= nil  -- Changed to lowercase
 end
 
+-- Add frame creation logic to convert from 0/1 to boolean
+function TWRA:ConvertOptionValues()
+    -- Ensure options exist
+    if not TWRA_SavedVariables.options then
+        TWRA_SavedVariables.options = {}
+    end
+    
+    -- Convert any 0/1 values to proper booleans
+    local optionsToConvert = {
+        "hideFrameByDefault", "lockFramePosition", "autoNavigate", 
+        "liveSync", "tankSync"
+    }
+    
+    for _, option in ipairs(optionsToConvert) do
+        if TWRA_SavedVariables.options[option] ~= nil then
+            if type(TWRA_SavedVariables.options[option]) == "number" then
+                -- Convert 0/1 to boolean
+                TWRA_SavedVariables.options[option] = (TWRA_SavedVariables.options[option] == 1)
+            end
+        end
+    end
+    
+    -- Also check OSD options
+    if TWRA_SavedVariables.options.osd then
+        local osdOptions = {"locked", "enabled", "showOnNavigation"}
+        for _, option in ipairs(osdOptions) do
+            if TWRA_SavedVariables.options.osd[option] ~= nil then
+                if type(TWRA_SavedVariables.options.osd[option]) == "number" then
+                    -- Convert 0/1 to boolean
+                    TWRA_SavedVariables.options.osd[option] = (TWRA_SavedVariables.options.osd[option] == 1)
+                end
+            end
+        end
+    end
+end
+
 -- Function to update the player table with current group information
 function TWRA:UpdatePlayerTable()
     -- Store previous player data for comparison

@@ -463,72 +463,37 @@ function TWRA:CreateMainFrame()
 
     -- After creating all UI elements, rebuild navigation but don't display content yet
     if TWRA_Assignments and TWRA_Assignments.data then
-        -- Check if we're using the new data format
-        local isNewFormat = false
-        if type(TWRA_Assignments.data) == "table" then
-            for idx, section in pairs(TWRA_Assignments.data) do
-                if type(section) == "table" and section["Section Name"] then
-                    isNewFormat = true
+        self:Debug("ui", "Main frame detected new data format, rebuilding navigation")
+        self:RebuildNavigation()
+        
+        -- Set example data flag properly
+        self.usingExampleData = TWRA_Assignments.usingExampleData or
+                                TWRA_Assignments.isExample or false
+        
+        -- Restore saved section index or name for later use (but don't display yet)
+        if TWRA_Assignments.currentSectionName and self.navigation.handlers then
+            local found = false
+            for i, name in ipairs(self.navigation.handlers) do
+                if name == TWRA_Assignments.currentSectionName then
+                    self.navigation.currentIndex = i
+                    found = true
+                    self:Debug("nav", "Main frame stored section by name: " .. name)
                     break
                 end
             end
+            
+            if not found and TWRA_Assignments.currentSection then
+                local index = TWRA_Assignments.currentSection
+                if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
+                    self.navigation.currentIndex = index
+                    self:Debug("nav", "Main frame stored section by index: " .. index)
+                else
+                    self.navigation.currentIndex = 1
+                    self:Debug("nav", "Main frame using default section index: 1")
+                end
+            end
         end
-        
-        if isNewFormat then
-            -- For new format, use RebuildNavigation to get handlers
-            self:Debug("ui", "Main frame detected new data format, rebuilding navigation")
-            self:RebuildNavigation()
-            
-            -- Set example data flag properly
-            self.usingExampleData = TWRA_Assignments.usingExampleData or
-                                    TWRA_Assignments.isExample or false
-            
-            -- Restore saved section index or name for later use (but don't display yet)
-            if TWRA_Assignments.currentSectionName and self.navigation.handlers then
-                local found = false
-                for i, name in ipairs(self.navigation.handlers) do
-                    if name == TWRA_Assignments.currentSectionName then
-                        self.navigation.currentIndex = i
-                        found = true
-                        self:Debug("nav", "Main frame stored section by name: " .. name)
-                        break
-                    end
-                end
-                
-                if not found and TWRA_Assignments.currentSection then
-                    local index = TWRA_Assignments.currentSection
-                    if self.navigation.handlers and index <= table.getn(self.navigation.handlers) then
-                        self.navigation.currentIndex = index
-                        self:Debug("nav", "Main frame stored section by index: " .. index)
-                    else
-                        self.navigation.currentIndex = 1
-                        self:Debug("nav", "Main frame using default section index: 1")
-                    end
-                end
-            end
-        else
-            -- Legacy format handling (unchanged but no content display)
-            self.fullData = TWRA_Assignments.data
-            
-            -- Update navigation handlers
-            self.navigation.handlers = {}
-            local seenSections = {}
-            
-            for i = 1, table.getn(self.fullData) do
-                local sectionName = self.fullData[i][1]
-                if sectionName and not seenSections[sectionName] then
-                    seenSections[sectionName] = true
-                    table.insert(self.navigation.handlers, sectionName)
-                end
-            end
 
-            -- Restore saved section index
-            if TWRA_Assignments.currentSection then
-                self.navigation.currentIndex = TWRA_Assignments.currentSection
-            else
-                self.navigation.currentIndex = 1
-            end
-        end
         
         -- Update menu button text, but don't load or display content yet
         if self.navigation.handlerText and self.navigation.handlers and 
@@ -906,7 +871,6 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     end
     
     -- Process rows from Section Rows
-    -- No need to filter out special rows since they've already been removed
     if sectionData and sectionData["Section Rows"] then
         for i, rowData in ipairs(sectionData["Section Rows"]) do
             -- Add the row to our filtered data
@@ -1269,80 +1233,6 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     return footer
 end
 
--- AutoMarker toggle (only shown if SuperWoW is available)
-if SUPERWOW_VERSION ~= nil then
-    -- Create checkbox for AutoMarker
-    local autoNavigateCheckbox = CreateFrame("CheckButton", "TWRA_AutoMarkerCheckbox", optionsFrame, "UICheckButtonTemplate")
-    autoNavigateCheckbox:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 0, -10)
-    autoNavigateCheckbox:SetChecked(TWRA.AUTONAVIGATE.enabled)
-    
-    -- Set label
-    getglobal(autoNavigateCheckbox:GetName() .. "Text"):SetText("Enable AutoMarker (SuperWoW)")
-    autoNavigateCheckbox.tooltipText = "Automatically switch sections when raid markers are placed on mobs with matching GUIDs"
-    
-    -- Set OnClick handler
-    autoNavigateCheckbox:SetScript("OnClick", function()
-        TWRA:ToggleAutoMarker()
-        this:SetChecked(TWRA.AUTONAVIGATE.enabled)
-    end)
-    
-    -- Update last element reference for positioning
-    lastElement = autoNavigateCheckbox
-    
-    -- Add debug checkbox for development
-    if isGM then  -- Only show to GMs or add a debug mode toggle elsewhere
-        local debugCheckbox = CreateFrame("CheckButton", "TWRA_AutoMarkerDebugCheckbox", optionsFrame, "UICheckButtonTemplate")
-        debugCheckbox:SetPoint("TOPLEFT", lastElement, "BOTTOMLEFT", 20, -5)
-        debugCheckbox:SetChecked(TWRA.AUTONAVIGATE.debug)
-        
-        getglobal(debugCheckbox:GetName() .. "Text"):SetText("Debug mode")
-        debugCheckbox.tooltipText = "Show debug messages for AutoMarker"
-        
-        debugCheckbox:SetScript("OnClick", function() 
-            TWRA.AUTONAVIGATE.debug = not TWRA.AUTONAVIGATE.debug
-            this:SetChecked(TWRA.AUTONAVIGATE.debug)
-        end)
-        
-        lastElement = debugCheckbox
-    end
-end
-
--- Add frame creation logic to convert from 0/1 to boolean
-function TWRA:ConvertOptionValues()
-    -- Ensure options exist
-    if not TWRA_SavedVariables.options then
-        TWRA_SavedVariables.options = {}
-    end
-    
-    -- Convert any 0/1 values to proper booleans
-    local optionsToConvert = {
-        "hideFrameByDefault", "lockFramePosition", "autoNavigate", 
-        "liveSync", "tankSync"
-    }
-    
-    for _, option in ipairs(optionsToConvert) do
-        if TWRA_SavedVariables.options[option] ~= nil then
-            if type(TWRA_SavedVariables.options[option]) == "number" then
-                -- Convert 0/1 to boolean
-                TWRA_SavedVariables.options[option] = (TWRA_SavedVariables.options[option] == 1)
-            end
-        end
-    end
-    
-    -- Also check OSD options
-    if TWRA_SavedVariables.options.osd then
-        local osdOptions = {"locked", "enabled", "showOnNavigation"}
-        for _, option in ipairs(osdOptions) do
-            if TWRA_SavedVariables.options.osd[option] ~= nil then
-                if type(TWRA_SavedVariables.options.osd[option]) == "number" then
-                    -- Convert 0/1 to boolean
-                    TWRA_SavedVariables.options.osd[option] = (TWRA_SavedVariables.options.osd[option] == 1)
-                end
-            end
-        end
-    end
-end
-
 -- Call this function during OnLoad to fix any 0/1 values
 TWRA:ConvertOptionValues()
 
@@ -1476,8 +1366,8 @@ function TWRA:CreateRow(rowNum, data)
                     
                     if playerInfo then
                         -- Extract class and online status from PLAYERS table
-                        playerClass = playerInfo[1]
                         isInRaid = true
+                        playerClass = playerInfo[1]
                         isOnline = playerInfo[2]
                         
                         -- Set class icon texture for players in raid
@@ -1488,38 +1378,11 @@ function TWRA:CreateRow(rowNum, data)
                         end
                     else
                         -- Player not in raid - use Missing icon
-                        if self.ICONS and self.ICONS["Missing"] then
-                            local iconInfo = self.ICONS["Missing"]
-                            iconTexture:SetTexture(iconInfo[1])
-                            iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-                        else
-                            -- Fallback to disconnect icon if Missing icon not available
-                            iconTexture:SetTexture("Interface\\CharacterFrame\\Disconnect-Icon")
-                            iconTexture:SetTexCoord(0, 1, 0, 1)
-                        end
+                        local iconInfo = self.ICONS["Missing"]
+                        iconTexture:SetTexture(iconInfo[1])
+                        iconTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
                     end
-                    
-                    -- Apply class coloring
-                    if self.UI and self.UI.ApplyClassColoring then
-                        -- Use the UIUtils function for consistent coloring
-                        self.UI:ApplyClassColoring(cell, nil, playerClass, isInRaid, isOnline)
-                    else
-                        -- Fallback coloring
-                        if not isInRaid then
-                            cell:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
-                        elseif not isOnline then
-                            cell:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
-                        elseif playerClass and self.VANILLA_CLASS_COLORS then
-                            local color = self.VANILLA_CLASS_COLORS[string.upper(playerClass)]
-                            if color then
-                                cell:SetTextColor(color.r, color.g, color.b)
-                            else
-                                cell:SetTextColor(1, 1, 1) -- White fallback
-                            end
-                        else
-                            cell:SetTextColor(1, 1, 1) -- White fallback
-                        end
-                    end
+                    self.UI:ApplyClassColoring(cell, nil, playerClass, isInRaid, isOnline)
                 else
                     -- Empty cell is white
                     cell:SetTextColor(1, 1, 1)

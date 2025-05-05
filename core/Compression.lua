@@ -688,18 +688,6 @@ function TWRA:GetCompressedStructure()
     return TWRA_CompressedAssignments.structure
 end
 
--- -- Function to get a compressed section from TWRA_CompressedAssignments redundant
--- function TWRA:GetCompressedSection(sectionIndex)
---     if not TWRA_CompressedAssignments or 
---        not TWRA_CompressedAssignments.data or 
---        not TWRA_CompressedAssignments.data[sectionIndex] then
---         self:Debug("compress", "No compressed data available for section " .. sectionIndex)
---         return nil
---     end
-    
---     return TWRA_CompressedAssignments.data[sectionIndex]
--- end
-
 -- Get compressed structure data
 function TWRA:GetCompressedStructure()
     -- Ensure our storage exists

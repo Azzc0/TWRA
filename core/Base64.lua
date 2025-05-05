@@ -66,15 +66,11 @@ TWRA.ABBREVIATION_MAPPINGS = {
     ["K"] = "Kite"
 }
 
--- Replace the b64Encode function that has modulo operator issues
 local function b64Encode(ch)
     if not ch then return "A" end
     local b = ch
-    -- Replace modulo with math.floor approach
     if b < 64 then
-        -- No change needed
     else
-        -- Replace "b = b % 64" with math.floor approach
         b = b - (math.floor(b / 64) * 64)
     end
     
@@ -160,18 +156,8 @@ function TWRA:DecompressAssignmentsData(compressedData)
     local startTime = debugprofilestop and debugprofilestop() or 0
     
     local compressedString
-    
-    -- Handle different formats
-    if isNewFormat then
-        -- Remove the marker byte
-        compressedString = string.sub(compressedData, 2)
-        
-        -- First decode the Base64 encoding to get binary data
-        compressedString = self:DecodeBase64Raw(compressedString)
-    else
-        -- Legacy format - remove the COMP: prefix
-        compressedString = string.sub(compressedData, 6)
-    end
+    compressedString = string.sub(compressedData, 2)
+    compressedString = self:DecodeBase64Raw(compressedString)
     
     if not compressedString then
         self:Debug("error", "Failed to decode Base64 data", true)
@@ -316,26 +302,6 @@ function TWRA:PrepareDataForSync(data)
     return syncData
 end
 
--- -- Function to store compressed data for later reuse
--- -- Redirects to the central implementation in DataProcessing.lua
--- function TWRA:StoreCompressedData(compressedData)
---     -- Forward to the consolidated implementation in DataProcessing.lua
---     if not compressedData then
---         self:Debug("error", "StoreCompressedData: nil data provided", true)
---         return false
---     end
-    
---     self:Debug("data", "Redirecting to consolidated StoreCompressedData implementation")
-    
---     -- Call the consolidated implementation directly if it exists
---     if TWRA.ProcessImportedData then  -- This check ensures DataProcessing.lua is loaded
---         return TWRA:StoreCompressedData(compressedData)
---     else
---         self:Debug("error", "DataProcessing.lua is not loaded correctly")
---         return false
---     end
--- end
-
 -- Function to get stored compressed data or generate it if not available
 function TWRA:GetStoredCompressedData()
     -- Check if we have stored compressed data
@@ -477,7 +443,6 @@ function TWRA:ExpandAbbreviations(data)
     return data
 end
 
--- New function to ensure all rows have entries for all columns
 function TWRA:EnsureCompleteRows(data)
     if not data then 
         self:Debug("error", "EnsureCompleteRows: Invalid data structure", true)
@@ -646,8 +611,6 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
             return nil
         end
         
-        -- Since this is already a table, we can skip the rest of the parsing
-        -- Just process client-specific data
         
         -- Initialize Assignments if they don't exist
         if not TWRA_Assignments then
@@ -751,7 +714,6 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     end
     
     -- Ensure string is a multiple of 4 characters by adding padding if necessary
-    -- Replace modulo with math.floor approach
     local remainder = string.len(base64Str) - (math.floor(string.len(base64Str) / 4) * 4)
     local padding = 0
     if remainder > 0 then
