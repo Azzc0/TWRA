@@ -18,40 +18,6 @@ function TWRA:DeepCopy(orig)
     return copy
 end
 
--- Format time as HH:MM:SS
-function TWRA:FormatTime(seconds)
-    if not seconds then return "00:00:00" end
-    
-    local hours = math.floor(seconds / 3600)
-    local minutes = math.floor((seconds - (hours * 3600)) / 60)
-    local secs = math.floor(seconds - (hours * 3600) - (minutes * 60))
-    
-    return string.format("%02d:%02d:%02d", hours, minutes, secs)
-end
-
--- Format large numbers with commas
-function TWRA:FormatNumber(num)
-    if not num then return "0" end
-    
-    local formatted = tostring(num)
-    local k
-    
-    while true do
-        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
-        if k == 0 then break end
-    end
-    
-    return formatted
-end
-
--- Truncate text to a specific length with ellipsis
-function TWRA:TruncateText(text, length)
-    if not text then return "" end
-    if string.len(text) <= length then return text end
-    
-    return string.sub(text, 1, length) .. "..."
-end
-
 function TWRA:ScheduleTimer(callback, delay)
     if not callback or type(delay) ~= "number" then return end
     
@@ -117,22 +83,6 @@ function TWRA:SplitString(str, delimiter)
     self:Debug("sync", resultInfo .. " (total: " .. table.getn(result) .. " parts)", false, true) -- Mark as details
     
     return result
-end
-
--- Utility functions
-function TWRA:IsRaidAssist()
-    if GetNumRaidMembers() == 0 then
-        return false
-    end
-    
-    local playerName = UnitName("player")
-    for i = 1, GetNumRaidMembers() do
-        if UnitName("raid"..i) == playerName then
-            -- Use the Classic function names
-            return IsRaidOfficer("raid"..i) or IsRaidLeader("raid"..i)
-        end
-    end
-    return false
 end
 
 -- Check if oRA2 is available

@@ -1,58 +1,3 @@
--- Handle loading of data including scanning for GUIDs
-function TWRA:ProcessLoadedData(data)
-    -- Process player-specific information after data is loaded with comprehensive error handling
-    self:Debug("data", "Processing player information for loaded data")
-    
-    -- Use pcall to safely execute player info processing
-    local success, error = pcall(function()
-        self:ProcessPlayerInfo()
-    end)
-    
-    if not success then
-        self:Debug("error", "Error processing player info during data load: " .. tostring(error))
-        
-        -- Try a second approach with safer section-by-section processing
-        self:Debug("data", "Attempting fallback section-by-section player info processing")
-        if TWRA_Assignments and TWRA_Assignments.data then
-            for sectionIdx, section in pairs(TWRA_Assignments.data) do
-                if type(section) == "table" and section["Section Name"] then
-                    local sectionSuccess, sectionError = pcall(function()
-                        self:ProcessPlayerInfo(section)
-                    end)
-                    
-                    if sectionSuccess then
-                        self:Debug("data", "Successfully processed player info for section " .. section["Section Name"])
-                    else
-                        self:Debug("error", "Failed to process player info for section " .. 
-                                  section["Section Name"] .. ": " .. tostring(sectionError))
-                    end
-                end
-            end
-        end
-    else
-        self:Debug("data", "Successfully processed player info for all sections")
-    end
-    
-    -- After processing data, setup section navigation
-    self:RebuildNavigation()
-    
-    -- If AutoNavigate is enabled, we should prepare any GUID information
-    if self.AUTONAVIGATE and self.AUTONAVIGATE.enabled then
-        -- This helps the mob scanning system have up-to-date section information
-        self:Debug("nav", "Refreshing section navigation for AutoNavigate")
-        
-        -- Force GUID refresh if needed
-        if self.AUTONAVIGATE.debug then
-            self:Debug("nav", "Data loaded, refreshed GUID mappings")
-            -- Reset last marked GUID to force new scan
-            self.AUTONAVIGATE.lastMarkedGuid = nil  
-        end
-    end
-    
-    -- Return success
-    return true
-end
-
 -- EnsureCompleteRows - Ensures that all rows have the same number of columns
 -- Adds empty strings at missing indices to prevent nil reference errors
 function TWRA:EnsureCompleteRows(data)
@@ -390,23 +335,23 @@ function TWRA:ProcessDynamicPlayerInfoForSection(section, playerName, playerGrou
     return true
 end
 
--- UpdatePlayerInfo - Refreshes player info and updates UI elements with improved debugging
--- Now supports updating a single section
-function TWRA:UpdatePlayerInfo(section)
-    if section then
-        self:Debug("data", "Updating player info for section: " .. (section["Section Name"] or "Unknown"))
-    else
-        self:Debug("data", "Updating player info for all sections")
-    end
+-- -- UpdatePlayerInfo - Refreshes player info and updates UI elements with improved debugging
+-- -- Now supports updating a single section
+-- function TWRA:UpdatePlayerInfo(section)
+--     if section then
+--         self:Debug("data", "Updating player info for section: " .. (section["Section Name"] or "Unknown"))
+--     else
+--         self:Debug("data", "Updating player info for all sections")
+--     end
     
-    -- Process all sections or just the specified one
-    self:ProcessPlayerInfo(section)
+--     -- Process all sections or just the specified one
+--     self:ProcessPlayerInfo(section)
     
-    -- Update OSD if needed
-    self:UpdateOSDWithPlayerInfo()
+--     -- Update OSD if needed
+--     self:UpdateOSDWithPlayerInfo()
     
-    return true
-end
+--     return true
+-- end
 
 -- Helper function to update OSD with new player info
 function TWRA:UpdateOSDWithPlayerInfo()
@@ -1099,120 +1044,6 @@ function TWRA:ProcessSectionData(sectionIndex)
     return true
 end
 
--- Function to process all sections data
-function TWRA:ProcessAllSectionsData(data, sender)
-    self:Debug("data", "Processing all sections data from " .. sender)
-    
-    -- Parse the data format: numSections;index1:len1:data1;index2:len2:data2;...
-    local parts = self:SplitString(data, ";")
-    local numSections = tonumber(parts[1])
-    
-    if not numSections then
-        self:Debug("error", "Invalid section count in bulk data")
-        return
-    end
-    
-    self:Debug("data", "Processing " .. numSections .. " sections")
-    
-    -- Process each section
-    local processedCount = 0
-    
-    for i = 2, table.getn(parts) do -- The # length operator is not available to us hence the table.getn approach
-        if parts[i] and parts[i] ~= "" then
-            local sectionParts = self:SplitString(parts[i], ":")
-            if table.getns(ectionParts) >= 3 then
-                local sectionIndex = tonumber(sectionParts[1])
-                local dataLength = tonumber(sectionParts[2])
-                local sectionData = sectionParts[3]
-                
-                if sectionIndex and dataLength and sectionData and string.len(sectionData) == dataLength then
-                    -- Process this section
-                    self:Debug("sync", "Processing section " .. sectionIndex .. " from bulk data")
-                    self:ProcessSectionData(sectionIndex)
-                    processedCount = processedCount + 1
-                else
-                    self:Debug("error", "Invalid section data format in bulk response")
-                end
-            end
-        end
-    end
-    
-    self:Debug("sync", "Finished processing " .. processedCount .. " sections from bulk data")
-    
-    -- Notify user of completion
-    if processedCount > 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Received and processed " .. 
-                                      processedCount .. " sections from " .. sender)
-    end
-end
-
--- Updated GetPlayerRelevantRowsForSection to only include name and class matches (not group matches)
-function TWRA:GetPlayerRelevantRowsForSection(section)
-    -- Get player info
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    playerClass = playerClass and string.upper(playerClass) or nil
-    
-    -- Prepare result array
-    local relevantRows = {}
-    
-    -- Ensure Section Rows exists
-    if not section["Section Rows"] then
-        return relevantRows
-    end
-    
-    -- Log player info for debugging
-    self:Debug("data", "Searching for rows relevant to player: " .. playerName, false, true)
-    
-    -- Scan through rows looking for matches
-    for rowIndex, rowData in ipairs(section["Section Rows"]) do
-        local isRelevantRow = false
-        local matchReason = ""
-        
-        -- Skip special rows
-        if rowData[1] == "Note" or rowData[1] == "Warning" or rowData[1] == "GUID" then
-            -- Skip these special rows
-        else
-            -- Check each cell in the row for a match - SKIP target column (column 2) if configured to do so
-            for colIndex, cellValue in ipairs(rowData) do
-                -- Skip processing if not a string or empty
-                if type(cellValue) ~= "string" or cellValue == "" then
-                    -- Skip empty or non-string cells
-                elseif colIndex == 2 and self.IGNORE_TARGET_COLUMN_FOR_RELEVANCE then
-                    -- Skip target column if configured to ignore it
-                else
-                    -- Direct player name match
-                    if cellValue == playerName then
-                        isRelevantRow = true
-                        matchReason = "direct name match in column " .. colIndex
-                        break
-                    end
-                    
-                    -- Class group match (e.g. "Warriors" for a Warrior)
-                    if playerClass and self.CLASS_GROUP_NAMES and 
-                       self.CLASS_GROUP_NAMES[cellValue] and 
-                       string.upper(self.CLASS_GROUP_NAMES[cellValue]) == playerClass then
-                        isRelevantRow = true
-                        matchReason = "class group match (" .. cellValue .. ") in column " .. colIndex
-                        break
-                    end
-                    
-                    -- NOTE: Group matching is removed from here - it now only happens in GetGroupRowsForSection
-                end
-            end
-            
-            -- Add to our list if relevant
-            if isRelevantRow then
-                table.insert(relevantRows, rowIndex)
-                self:Debug("data", "Row " .. rowIndex .. " is relevant: " .. matchReason, false, true)
-            end
-        end
-    end
-    
-    self:Debug("data", "Found " .. table.getn(relevantRows) .. " relevant rows for player: " .. playerName, false, true)
-    return relevantRows
-end
-
 -- GenerateOSDInfoForSection - Creates a compact representation of player's assignments
 function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignments)
     local osdInfo = {}
@@ -1381,100 +1212,6 @@ function TWRA:GetAllGroupRowsForSection(section)
     end
     
     return allGroupRows
-end
-
--- Find rows that contain references to player's group
-function TWRA:GetGroupRowsForSection(section)
-    local groupRows = {}
-    
-    -- Find player's group number (1-8)
-    local playerGroup = nil
-    for i = 1, GetNumRaidMembers() do
-        local name, _, subgroup = GetRaidRosterInfo(i)
-        if name == UnitName("player") then
-            playerGroup = subgroup
-            break
-        end
-    end
-    
-    -- If not in a raid or no group found, return empty list
-    if not playerGroup then
-        return groupRows
-    end
-    
-    -- Skip if no rows
-    if not section["Section Rows"] then
-        return groupRows
-    end
-    
-    -- Check each row for group references
-    for rowIdx, rowData in ipairs(section["Section Rows"]) do
-        -- Skip special rows
-        if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
-            -- Check each cell for group references, SKIP column 2 (target column)
-            for colIndex, cellValue in ipairs(rowData) do
-                -- Skip target column (column 2)
-                if colIndex ~= 2 and type(cellValue) == "string" and cellValue ~= "" then
-                    -- Look for "Group X" format
-                    if string.find(string.lower(cellValue), "group%s*" .. playerGroup) then
-                        table.insert(groupRows, rowIdx)
-                        self:Debug("data", "Found group row " .. rowIdx .. " for group " .. playerGroup .. " in column " .. colIndex, false, true)
-                        break
-                    end
-                    
-                    -- Look for numeric references to the group
-                    if string.find(cellValue, "Group") then
-                        local pos = 1
-                        local str = cellValue
-                        while pos <= string.len(str) do
-                            local digitStart, digitEnd = string.find(str, "%d+", pos)
-                            if not digitStart then break end
-                            
-                            local groupNum = tonumber(string.sub(str, digitStart, digitEnd))
-                            if groupNum and groupNum == playerGroup then
-                                table.insert(groupRows, rowIdx)
-                                self:Debug("data", "Found group row " .. rowIdx .. " for group " .. playerGroup .. " in column " .. colIndex, false, true)
-                                break
-                            end
-                            pos = digitEnd + 1
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return groupRows
-end
-
--- Check if a cell contains the player's name or class group
-function TWRA:IsCellContainingPlayerNameOrClass(cellText, isTargetColumn)
-    -- Skip empty cells or non-string cells
-    if not cellText or type(cellText) ~= "string" or cellText == "" then
-        return false
-    end
-    
-    -- Get player info
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    playerClass = playerClass and string.upper(playerClass) or nil
-    
-    -- Direct player name match
-    if cellText == playerName then
-        self:Debug("data", "Cell contains direct player name match: " .. cellText, false, true)
-        return true
-    end
-    
-    -- Class group match (e.g. "Warriors" for a Warrior)
-    if not isTargetColumn and playerClass and self.CLASS_GROUP_NAMES and 
-       self.CLASS_GROUP_NAMES[cellText] and 
-       string.upper(self.CLASS_GROUP_NAMES[cellText]) == playerClass then
-        self:Debug("data", "Cell contains class group match: " .. cellText, false, true)
-        return true
-    end
-    
-    -- No match found
-    return false
 end
 
 -- Helper function to check if a cell is relevant for the player's current group

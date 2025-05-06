@@ -78,28 +78,6 @@ function TWRA:SerializeTable(tbl)
     return result
 end
 
--- Function to deserialize a table string back to a table
-function TWRA:DeserializeTable(str)
-    if str == nil or str == "" then
-        return nil
-    end
-    
-    local func, err = loadstring("return " .. str)
-    if not func then
-        self:Debug("error", "DeserializeTable error: " .. (err or "Unknown error"))
-        return nil
-    end
-    
-    local success, result = pcall(func)
-    if not success then
-        self:Debug("error", "DeserializeTable execution error: " .. tostring(result))
-        return nil
-    end
-    
-    return result
-end
-
-
 -- Compress the structure data (section names only without indices)
 function TWRA:CompressStructureData()
     -- Initialize compression system if needed

@@ -302,35 +302,6 @@ function TWRA:PrepareDataForSync(data)
     return syncData
 end
 
--- Function to get stored compressed data or generate it if not available
-function TWRA:GetStoredCompressedData()
-    -- Check if we have stored compressed data
-    if TWRA_Assignments and TWRA_Assignments.compressed then
-        self:Debug("data", "Using stored compressed data")
-        return TWRA_Assignments.compressed
-    end
-    
-    -- If not, check if we have assignment data that we can compress
-    if TWRA_Assignments and TWRA_Assignments.data then
-        self:Debug("data", "No stored compressed data, compressing current data")
-        
-        -- Prepare data for sync
-        local syncData = self:PrepareDataForSync(TWRA_Assignments)
-        
-        -- Compress the prepared data
-        local compressedData = self:CompressAssignmentsData(syncData)
-        
-        if compressedData then
-            -- Store for future use
-            self:StoreCompressedData(compressedData)
-            return compressedData
-        end
-    end
-    
-    self:Debug("error", "No data available to compress", true)
-    return nil
-end
-
 -- Function to expand abbreviations based on static mapping table
 function TWRA:ExpandAbbreviations(data)
     if not data or type(data) ~= "table" then
@@ -1108,16 +1079,6 @@ function TWRA:TableToLuaString(tbl)
     
     result = result .. "}"
     return result
-end
-
--- Convert table to Base64
-function TWRA:TableToBase64(tbl)
-    if not tbl then return nil end
-    
-    -- IMPORTANT: For Base64 encoding, we'll just use the Lua string method
-    -- rather than trying to compress here, since it could be used in different contexts
-    local luaStr = self:TableToLuaString(tbl)
-    return self:EncodeBase64(luaStr)
 end
 
 -- Encode a string to Base64

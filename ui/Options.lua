@@ -70,41 +70,6 @@ function TWRA:InitOptions()
     return true
 end
 
--- Helper function to safely enable/disable UI elements with null checking
-function TWRA:SafeToggleUIElement(element, enabled, textElement)
-    if not element then return end
-    
-    if enabled then
-        -- Enable element
-        if element.SetEnabled then
-            element:SetEnabled(true)
-        else
-            -- Manual enable for various element types
-            element:EnableMouse(true)
-            element:SetAlpha(1.0)
-        end
-        
-        -- Update text color
-        if textElement and textElement.SetTextColor then
-            textElement.SetTextColor(1, 1, 1)
-        end
-    else
-        -- Disable element
-        if element.SetEnabled then
-            element:SetEnabled(false)
-        else
-            -- Manual disable for various element types
-            element:EnableMouse(false)
-            element:SetAlpha(0.5)
-        end
-        
-        -- Update text color
-        if textElement and textElement.SetTextColor then
-            textElement.SetTextColor(0.5, 0.5, 0.5)
-        end
-    end
-end
-
 -- Helper function to update slider text and state
 function TWRA:UpdateSliderState(slider, enabled)
     if not slider then return end
@@ -1025,64 +990,6 @@ function TWRA:RestartAutoNavigateTimer()
     else
         self:Debug("auto", "AutoNavigate is disabled, timer not restarted")
     end
-end
-
--- Initialize saved variables with proper safety checks
-function TWRA:InitializeSavedOptions()
-    -- Ensure options structure exists
-    TWRA_SavedVariables = TWRA_SavedVariables or {}
-    TWRA_SavedVariables.options = TWRA_SavedVariables.options or {}
-    
-    -- Apply defaults for any missing options
-    local defaults = self.DEFAULT_OPTIONS or {
-        liveSync = false,
-        tankSync = true,
-        autoNavigate = false,
-        scanFrequency = 3,
-        announceChannel = "GROUP",
-        customChannel = ""
-    }
-    
-    for key, value in pairs(defaults) do
-        if TWRA_SavedVariables.options[key] == nil then
-            TWRA_SavedVariables.options[key] = value
-        end
-    end
-    
-    -- Initialize OSD options
-    TWRA_SavedVariables.options.osd = TWRA_SavedVariables.options.osd or {}
-    
-    -- Apply OSD defaults
-    local osdDefaults = self.DEFAULT_OSD_SETTINGS or {
-        point = "CENTER",
-        xOffset = 0,
-        yOffset = 100,
-        scale = 1.0,
-        duration = 2,
-        locked = false,
-        enabled = true,
-        showNotes = true,
-        showOnNavigation = true
-    }
-    
-    for key, value in pairs(osdDefaults) do
-        if TWRA_SavedVariables.options.osd[key] == nil then
-            TWRA_SavedVariables.options.osd[key] = value
-        end
-    end
-    
-    -- Initialize runtime modules
-    if self.SYNC then
-        self.SYNC.liveSync = TWRA_SavedVariables.options.liveSync or false
-        self.SYNC.tankSync = TWRA_SavedVariables.options.tankSync or false
-    end
-    
-    -- Make sure announcement options exist
-    if not TWRA_SavedVariables.options.announceChannel then
-        TWRA_SavedVariables.options.announceChannel = "GROUP"
-    end
-    
-    self:Debug("general", "Saved options initialized")
 end
 
 -- Helper function to apply saved settings on load

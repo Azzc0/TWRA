@@ -30,10 +30,6 @@ TWRA.DEBUG_LEVELS = {
 TWRA.earlyErrors = TWRA.earlyErrors or {}
 TWRA.worldLoaded = false -- Track if player has entered world
 
-function TWRA:ClearCA()
-    TWRA_CompressedAssignments = {}
-end
-
 -- Global error handler to capture early errors 
 function TWRA_CaptureEarlyError(message)
     -- Create our addon table if it doesn't exist
@@ -208,21 +204,6 @@ end
 -- Error logging - always shown even at minimal debug levels
 function TWRA:Error(message)
     self:Debug("error", message, true)
-end
-
--- Warning logging - shown at WARN level and above
-function TWRA:Warn(category, message)
-    self:Debug(category, message, self.DEBUG_LEVELS.WARN)
-end
-
--- Info logging - shown at INFO level and above (default)
-function TWRA:Info(category, message)
-    self:Debug(category, message, self.DEBUG_LEVELS.INFO)
-end
-
--- Verbose logging - only shown at VERBOSE level
-function TWRA:Verbose(category, message)
-    self:Debug(category, message, self.DEBUG_LEVELS.VERBOSE)
 end
 
 -- Debug output function with category filtering and detail level support

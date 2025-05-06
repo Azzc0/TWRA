@@ -18,29 +18,29 @@ function TWRA:CloseDropdownMenu()
     end
 end
 
--- Register for player update events
-function TWRA:RegisterPlayerEvents()
-    -- Only register if we have the event system
-    if not self.RegisterEvent then
-        self:Debug("ui", "Event system not available, cannot register player events")
-        return false
-    end
+-- -- Register for player update events
+-- function TWRA:RegisterPlayerEvents()
+--     -- Only register if we have the event system
+--     if not self.RegisterEvent then
+--         self:Debug("ui", "Event system not available, cannot register player events")
+--         return false
+--     end
     
-    -- Register for PLAYERS_UPDATED event
-    self:RegisterEvent("PLAYERS_UPDATED", function()
-        -- Only update UI if main frame is visible and in main view
-        if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
-            -- If we have a refresh function, call it to update the UI
-            if self.RefreshAssignmentTable then
-                self:Debug("ui", "Refreshing display after player update")
-                self:RefreshAssignmentTable()
-            end
-        end
-    end)
+--     -- Register for PLAYERS_UPDATED event
+--     self:RegisterEvent("PLAYERS_UPDATED", function()
+--         -- Only update UI if main frame is visible and in main view
+--         if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+--             -- If we have a refresh function, call it to update the UI
+--             if self.RefreshAssignmentTable then
+--                 self:Debug("ui", "Refreshing display after player update")
+--                 self:RefreshAssignmentTable()
+--             end
+--         end
+--     end)
     
-    self:Debug("ui", "Registered for player update events")
-    return true
-end
+--     self:Debug("ui", "Registered for player update events")
+--     return true
+-- end
 
 -- Enhance CreateMainFrame to use the standardized dropdown and remove Edit button
 function TWRA:CreateMainFrame()

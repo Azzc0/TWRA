@@ -316,10 +316,10 @@ function TWRA:CreateMinimapButton()
                 miniButton.dropdown:Hide()
                 miniButton.hideTimer:SetScript("OnUpdate", nil)
                 
-                -- Hide OSD if it wasn't shown before
+                -- Instead of hiding the OSD, show it with default duration when it wasn't showing before
                 if not miniButton.osdWasShown then
-                    if TWRA.HideOSD then
-                        TWRA:HideOSD()
+                    if TWRA.ShowOSD then
+                        TWRA:ShowOSD() -- Use default duration from OSD settings
                     end
                 end
             end
@@ -780,9 +780,9 @@ function TWRA:CreateMinimapDropdown(miniButton)
                     dropdown:Hide()
                     dropdown.hideTimer:SetScript("OnUpdate", nil)
                     
-                    -- Hide OSD if it wasn't shown before
-                    if not miniButton.osdWasShown and TWRA.HideOSD then
-                        TWRA:HideOSD()
+                    -- Instead of hiding the OSD, show it with default duration when it wasn't showing before
+                    if not miniButton.osdWasShown and TWRA.ShowOSD then
+                        TWRA:ShowOSD() -- Use default duration from OSD settings
                     end
                 end
             end)
@@ -844,33 +844,4 @@ function TWRA:CreateMinimapDropdown(miniButton)
     end
     
     return dropdown
-end
-
--- Helper function to update the minimap button with current section information
-function TWRA:UpdateMinimapButton()
-    if not self.minimapButton then return end
-    
-    -- If we have a dropdown and it's shown, update it
-    if self.minimapButton.dropdown and self.minimapButton.dropdown:IsShown() then
-        self.minimapButton:ShowDropdown()
-    end
-    
-    self:Debug("ui", "Minimap button updated")
-end
-
--- Helper function to toggle the minimap button visibility
-function TWRA:ToggleMinimapButton()
-    if not self.minimapButton then
-        self:CreateMinimapButton()
-        self:Debug("ui", "Created and showing minimap button")
-        return
-    end
-    
-    if self.minimapButton:IsShown() then
-        self.minimapButton:Hide()
-        self:Debug("ui", "Minimap button hidden")
-    else
-        self.minimapButton:Show()
-        self:Debug("ui", "Minimap button shown")
-    end
 end

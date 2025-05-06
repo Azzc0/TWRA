@@ -163,32 +163,6 @@ function TWRA:RebuildNavigation()
     end
 end
 
--- Helper function to update UI elements based on current data
-function TWRA:UpdateUI()
-    self:Debug("ui", "Updating UI")
-    
-    -- Call UI update functions directly
-    if self.UpdateNavigationButtons then
-        self:UpdateNavigationButtons()
-    end
-    
-    if self.DisplayCurrentSection then
-        self:DisplayCurrentSection()
-    else
-        self:Error("DisplayCurrentSection not found!")
-    end
-    
-    -- Try to update any visible UI elements
-    if self.mainFrame and self.mainFrame:IsShown() then
-        -- Update section text
-        if self.navigation and self.navigation.handlerText and 
-           self.navigation.currentIndex and self.navigation.handlers and
-           self.navigation.handlers[self.navigation.currentIndex] then
-            self.navigation.handlerText:SetText(self.navigation.handlers[self.navigation.currentIndex])
-        end
-    end
-end
-
 -- Main initialization - called only once
 function TWRA:Initialize()
     local frame = CreateFrame("Frame")
@@ -328,17 +302,6 @@ function TWRA:Initialize()
     end
 end
 
--- Save current view state on unload
-function TWRA:OnUnload()
-    -- Save which view we were in
-    if self.currentView then
-        TWRA_SavedVariables.currentView = self.currentView
-    end
-    
-    -- Any other state that needs to be saved on unload
-    self:Debug("general", "Saved settings on unload")
-end
-
 -- Register for PLAYER_LOGOUT to save state
 local logoutFrame = CreateFrame("Frame")
 logoutFrame:RegisterEvent("PLAYER_LOGOUT")
@@ -428,60 +391,6 @@ function TWRA:CleanAssignmentData(data, isTableFormat)
         end
         return cleanedData
     end
-end
-
--- Enhanced LoadSavedAssignments to update OSD after loading
-function TWRA:LoadSavedAssignments()
-    -- Check if we have saved assignments
-    local needExampleData = false
-    
-    if not TWRA_Assignments then
-        self:Debug("data", "No saved assignments found, will load example data")
-        needExampleData = true
-    elseif not TWRA_Assignments.data or (type(TWRA_Assignments.data) == "table" and next(TWRA_Assignments.data) == nil) then
-        self:Debug("data", "Assignment data is nil or empty, will load example data")
-        needExampleData = true
-    end
-    
-    -- Load example data if needed
-    if needExampleData then
-        if self.LoadExampleDataAndShow then
-            self:Debug("data", "Loading example data for new users")
-            self:LoadExampleDataAndShow()
-            return true
-        elseif self.LoadExampleData then
-            self:Debug("data", "Loading example data (without UI refresh)")
-            self:LoadExampleData()
-            return true
-        end
-        return false
-    end
-    
-    -- Check if the assignments structure is complete
-    if not TWRA_Assignments.data then
-        self:Debug("error", "Assignment data structure incomplete")
-        return false
-    end
-    
-    -- Use our ClearData function to properly preserve metadata
-    if self.ClearData then
-        self:ClearData()
-    else
-        -- Fallback if ClearData function doesn't exist
-        self:Debug("data", "Clearing current data (fallback method)")
-        self.fullData = nil
-        if self.navigation then
-            self.navigation.handlers = {}
-        end
-    end
-    
-    -- Detect data format version
-    local version = TWRA_Assignments.version or 1
-    self:Debug("data", "Loading saved assignments (format version " .. version .. ")")
-    
-    -- Handle new format (version 2+)
-    self:Debug("data", "Loading new format data")
-    return self:RebuildNavigation()
 end
 
 -- Function to check if we're dealing with example data
@@ -866,78 +775,6 @@ end
 -- Initialize UI at end of loading - THIS IS THE ONLY INITIALIZE CALL
 TWRA:Initialize()
 
--- Also update HandleTableAnnounce to save the section after receiving data
-function TWRA:HandleTableAnnounce(tableData, timestamp, sender)
-    -- Check against our timestamp
-    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
-    
-    if timestamp and timestamp > ourTimestamp then
-        -- Use the pending section if available
-        local sectionToUse = self.SYNC.pendingSection or 1
-        
-        -- Clean the table data using our centralized function
-        local cleanedTableData = self:CleanAssignmentData(tableData, true)
-        
-        -- Convert cleaned table data to flat format for use in current session
-        local flatData = {}
-        
-        -- For each section in the cleaned data
-        for section, rows in pairs(cleanedTableData) do
-            -- For each row in this section
-            for i = 1, table.getn(rows) do
-                local newRow = {}
-                
-                -- Add section name as first column
-                newRow[1] = section
-                
-                -- Copy the rest of the row data
-                for j = 1, table.getn(rows[i]) do
-                    newRow[j+1] = rows[i][j]
-                end
-                
-                table.insert(flatData, newRow)
-            end
-        end
-        
-        -- Set the full data to the cleaned flat data
-        self.fullData = flatData
-        
-        -- Rebuild navigation using the cleaned data
-        self:RebuildNavigation()
-        
-        -- Get the section name for the current index
-        local sectionName = nil
-        if self.navigation and self.navigation.handlers and 
-           sectionToUse <= table.getn(self.navigation.handlers) then
-            sectionName = self.navigation.handlers[sectionToUse]
-        end
-        
-        -- Store the cleaned structured data with section information
-        TWRA_Assignments = {
-            data = cleanedTableData,
-            timestamp = timestamp,
-            currentSection = sectionToUse,
-            currentSectionName = sectionName, 
-            version = 1
-        }
-        
-        -- Navigate to the section properly using NavigateToSection
-        if self.navigation then
-            self:NavigateToSection(sectionToUse, "fromSync")
-        end
-        
-        -- Clear pending section after use
-        self.SYNC.pendingSection = nil
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Synchronized with " .. sender)
-    end
-end
-
--- Ensure the dropdown menu also saves current section
--- Add this to your dropdown menu selection handler if it exists
-function TWRA:SectionDropdownSelected(index)
-    self:NavigateToSection(index)  -- This will now save the section
-end
-
 -- Improve ShowOptionsView to properly set current view and safely handle UI elements
 function TWRA:ShowOptionsView()
     -- Set view state first
@@ -983,74 +820,6 @@ function TWRA:ShowOptionsView()
     end
     
     self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
-end
-
--- Find rows relevant to the current player (either by name or class group)
-function TWRA:GetPlayerRelevantRows(sectionData)
-    if not sectionData or type(sectionData) ~= "table" then
-        return {}
-    end
-    
-    local relevantRows = {}
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    playerClass = playerClass and string.upper(playerClass) or nil
-    
-    -- Find player's group number (1-8)
-    local playerGroup = nil
-    for i = 1, GetNumRaidMembers() do
-        local name, _, subgroup = GetRaidRosterInfo(i)
-        if name == playerName then
-            playerGroup = subgroup
-            break
-        end
-    end
-    
-    -- Scan through all rows to find matches
-    for rowIndex, rowData in ipairs(sectionData) do
-        -- Skip header row and special rows
-        if rowIndex > 1 and rowData[2] ~= "Icon" and rowData[2] ~= "Note" and rowData[2] ~= "Warning" and rowData[2] ~= "GUID" then
-            local isRelevantRow = false
-            
-            -- Check each cell for player name, class group, or player's group number
-            for _, cellData in ipairs(rowData) do
-                -- Only check string data
-                if type(cellData) == "string" then
-                    -- Match player name directly
-                    if cellData == playerName then
-                        isRelevantRow = true
-                        break
-                    end
-                    
-                    -- Match player class group (like "Warriors" for a Warrior)
-                    if playerClass and self.CLASS_GROUP_NAMES and self.CLASS_GROUP_NAMES[cellData] and string.upper(self.CLASS_GROUP_NAMES[cellData]) == playerClass then
-                        isRelevantRow = true
-                        break
-                    end
-                    
-                    -- Check for player's group number using a simple word boundary pattern
-                    -- This will match any instance of the group number as a distinct "word"
-                    -- Examples that would match for group 1: "Group 1", "G1", "1", "group 1"
-                    -- But won't match group 1 in "Group 10" or "G12"
-                    if playerGroup then
-                        -- The pattern \b matches a word boundary
-                        local groupPattern = "%f[%a%d]" .. playerGroup .. "%f[^%a%d]"
-                        if string.find(cellData, groupPattern) then
-                            isRelevantRow = true
-                            break
-                        end
-                    end
-                end
-            end
-            
-            -- If row is relevant, add to our list
-            if isRelevantRow then
-                table.insert(relevantRows, rowIndex)
-            end
-        end
-    end
-    
-    return relevantRows
 end
 
 -- Function to clear current data before loading new data

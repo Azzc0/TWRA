@@ -696,16 +696,6 @@ if not TWRA.Debug then
     end
 end
 
--- Add this function to the Core.lua file
-function TWRA:InitializeUI()
-    -- Initialize UI systems
-    if self.UI then
-        self:Debug("ui", "UI systems initialized")
-    else
-        self:Debug("error", "UI namespace not found, cannot initialize UI systems")
-    end
-end
-
 -- Add this function to ensure we have the necessary UI utilities
 function TWRA:EnsureUIUtils()
     -- Ensure UI namespace exists

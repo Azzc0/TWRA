@@ -37,30 +37,23 @@ function TWRA:InitOSD()
             
             -- Check if we're navigating to the same section
             if self.OSD.lastSectionIndex and self.OSD.lastSectionIndex == currentIndex then
-                self:Debug("osd", "Skipping OSD display - navigating to same section")
+                self:Debug("osd", "Same section detected: " .. sectionName .. " (index " .. currentIndex .. ")")
                 
-                -- Still update content if OSD is already visible
-                if self.OSD.isVisible and self.OSDFrame and self.OSDFrame:IsShown() then
-                    self:UpdateOSDContent(sectionName, currentIndex, totalSections)
-                end
-                
+                -- Still update content even if it's the same section
+                -- This ensures data consistency if something else changed
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
                 return
             end
             
             -- Store the current section index for future comparison
             self.OSD.lastSectionIndex = currentIndex
             
-            -- Always update the OSD content if it's currently visible
-            if self.OSD.isVisible and self.OSDFrame and self.OSDFrame:IsShown() then
-                self:Debug("osd", "OSD is visible, updating content regardless of view state")
-                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
-            end
+            -- Always update the OSD content regardless of visibility
+            -- This ensures that data is current whenever the OSD is displayed
+            self:UpdateOSDContent(sectionName, currentIndex, totalSections)
             
-            -- Separately determine if we should show the OSD (new or existing)
+            -- Only show the OSD if conditions are met
             if self.ShouldShowOSD and self:ShouldShowOSD() then
-                -- Update content (in case OSD wasn't already visible)
-                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
-                
                 -- If OSD is already visible in permanent mode, don't change its state
                 if self.OSD.isVisible and self.OSD.isPermanent then
                     self:Debug("osd", "OSD already in permanent display mode, leaving as is")
@@ -74,30 +67,31 @@ function TWRA:InitOSD()
         -- Register for group roster updates
         self:RegisterEvent("GROUP_ROSTER_UPDATED", function()
             self:Debug("osd", "GROUP_ROSTER_UPDATED event received")
-            -- Only update OSD if it's already visible
-            if self.OSD and self.OSD.isVisible then
-                if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-                    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                    local currentIndex = self.navigation.currentIndex
-                    local totalSections = table.getn(self.navigation.handlers)
-                    self:UpdateOSDContent(sectionName, currentIndex, totalSections)
-                end
+            
+            -- Always update OSD content on group changes, regardless of visibility
+            -- This ensures that when the OSD is shown, it has current data
+            if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                local currentIndex = self.navigation.currentIndex
+                local totalSections = table.getn(self.navigation.handlers)
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
+                self:Debug("osd", "Updated OSD content after group change")
             end
         end, "OSD")
         
-        -- Register for player status updates (new)
+        -- Register for player status updates
         self:RegisterEvent("PLAYERS_UPDATED", function()
             self:Debug("osd", "PLAYERS_UPDATED event received")
-            -- Update OSD content if it's currently visible
-            if self.OSD and self.OSD.isVisible then
-                if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
-                    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                    local currentIndex = self.navigation.currentIndex
-                    local totalSections = table.getn(self.navigation.handlers)
-                    
-                    self:Debug("osd", "Updating OSD content due to player changes")
-                    self:UpdateOSDContent(sectionName, currentIndex, totalSections)
-                end
+            
+            -- Always update OSD content on player changes, regardless of visibility
+            -- This ensures that when the OSD is shown, it has current data
+            if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+                local sectionName = self.navigation.handlers[self.navigation.currentIndex]
+                local currentIndex = self.navigation.currentIndex
+                local totalSections = table.getn(self.navigation.handlers)
+                
+                self:Debug("osd", "Updating OSD content due to player changes")
+                self:UpdateOSDContent(sectionName, currentIndex, totalSections)
             end
         end, "OSD")
     end
@@ -1714,80 +1708,6 @@ function TWRA:ShouldShowOSD()
     return not self.mainFrame or 
            not self.mainFrame:IsShown() or 
            self.currentView == "options"
-end
-
--- Set OSD anchor point while maintaining screen position
-function TWRA:SetOSDAnchor(anchor)
-    if not self.OSDFrame then
-        self:Debug("osd", "Cannot set anchor: frame doesn't exist")
-        return false
-    end
-    
-    -- Get current screen position of the frame
-    local x, y = self.OSDFrame:GetCenter()
-    local screenWidth = UIParent:GetWidth()
-    local screenHeight = UIParent:GetHeight()
-    
-    -- Validate anchor value
-    local newPoint
-    if anchor == "TL" then
-        newPoint = "TOPLEFT"
-    elseif anchor == "TR" then
-        newPoint = "TOPRIGHT"
-    elseif anchor == "BL" then
-        newPoint = "BOTTOMLEFT"
-    elseif anchor == "BR" then
-        newPoint = "BOTTOMRIGHT"
-    elseif anchor == "R" or anchor == "C" then
-        newPoint = "CENTER"
-    else
-        self:Debug("osd", "Invalid anchor point: " .. tostring(anchor))
-        return false
-    end
-    
-    -- Calculate new offsets based on the new anchor point
-    local width = self.OSDFrame:GetWidth() * self.OSDFrame:GetScale()
-    local height = self.OSDFrame:GetHeight() * self.OSDFrame:GetScale()
-    local newXOffset, newYOffset
-    
-    -- Calculate horizontal offset based on anchor
-    if newPoint:find("LEFT") then
-        newXOffset = x - (0 + width/2)
-    elseif newPoint:find("RIGHT") then
-        newXOffset = x - (screenWidth - width/2)
-    else
-        newXOffset = x - (screenWidth/2)
-    end
-    
-    -- Calculate vertical offset based on anchor
-    if newPoint:find("TOP") then
-        newYOffset = y - (0 + height/2)
-    elseif newPoint:find("BOTTOM") then
-        newYOffset = y - (screenHeight - height/2)
-    else
-        newYOffset = y - (screenHeight/2)
-    end
-    
-    -- Save new position settings
-    self.OSD.point = newPoint
-    self.OSD.xOffset = newXOffset
-    self.OSD.yOffset = newYOffset
-    
-    -- Save to saved variables
-    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.osd then
-        TWRA_SavedVariables.options.osd.point = newPoint
-        TWRA_SavedVariables.options.osd.xOffset = newXOffset
-        TWRA_SavedVariables.options.osd.yOffset = newYOffset
-    end
-    
-    -- Apply new position
-    self.OSDFrame:ClearAllPoints()
-    self.OSDFrame:SetPoint(newPoint, UIParent, newPoint, newXOffset, newYOffset)
-    
-    self:Debug("osd", string.format("OSD anchor changed to %s at offsets x=%.2f, y=%.2f", 
-                                    newPoint, newXOffset, newYOffset))
-    
-    return true
 end
 
 -- Reset the OSD position to default center values

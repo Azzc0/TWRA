@@ -204,62 +204,6 @@ function TWRA:InitializeAutoNavigate()
     return true
 end
 
--- Toggle AutoNavigate feature on/off with explicit debugging
-function TWRA:ToggleAutoNavigate(state)
-    -- Debug the function call with explicit information
-    self:Debug("nav", "ToggleAutoNavigate called with state: " .. tostring(state) .. 
-               " (current state: " .. tostring(self.AUTONAVIGATE.enabled) .. ")")
-    
-    -- Check SuperWoW support first
-    if not self:CheckSuperWoWSupport() then
-        self:Debug("error", "SuperWoW is required for AutoNavigate")
-        
-        -- Disable AutoNavigate if SuperWoW isn't available
-        if TWRA_SavedVariables and TWRA_SavedVariables.options then
-            TWRA_SavedVariables.options.autoNavigate = false
-        end
-        self.AUTONAVIGATE.enabled = false
-        return false
-    end
-    
-    -- Determine the new state
-    local newState
-    if state ~= nil then
-        -- Use provided state
-        newState = state
-    else
-        -- Toggle current state
-        newState = not self.AUTONAVIGATE.enabled
-    end
-    
-    -- Only proceed if state is actually changing
-    if newState == self.AUTONAVIGATE.enabled then
-        self:Debug("nav", "AutoNavigate already " .. (newState and "enabled" or "disabled") .. ", no action needed")
-        return self.AUTONAVIGATE.enabled
-    end
-    
-    -- Set the new state
-    self.AUTONAVIGATE.enabled = newState
-    
-    -- Save to config
-    if not TWRA_SavedVariables.options then TWRA_SavedVariables.options = {} end
-    TWRA_SavedVariables.options.autoNavigate = newState
-    
-    -- Debug with explicit state info
-    self:Debug("nav", "AutoNavigate " .. (newState and "enabled" or "disabled") .. 
-              " (saved value: " .. tostring(TWRA_SavedVariables.options.autoNavigate) .. ")")
-    
-    -- Run a check immediately if enabled
-    if newState then
-        self:CheckSkullMarkedMob()
-    else
-        -- Reset tracking variables when disabled
-        self.AUTONAVIGATE.lastMarkedGuid = nil
-    end
-    
-    return self.AUTONAVIGATE.enabled
-end
-
 -- Process a skull-marked mob and navigate to its section if matched
 function TWRA:ProcessMarkedMob(mobName, mobId)
     if not mobName or mobName == "" or not mobId then 
@@ -416,47 +360,6 @@ function TWRA:FindSectionByGuid(guid)
     return nil
 end
 
--- Helper function to get section index by name
-function TWRA:GetSectionIndex(sectionName)
-    if not self.navigation or not self.navigation.handlers then 
-        return 1 -- Default to first section if navigation not ready
-    end
-    
-    -- Look for the section by name
-    for i = 1, table.getn(self.navigation.handlers) do
-        if self.navigation.handlers[i] == sectionName then
-            return i
-        end
-    end
-    
-    -- If not found, return current index or default to 1
-    return self.navigation.currentIndex or 1
-end
-
--- Simpler test function that just works with the current target
-function TWRA:TestCurrentTarget()
-    local exists, guid = UnitExists("target")
-    
-    if not exists then
-        self:Debug("nav", "No target selected")
-        return
-    end
-    
-    local name = UnitName("target")
-    
-    if not guid then
-        self:Debug("nav", "No GUID available for target: " .. name)
-        return
-    end
-    
-    -- Show the GUID
-    self:Debug("nav", guid .. " " .. name)
-    
-    -- Force this target to be processed as if it was skull-marked
-    self.AUTONAVIGATE.lastMarkedGuid = nil -- Reset to allow processing
-    self:ProcessMarkedMob(name, guid)
-end
-
 -- Toggle debug mode with enhanced info
 function TWRA:ToggleAutoNavigateDebug()
     self.AUTONAVIGATE.debug = not self.AUTONAVIGATE.debug
@@ -498,7 +401,10 @@ function TWRA:ToggleAutoNavigateDebug()
                             self:Debug("nav", "  Section '" .. sectionName .. "' GUIDs:")
                             for _, guid in ipairs(guidList) do
                                 if guid and guid ~= "" then
-                                    self:Debug("nav", "    " .. guid)
+                                    -- Extract just the GUID part for cleaner display
+                                    local extractedGuid = self:ExtractGuidFromString(guid)
+                                    self:Debug("nav", "    Original: " .. guid)
+                                    self:Debug("nav", "    Extracted: " .. (extractedGuid or "none"))
                                 end
                             end
                         end
@@ -509,6 +415,17 @@ function TWRA:ToggleAutoNavigateDebug()
             self:Debug("nav", "No assignment data available")
         end
     end
+end
+
+-- Extract the GUID part from a string that may contain additional information
+function TWRA:ExtractGuidFromString(text)
+    if not text or text == "" then
+        return nil
+    end
+    
+    -- Look for a pattern starting with "0x" followed by hexadecimal characters
+    local guid = string.match(text, "0x[0-9A-Fa-f]+")
+    return guid
 end
 
 -- Add a new function to list all GUIDs and their sections
@@ -544,7 +461,9 @@ function TWRA:ListAllGuids()
                 -- Add each GUID in this section
                 for _, guid in ipairs(guidList) do
                     if guid and guid ~= "" then
-                        table.insert(guidsBySection[sectionName], guid)
+                        -- Extract just the GUID part if there's additional text
+                        local extractedGuid = self:ExtractGuidFromString(guid) or guid
+                        table.insert(guidsBySection[sectionName], extractedGuid)
                         guidCount = guidCount + 1
                     end
                 end

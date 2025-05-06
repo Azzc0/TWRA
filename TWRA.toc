@@ -15,7 +15,6 @@ core\Constants.lua
 core\Utils.lua
 core\Events.lua
 core\Base64.lua
-core\ImportDiagnostic.lua
 core\Compression.lua
 core\Performance.lua
 Example.lua
@@ -29,7 +28,6 @@ ui\UIUtils.lua
 ui\Frame.lua
 ui\Minimap.lua
 ui\OSD.lua
-ui\OSDContent.lua
 ui\Options.lua
 
 # Feature modules
