@@ -144,20 +144,17 @@ function TWRA:DecompressAssignmentsData(compressedData)
         return nil
     end
     
-    -- Check for marker - either new format with byte \241 marker or legacy format with "COMP:" prefix
-    local isNewFormat = string.byte(compressedData, 1) == 241
-    local isLegacyFormat = string.sub(compressedData, 1, 5) == "COMP:"
-    
-    if not (isNewFormat or isLegacyFormat) then
-        self:Debug("error", "Data is not in a recognized compressed format", true)
+    -- Check for marker - only support new format with byte \241 marker
+    if string.byte(compressedData, 1) ~= 241 then
+        self:Debug("error", "Data is not in the expected compressed format (missing \\241 marker)", true)
         return nil
     end
     
     self:Debug("data", "Decompressing assignment data")
     local startTime = debugprofilestop and debugprofilestop() or 0
     
-    local compressedString
-    compressedString = string.sub(compressedData, 2)
+    -- Skip the marker prefix and decode the Base64 string
+    local compressedString = string.sub(compressedData, 2)
     compressedString = self:DecodeBase64Raw(compressedString)
     
     if not compressedString then
@@ -184,70 +181,7 @@ function TWRA:DecompressAssignmentsData(compressedData)
         self:Debug("performance", "Data decompressed in " .. decompressionTime .. "ms")
     end
     
-    -- If this is not a sync operation with timestamp, handle it as manual import
-    if not syncTimestamp then
-        -- This is a manual import, use SaveAssignments to handle proper UI updates
-        if self.SaveAssignments then
-            local timestamp = time()
-            self:SaveAssignments(resultTable, "import", timestamp, noAnnounce)
-            
-            -- Explicitly ensure isExample is set to false for manual imports
-            if TWRA_Assignments then
-                TWRA_Assignments.isExample = false
-                self:Debug("data", "Explicitly set isExample = false for manual import")
-            end
-            
-            -- Reset UI state after import
-            if self.ShowMainView then
-                self:Debug("ui", "Resetting UI to main view after import")
-                self:ShowMainView()
-            end
-            
-            -- Make sure navigation is rebuilt
-            if self.RebuildNavigation then
-                self:Debug("nav", "Rebuilding navigation after import")
-                self:RebuildNavigation()
-            end
-            
-            -- Navigate to first section
-            if self.NavigateToSection then
-                self:Debug("nav", "Navigating to first section after import")
-                self:NavigateToSection(1)
-            end
-            
-            -- Clear import text box if it exists
-            if self.importEditBox then
-                self:Debug("ui", "Clearing import edit box")
-                self.importEditBox:SetText("")
-            end
-        else
-            self:Debug("error", "SaveAssignments function not found")
-        end
-    else
-        -- If this is a sync operation with timestamp, handle it directly
-        TWRA_Assignments.timestamp = syncTimestamp
-        TWRA_Assignments.version = 2
-        self:Debug("data", "Saved data to Assignments with timestamp: " .. syncTimestamp)
-        
-        -- Rebuild navigation after sync import
-        if self.RebuildNavigation then
-            self:Debug("nav", "Rebuilding navigation after sync import")
-            self:RebuildNavigation()
-        end
-        
-        -- Update dynamic player information after sync imports
-        if self.RefreshPlayerInfo then
-            self:RefreshPlayerInfo()
-            self:Debug("data", "Processed dynamic player information after sync import")
-        end
-        
-        -- Navigate to first section after sync import
-        if self.NavigateToSection then
-            self:Debug("nav", "Navigating to first section after sync import")
-            self:NavigateToSection(1)
-        end
-    end
-    
+    -- Return the decompressed table - let the caller handle saving and UI updates
     return resultTable
 end
 
@@ -498,6 +432,78 @@ function TWRA:DecodeBase64Raw(base64Str)
     return binaryStr
 end
 
+-- Handle UI updates and data saving after processing imported data
+function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
+    if not processedData then
+        self:Debug("error", "HandleImportedData: nil data provided", true)
+        return
+    end
+    
+    -- If this is not a sync operation with timestamp, handle it as manual import
+    if not syncTimestamp then
+        -- This is a manual import, use SaveAssignments to handle proper UI updates
+        if self.SaveAssignments then
+            local timestamp = time()
+            self:SaveAssignments(processedData, "import", timestamp, noAnnounce)
+            
+            -- Explicitly ensure isExample is set to false for manual imports
+            if TWRA_Assignments then
+                TWRA_Assignments.isExample = false
+                self:Debug("data", "Explicitly set isExample = false for manual import")
+            end
+            
+            -- Reset UI state after import
+            if self.ShowMainView then
+                self:Debug("ui", "Resetting UI to main view after import")
+                self:ShowMainView()
+            end
+            
+            -- Make sure navigation is rebuilt
+            if self.RebuildNavigation then
+                self:Debug("nav", "Rebuilding navigation after import")
+                self:RebuildNavigation()
+            end
+            
+            -- Navigate to first section
+            if self.NavigateToSection then
+                self:Debug("nav", "Navigating to first section after import")
+                self:NavigateToSection(1)
+            end
+            
+            -- Clear import text box if it exists
+            if self.importEditBox then
+                self:Debug("ui", "Clearing import edit box")
+                self.importEditBox:SetText("")
+            end
+        else
+            self:Debug("error", "SaveAssignments function not found")
+        end
+    else
+        -- If this is a sync operation with timestamp, handle it directly
+        TWRA_Assignments.timestamp = syncTimestamp
+        TWRA_Assignments.version = 2
+        self:Debug("data", "Saved data to Assignments with timestamp: " .. syncTimestamp)
+        
+        -- Rebuild navigation after sync import
+        if self.RebuildNavigation then
+            self:Debug("nav", "Rebuilding navigation after sync import")
+            self:RebuildNavigation()
+        end
+        
+        -- Update dynamic player information after sync imports
+        if self.RefreshPlayerInfo then
+            self:RefreshPlayerInfo()
+            self:Debug("data", "Processed dynamic player information after sync import")
+        end
+        
+        -- Navigate to first section after sync import
+        if self.NavigateToSection then
+            self:Debug("nav", "Navigating to first section after sync import")
+            self:NavigateToSection(1)
+        end
+    end
+end
+
 -- Modified Base64 decoding function with improved UTF-8 handling and compression support
 function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     if not base64Str then 
@@ -515,8 +521,8 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
     }
     self:Debug("data", "Completely reset TWRA_CompressedAssignments at start of decoding")
     
-    -- Check if this is compressed data from sync
-    if string.sub(base64Str, 1, 5) == "COMP:" then
+    -- Check if this is compressed data
+    if string.byte(base64Str, 1) == 241 then
         self:Debug("data", "Detected compressed data format, processing with decompression")
         local decompressedData = self:DecompressAssignmentsData(base64Str)
         
@@ -524,7 +530,6 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
             self:Debug("error", "Failed to decompress data", true)
             return nil
         end
-        
         
         -- Initialize Assignments if they don't exist
         if not TWRA_Assignments then
@@ -543,69 +548,8 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
             self:Debug("data", "Player information processed")
         end
         
-        -- If this is not a sync operation with timestamp, handle it as manual import
-        if not syncTimestamp then
-            -- This is a manual import, use SaveAssignments to handle proper UI updates
-            if self.SaveAssignments then
-                local timestamp = time()
-                self:SaveAssignments(decompressedData, "import", timestamp, noAnnounce)
-                
-                -- Explicitly ensure isExample is set to false for manual imports
-                if TWRA_Assignments then
-                    TWRA_Assignments.isExample = false
-                    self:Debug("data", "Explicitly set isExample = false for manual import")
-                end
-                
-                -- Reset UI state after import
-                if self.ShowMainView then
-                    self:Debug("ui", "Resetting UI to main view after import")
-                    self:ShowMainView()
-                end
-                
-                -- Make sure navigation is rebuilt
-                if self.RebuildNavigation then
-                    self:Debug("nav", "Rebuilding navigation after import")
-                    self:RebuildNavigation()
-                end
-                
-                -- Navigate to first section
-                if self.NavigateToSection then
-                    self:Debug("nav", "Navigating to first section after import")
-                    self:NavigateToSection(1)
-                end
-                
-                -- Clear import text box if it exists
-                if self.importEditBox then
-                    self:Debug("ui", "Clearing import edit box")
-                    self.importEditBox:SetText("")
-                end
-            else
-                self:Debug("error", "SaveAssignments function not found")
-            end
-        else
-            -- If this is a sync operation with timestamp, handle it directly
-            TWRA_Assignments.timestamp = syncTimestamp
-            TWRA_Assignments.version = 2
-            self:Debug("data", "Saved data to Assignments with timestamp: " .. syncTimestamp)
-            
-            -- Rebuild navigation after sync import
-            if self.RebuildNavigation then
-                self:Debug("nav", "Rebuilding navigation after sync import")
-                self:RebuildNavigation()
-            end
-            
-            -- Update dynamic player information after sync imports
-            if self.RefreshPlayerInfo then
-                self:RefreshPlayerInfo()
-                self:Debug("data", "Processed dynamic player information after sync import")
-            end
-            
-            -- Navigate to first section after sync import
-            if self.NavigateToSection then
-                self:Debug("nav", "Navigating to first section after sync import")
-                self:NavigateToSection(1)
-            end
-        end
+        -- Handle UI updates and data saving
+        self:HandleImportedData(decompressedData, syncTimestamp, noAnnounce)
         
         return decompressedData
     end
