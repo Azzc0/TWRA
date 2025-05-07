@@ -280,17 +280,6 @@ function TWRA:GetOSDFrame()
     -- Generate warnings and notes
     self:CreateWarnings(footerContainer)
 
-    -- Create progress bar container (positioned directly under header for progress mode)
-    local progressBarContainer = CreateFrame("Frame", nil, frame)
-    progressBarContainer:SetPoint("TOPLEFT", headerContainer, "BOTTOMLEFT", 10, -10)
-    progressBarContainer:SetPoint("TOPRIGHT", headerContainer, "BOTTOMRIGHT", -10, -10)
-    progressBarContainer:SetHeight(25)
-    frame.progressBarContainer = progressBarContainer
-
-    -- Add progress bar
-    self:CreateProgressBar(progressBarContainer)
-    progressBarContainer:Hide() -- Initially hidden
-
     -- Calculate total height for default display mode
     local totalHeight = headerContainer:GetHeight() + 
                        contentContainer:GetHeight() + 
@@ -339,36 +328,8 @@ function TWRA:CreateRowBaseElements(rowFrame, role)
     -- Create role icon
     local roleIcon = rowFrame:CreateTexture(nil, "ARTWORK")
     
-    -- Get role icon path based on role using TWRA.ROLE_MAPPINGS and TWRA.ROLE_ICONS
-    local iconPath = "Interface\\Icons\\INV_Misc_QuestionMark" -- Default fallback
-    
-    -- Try to find a standardized role name using ROLE_MAPPINGS (case-insensitive)
-    local standardRole = "Misc" -- Default if no match found
-    local lowerRole = string.lower(role)
-    
-    -- Check if the role directly exists in ROLE_ICONS
-    if self.ROLE_ICONS and self.ROLE_ICONS[role] then
-        iconPath = self.ROLE_ICONS[role]
-    -- Otherwise try to map it through ROLE_MAPPINGS
-    elseif self.ROLE_MAPPINGS then
-        -- Check if we have a direct match in the mappings
-        if self.ROLE_MAPPINGS[lowerRole] then
-            standardRole = self.ROLE_MAPPINGS[lowerRole]
-        else
-            -- Try to find a partial match (more expensive but catches variations)
-            for pattern, mappedRole in pairs(self.ROLE_MAPPINGS) do
-                if string.find(lowerRole, pattern) then
-                    standardRole = mappedRole
-                    break
-                end
-            end
-        end
-        
-        -- Now get the icon path for the standardized role
-        if self.ROLE_ICONS and self.ROLE_ICONS[standardRole] then
-            iconPath = self.ROLE_ICONS[standardRole]
-        end
-    end
+    -- Get role icon path based on role using TWRA:GetRoleIcon
+    local iconPath = self:GetRoleIcon(role)
     
     roleIcon:SetTexture(iconPath)
     roleIcon:SetWidth(16)
@@ -378,237 +339,355 @@ function TWRA:CreateRowBaseElements(rowFrame, role)
     -- Create role text
     local roleFontString = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     roleFontString:SetPoint("LEFT", roleIcon, "RIGHT", 3, 0)
-    roleFontString:SetText(role .. " - ")
+    
+    -- Handle nil role safely by providing a default empty string
+    local roleText = role or ""
+    if roleText ~= "" then
+        roleText = roleText .. " - "
+    end
+    roleFontString:SetText(roleText)
     roleFontString:SetJustifyH("LEFT")
     
     return roleIcon, roleFontString, 16 -- Return icon width for calculations
 end
 
--- Create tank element (class icon + name)
-function TWRA:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, xPosition)
-    -- Add tank class icon
-    local tankClassIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+-- Create initial row elements that are common for all row types
+function TWRA:InitializeRow(rowFrame, role)
+    -- Create role icon and font string
+    local roleIcon, roleFontString, iconWidth = self:CreateRowBaseElements(rowFrame, role)
     
-    -- Default to Missing icon
-    local iconInfo = self.ICONS["Missing"]
-    tankClassIcon:SetTexture(iconInfo[1])
-    tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    -- Calculate initial row width starting with left padding + role icon + padding + role text
+    local rowWidth = 5 + iconWidth + 3 + roleFontString:GetStringWidth()
     
-    -- Replace with class icon only if the player is in the raid
-    if inRaid and tankClass and self.CLASS_COORDS and self.CLASS_COORDS[string.upper(tankClass)] then
-        tankClassIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-        local coords = self.CLASS_COORDS[string.upper(tankClass)]
-        tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
-    end
-    
-    tankClassIcon:SetWidth(14)
-    tankClassIcon:SetHeight(14)
-    tankClassIcon:SetPoint("LEFT", rowFrame, "LEFT", xPosition + 2, 0)
-    
-    -- Add tank name with class coloring
-    local tankNameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    tankNameText:SetPoint("LEFT", tankClassIcon, "RIGHT", 2, 0)
-    tankNameText:SetText(tankName)
-    
-    -- Apply class coloring using UIUtils function or fallback
-    if self.UI and self.UI.ApplyClassColoring then
-        -- Use the UIUtils function for consistent coloring
-        self.UI:ApplyClassColoring(tankNameText, nil, tankClass, inRaid, isOnline)
-    else
-        if not inRaid then
-            tankNameText:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
-        elseif not isOnline then
-            tankNameText:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
-        elseif tankClass and self.VANILLA_CLASS_COLORS then
-            local color = self.VANILLA_CLASS_COLORS[string.upper(tankClass)]
-            if color then
-                tankNameText:SetTextColor(color.r, color.g, color.b)
-            else
-                tankNameText:SetTextColor(1, 1, 1) -- White fallback
-            end
-        else
-            tankNameText:SetTextColor(1, 1, 1) -- White fallback
-        end
-    end
-    
-    return tankClassIcon, tankNameText, 14 + 2 + tankNameText:GetStringWidth()
+    return roleIcon, roleFontString, rowWidth
 end
 
--- Create healer-specific row layout
-function TWRA:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, playerData, playerStatus)
-    -- Calculate row width for healers
-    local rowWidth = 0
+-- Create a unified assignment row for both healer and tank/other types
+function TWRA:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
+    -- Initialize the row with common elements
+    local _, _, rowWidth = self:InitializeRow(rowFrame, nil)
     
-    -- Start with left padding + role icon + padding + role text
-    rowWidth = 5 + 16 + 3 + roleFontString:GetStringWidth()
-    
-    local tankElements = {}
-    
-    -- Add all tanks with their class icons
-    for t = 1, table.getn(tanks) do
-        local tankName = tanks[t]
+    -- Different row layouts based on role type
+    if roleType == "healer" then
+        -- HEALER FORMAT: [RoleIcon]Heal - [tanks] tanking [target]
         
-        -- Get player information from TWRA.PLAYERS table
-        local inRaid = false
-        local isOnline = false
-        local tankClass = nil
+        local tankElements = {}
         
-        -- Check if player is in the PLAYERS table
-        if self.PLAYERS and self.PLAYERS[tankName] then
-            -- Format of PLAYERS table entry: [1] = class, [2] = online status
-            tankClass = self.PLAYERS[tankName][1]
-            isOnline = self.PLAYERS[tankName][2]
-            inRaid = true
+        -- Check if we have any tanks assigned
+        if table.getn(tanks) > 0 then
+            -- Add all tanks with their class icons
+            for t = 1, table.getn(tanks) do
+                local tankName = tanks[t]
+                
+                -- Get player information
+                local inRaid = false
+                local isOnline = false
+                local tankClass = nil
+                
+                if self.PLAYERS and self.PLAYERS[tankName] then
+                    tankClass = self.PLAYERS[tankName][1]
+                    isOnline = self.PLAYERS[tankName][2]
+                    inRaid = true
+                end
+                
+                -- Calculate position for tank element based on previous elements
+                local anchorFrame
+                local xOffset
+                
+                if t == 1 then
+                    -- First tank anchors to roleFontString
+                    anchorFrame = roleFontString
+                    xOffset = 5
+                else
+                    -- For subsequent tanks, we need to anchor to the LAST element of the previous tank
+                    -- which might be a separator (comma/and) or the tank name itself
+                    if tankElements[t-1].separator then
+                        anchorFrame = tankElements[t-1].separator
+                    else
+                        anchorFrame = tankElements[t-1].name
+                    end
+                    xOffset = 5 -- Use consistent spacing for all tanks
+                end
+                
+                -- Create tank element with proper anchoring
+                local tankClassIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+                
+                -- Set up class icon
+                if inRaid and tankClass and self.CLASS_COORDS and self.CLASS_COORDS[string.upper(tankClass)] then
+                    tankClassIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+                    local coords = self.CLASS_COORDS[string.upper(tankClass)]
+                    tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                else
+                    -- Default to Missing icon
+                    local iconInfo = self.ICONS["Missing"]
+                    tankClassIcon:SetTexture(iconInfo[1])
+                    tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+                end
+                
+                tankClassIcon:SetWidth(14)
+                tankClassIcon:SetHeight(14)
+                tankClassIcon:SetPoint("LEFT", anchorFrame, "RIGHT", xOffset, 0)
+                
+                -- Add tank name
+                local tankNameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                tankNameText:SetPoint("LEFT", tankClassIcon, "RIGHT", 2, 0)
+                tankNameText:SetText(tankName)
+                
+                -- Apply class coloring
+                if self.UI and self.UI.ApplyClassColoring then
+                    self.UI:ApplyClassColoring(tankNameText, nil, tankClass, inRaid, isOnline)
+                else
+                    if not inRaid then
+                        tankNameText:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
+                    elseif not isOnline then
+                        tankNameText:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
+                    elseif tankClass and self.VANILLA_CLASS_COLORS then
+                        local color = self.VANILLA_CLASS_COLORS[string.upper(tankClass)]
+                        if color then
+                            tankNameText:SetTextColor(color.r, color.g, color.b)
+                        else
+                            tankNameText:SetTextColor(1, 1, 1) -- White fallback
+                        end
+                    else
+                        tankNameText:SetTextColor(1, 1, 1) -- White fallback
+                    end
+                end
+                
+                -- Store tank elements
+                local tankElement = {icon = tankClassIcon, name = tankNameText}
+                table.insert(tankElements, tankElement)
+                
+                -- Update width calculation with tank elements
+                local elementWidth = 14 + 2 + tankNameText:GetStringWidth()
+                rowWidth = rowWidth + xOffset + elementWidth
+                
+                -- Add comma or "and" based on position in tank list
+                if t < table.getn(tanks) then
+                    local separator
+                    if t == table.getn(tanks) - 1 then
+                        -- Use "and" for the second-to-last tank
+                        separator = " and "
+                    else
+                        -- Use comma for other tanks
+                        separator = ", "
+                    end
+                    
+                    local separatorText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                    separatorText:SetPoint("LEFT", tankNameText, "RIGHT", 1, 0)
+                    separatorText:SetText(separator)
+                    separatorText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+                    
+                    -- Add separator to tank element for proper anchoring
+                    tankElements[t].separator = separatorText
+                    
+                    -- Add separator width to total
+                    rowWidth = rowWidth + 1 + separatorText:GetStringWidth()
+                end
+            end
+                
+            -- Add "tanking" text after the LAST tank name
+            if table.getn(tankElements) > 0 then
+                local lastTankElement = tankElements[table.getn(tankElements)]
+                local anchorElement = lastTankElement.separator or lastTankElement.name
+                
+                local tankingText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                tankingText:SetPoint("LEFT", anchorElement, "RIGHT", 5, 0)
+                tankingText:SetText("tanking")
+                tankingText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+                
+                -- Update width with tanking text
+                rowWidth = rowWidth + 5 + tankingText:GetStringWidth()
+                    
+                -- Add target with icon if available
+                rowWidth = rowWidth + self:AddTargetDisplay(rowFrame, tankingText, icon, target, 5)
+            end
+        else
+            -- No tanks assigned, directly show the heal target
+            -- Format: [Heal] Heal - [RaidIcon]Target
+            rowWidth = rowWidth + self:AddTargetDisplay(rowFrame, roleFontString, icon, target, 5)
         end
+    else
+        -- TANK/OTHER FORMAT: [RoleIcon]Role - [RaidIcon]Target with [tanks]
         
-        local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
-        
-        -- Store reference to tank elements
-        table.insert(tankElements, {icon = tankClassIcon, name = tankNameText})
-        
-        -- Update width calculation with tank elements
-        rowWidth = rowWidth + elementWidth
-        
-        -- Add ampersand if more tanks coming
-        if t < table.getn(tanks) then
-            local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
-            ampText:SetText("&")
-            ampText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
-            
-            -- Add ampersand width to total
-            rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
-        end
-    end
-        
-    -- Add "tanking" text after the LAST tank name (not each tank)
-    if table.getn(tankElements) > 0 then
-        local lastTankElement = tankElements[table.getn(tankElements)]
-        local tankingText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        tankingText:SetPoint("LEFT", lastTankElement.name, "RIGHT", 3, 0)
-        tankingText:SetText("tanking")
-        tankingText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
-        
-        -- Update width with tanking text
-        rowWidth = rowWidth + 3 + tankingText:GetStringWidth()
-            
-        -- Check if we have an icon for the target
+        -- Add target display first
+        local targetAnchor
         local iconInfo = self:GetIconInfo(icon)
+        
         if iconInfo then
-            -- Add target raid icon with proper spacing
+            -- Set up the target icon
             local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
             targetIcon:SetTexture(iconInfo[1])
             targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
             targetIcon:SetWidth(16)
             targetIcon:SetHeight(16)
-            targetIcon:SetPoint("LEFT", tankingText, "RIGHT", 5, 0)
+            targetIcon:SetPoint("LEFT", roleFontString, "RIGHT", 0, 0)
             
-            -- Add target text with reduced spacing
+            -- Add target text to the right of the icon
             local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             targetText:SetPoint("LEFT", targetIcon, "RIGHT", 2, 0)
             targetText:SetText(target)
+            targetAnchor = targetText
             
-            -- Update width with icon and target text
-            rowWidth = rowWidth + 5 + 16 + 2 + targetText:GetStringWidth() + 10 -- Extra padding at end
+            -- Add target width to calculation (icon + spacing + text)
+            rowWidth = rowWidth + 16 + 2 + targetText:GetStringWidth()
         else
-            -- No icon, just display the target text directly after "tanking"
+            -- No icon, just display the target text directly after the role
             local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            targetText:SetPoint("LEFT", tankingText, "RIGHT", 5, 0)
+            targetText:SetPoint("LEFT", roleFontString, "RIGHT", 3, 0)
             targetText:SetText(target)
+            targetAnchor = targetText
             
-            -- Update width with just target text
-            rowWidth = rowWidth + 5 + targetText:GetStringWidth() + 10 -- Extra padding at end
+            -- Add target width to calculation (just text with padding)
+            rowWidth = rowWidth + 3 + targetText:GetStringWidth()
+        end
+        
+        if table.getn(tanks) > 0 then
+            -- Add prefix text based on role (no extra spaces)
+            local prefixText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            prefixText:SetPoint("LEFT", targetAnchor, "RIGHT", 3, 0)
+            if roleType == "tank" then
+                prefixText:SetText("with")
+            else
+                prefixText:SetText("tanked by")
+            end
+            prefixText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+            
+            -- Add width of prefix text
+            rowWidth = rowWidth + 3 + prefixText:GetStringWidth() + 5
+            
+            -- Add tank elements
+            local lastElement = prefixText
+            local tankElements = {}
+            
+            -- Add tank elements with proper anchoring
+            for t = 1, table.getn(tanks) do
+                local tankName = tanks[t]
+                
+                -- Get player information
+                local inRaid = false
+                local isOnline = false
+                local tankClass = nil
+                
+                if self.PLAYERS and self.PLAYERS[tankName] then
+                    tankClass = self.PLAYERS[tankName][1]
+                    isOnline = self.PLAYERS[tankName][2]
+                    inRaid = true
+                end
+                
+                -- Create the tank element
+                local tankClassIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+                
+                -- Set up class icon
+                if inRaid and tankClass and self.CLASS_COORDS and self.CLASS_COORDS[string.upper(tankClass)] then
+                    tankClassIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+                    local coords = self.CLASS_COORDS[string.upper(tankClass)]
+                    tankClassIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                else
+                    -- Default to Missing icon
+                    local iconInfo = self.ICONS["Missing"]
+                    tankClassIcon:SetTexture(iconInfo[1])
+                    tankClassIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+                end
+                
+                tankClassIcon:SetWidth(14)
+                tankClassIcon:SetHeight(14)
+                
+                -- Position the tank icon properly
+                tankClassIcon:SetPoint("LEFT", lastElement, "RIGHT", 5, 0)
+                
+                -- Add tank name
+                local tankNameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                tankNameText:SetPoint("LEFT", tankClassIcon, "RIGHT", 2, 0)
+                tankNameText:SetText(tankName)
+                
+                -- Apply class coloring
+                if self.UI and self.UI.ApplyClassColoring then
+                    self.UI:ApplyClassColoring(tankNameText, nil, tankClass, inRaid, isOnline)
+                else
+                    if not inRaid then
+                        tankNameText:SetTextColor(1, 0.3, 0.3) -- Red for not in raid
+                    elseif not isOnline then
+                        tankNameText:SetTextColor(0.5, 0.5, 0.5) -- Gray for offline
+                    elseif tankClass and self.VANILLA_CLASS_COLORS then
+                        local color = self.VANILLA_CLASS_COLORS[string.upper(tankClass)]
+                        if color then
+                            tankNameText:SetTextColor(color.r, color.g, color.b)
+                        else
+                            tankNameText:SetTextColor(1, 1, 1) -- White fallback
+                        end
+                    else
+                        tankNameText:SetTextColor(1, 1, 1) -- White fallback
+                    end
+                end
+                
+                -- Store tank elements
+                local tankElement = {icon = tankClassIcon, name = tankNameText}
+                table.insert(tankElements, tankElement)
+                
+                -- Update the last element reference
+                lastElement = tankNameText
+                
+                -- Calculate element width for row width tracking
+                local elementWidth = 14 + 2 + tankNameText:GetStringWidth()
+                rowWidth = rowWidth + 5 + elementWidth
+                
+                -- Add comma or "and" if not the last tank
+                if t < table.getn(tanks) then
+                    local separator
+                    if t == table.getn(tanks) - 1 then
+                        separator = " and "
+                    else
+                        separator = ", "
+                    end
+                    
+                    local separatorText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                    separatorText:SetPoint("LEFT", tankNameText, "RIGHT", 1, 0)
+                    separatorText:SetText(separator)
+                    separatorText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
+                    
+                    -- Add separator to tank element
+                    tankElements[t].separator = separatorText
+                    lastElement = separatorText
+                    rowWidth = rowWidth + 1 + separatorText:GetStringWidth()
+                end
+            end
         end
     end
     
     return rowWidth
 end
 
--- Create tank/other row layout
-function TWRA:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
-    -- TANK/OTHER FORMAT calculation
+-- Helper function to add target display with optional icon
+function TWRA:AddTargetDisplay(rowFrame, anchorElement, icon, target, spacing)
     local rowWidth = 0
     
-    -- Start with left padding + role icon + padding + role text
-    rowWidth = 5 + 16 + 3 + roleFontString:GetStringWidth()
-    
-    -- Create a target icon if icon info exists
-    local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+    -- Check if we have an icon for the target
     local iconInfo = self:GetIconInfo(icon)
-    local targetText
-    
     if iconInfo then
-        -- Set up the target icon
+        -- Add target raid icon with proper spacing
+        local targetIcon = rowFrame:CreateTexture(nil, "ARTWORK")
         targetIcon:SetTexture(iconInfo[1])
         targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
         targetIcon:SetWidth(16)
         targetIcon:SetHeight(16)
-        targetIcon:SetPoint("LEFT", roleFontString, "RIGHT", 0, 0)
+        targetIcon:SetPoint("LEFT", anchorElement, "RIGHT", spacing, 0)
         
-        -- Add target text to the right of the icon
-        targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        -- Add target text with reduced spacing
+        local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         targetText:SetPoint("LEFT", targetIcon, "RIGHT", 2, 0)
         targetText:SetText(target)
         
-        -- Add target width to calculation (icon + spacing + text)
-        rowWidth = rowWidth + 16 + 2 + targetText:GetStringWidth()
+        -- Update width with icon and target text
+        rowWidth = spacing + 16 + 2 + targetText:GetStringWidth() + 10 -- Extra padding at end
     else
-        -- No icon, just display the target text directly after the role
-        targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        targetText:SetPoint("LEFT", roleFontString, "RIGHT", 3, 0)
+        -- No icon, just display the target text directly after the anchor
+        local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        targetText:SetPoint("LEFT", anchorElement, "RIGHT", spacing, 0)
         targetText:SetText(target)
         
-        -- Add target width to calculation (just text with padding)
-        rowWidth = rowWidth + 3 + targetText:GetStringWidth()
+        -- Update width with just target text
+        rowWidth = spacing + targetText:GetStringWidth() + 10 -- Extra padding at end
     end
-    
-    if table.getn(tanks) > 0 then
-        -- Add prefix text based on role (no extra spaces)
-        local prefixText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        prefixText:SetPoint("LEFT", targetText, "RIGHT", 3, 0)
-        if roleType == "tank" then
-            prefixText:SetText("with")
-        else
-            prefixText:SetText("tanked by")
-        end
-        prefixText:SetTextColor(0.82, 0.82, 0.82) -- Light gray
-        
-        -- Add width of prefix text
-        rowWidth = rowWidth + 3 + prefixText:GetStringWidth() + 5
-        
-        -- Add tank widths
-        for t = 1, table.getn(tanks) do
-            local tankName = tanks[t]
-            
-            -- Get player information from TWRA.PLAYERS table
-            local inRaid = false
-            local isOnline = false
-            local tankClass = nil
-            
-            -- Check if player is in the PLAYERS table
-            if self.PLAYERS and self.PLAYERS[tankName] then
-                -- Format of PLAYERS table entry: [1] = class, [2] = online status
-                tankClass = self.PLAYERS[tankName][1]
-                isOnline = self.PLAYERS[tankName][2]
-                inRaid = true
-            end
-            
-            local tankClassIcon, tankNameText, elementWidth = self:CreateTankElement(rowFrame, tankName, tankClass, inRaid, isOnline, rowWidth)
-            
-            rowWidth = rowWidth + elementWidth
-            
-            if t < table.getn(tanks) then
-                local ampText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                ampText:SetPoint("LEFT", tankNameText, "RIGHT", 3, 0)
-                ampText:SetText("&")
-                ampText:SetTextColor(0.82, 0.82, 0.82)
-                
-                rowWidth = rowWidth + 3 + ampText:GetStringWidth() + 5
-            end
-        end
-    end
-    
-    rowWidth = rowWidth + 10
     
     return rowWidth
 end
@@ -618,72 +697,32 @@ function TWRA:GetIconInfo(iconName)
     return self.ICONS and self.ICONS[iconName]
 end
 
--- Create progress bar for Phase 0
-function TWRA:CreateProgressBar(progressBarContainer)
-    -- Create progress bar background
-    local progressBarBg = progressBarContainer:CreateTexture(nil, "BACKGROUND")
-    progressBarBg:SetTexture(0.1, 0.1, 0.1, 0.8) -- Darker background with higher opacity
-    progressBarBg:SetAllPoints()
-
-    -- Create progress bar fill
-    local progressBarFill = progressBarContainer:CreateTexture(nil, "ARTWORK")
-    -- Use the StatusBar texture for a smoother look
-    progressBarFill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    progressBarFill:SetTexCoord(0, 1, 0, 0.25) -- Use just the blue portion of the texture
-    progressBarFill:SetVertexColor(0.0, 0.6, 1.0, 0.8) -- Brighter blue for better visibility
-    progressBarFill:SetPoint("LEFT", progressBarContainer, "LEFT", 0, 0)
-    progressBarFill:SetHeight(progressBarContainer:GetHeight())
-    progressBarFill:SetWidth(0) -- Start at 0% progress
-    progressBarContainer.progressBarFill = progressBarFill
-
-    -- Add a subtle glow effect on top of the bar
-    local progressBarGlow = progressBarContainer:CreateTexture(nil, "OVERLAY")
-    progressBarGlow:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
-    progressBarGlow:SetBlendMode("ADD")
-    progressBarGlow:SetWidth(16)
-    progressBarGlow:SetHeight(progressBarContainer:GetHeight() * 2)
-    progressBarGlow:SetPoint("CENTER", progressBarFill, "RIGHT", 0, 0)
-    progressBarContainer.progressBarGlow = progressBarGlow
+-- GetRoleIcon returns icon path for a specific role
+function TWRA:GetRoleIcon(role)
+    if not role then return nil end
     
-    -- Create a border frame - using 9-slice approach for proper border scaling
-    local borderFrame = CreateFrame("Frame", nil, progressBarContainer)
-    borderFrame:SetFrameStrata("MEDIUM")
-    -- Reduce gap by 5px on all sides (from ±5px to 0px)
-    borderFrame:SetPoint("TOPLEFT", progressBarContainer, "TOPLEFT", 0, 0) 
-    borderFrame:SetPoint("BOTTOMRIGHT", progressBarContainer, "BOTTOMRIGHT", 0, 0)
+    -- Convert role to lowercase for case-insensitive matching
+    local lowerRole = string.lower(role)
     
-    -- Create a proper 9-slice border that scales well
-    local edgeSize = 12
-    borderFrame:SetBackdrop({
-        bgFile = nil,
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", -- Using a border that's designed to tile/scale
-        tile = true,
-        tileSize = 16,
-        edgeSize = edgeSize,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    borderFrame:SetBackdropBorderColor(0.6, 0.6, 0.6, 1.0) -- Slightly silver border
-    progressBarContainer.borderFrame = borderFrame
+    -- Check for direct match in role icons mappings
+    if TWRA.ROLE_ICONS_MAPPINGS[lowerRole] then
+        local iconName = TWRA.ROLE_ICONS_MAPPINGS[lowerRole]
+        if TWRA.ROLE_ICONS[iconName] then
+            return TWRA.ROLE_ICONS[iconName]
+        end
+    end
     
-    -- Create progress text
-    local progressText = progressBarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    progressText:SetPoint("CENTER", progressBarContainer, "CENTER", 0, 0)
-    progressText:SetText("0% (0/0)")
-    progressText:SetTextColor(1, 1, 1) -- White text
-    progressBarContainer.progressText = progressText
+    -- Check for partial match in role icons mappings
+    for pattern, iconName in pairs(TWRA.ROLE_ICONS_MAPPINGS) do
+        if string.find(lowerRole, string.lower(pattern)) then
+            if TWRA.ROLE_ICONS[iconName] then
+                return TWRA.ROLE_ICONS[iconName]
+            end
+        end
+    end
     
-    -- Create source text below the progress bar
-    local sourceText = progressBarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    sourceText:SetPoint("TOP", progressBarContainer, "BOTTOM", 0, -5)
-    sourceText:SetPoint("LEFT", progressBarContainer, "LEFT", 5, 0)
-    sourceText:SetPoint("RIGHT", progressBarContainer, "RIGHT", -5, 0)
-    sourceText:SetText("Getting data from unknown")
-    sourceText:SetHeight(20)
-    sourceText:SetTextColor(1, 1, 1) -- White text
-    progressBarContainer.sourceText = sourceText
-    
-    -- Initially hide the progress bar container
-    progressBarContainer:Hide()
+    -- Default to misc/unknown
+    return TWRA.ROLE_ICONS["Misc"]
 end
 
 -- Create content using real data from the current section
@@ -784,13 +823,9 @@ function TWRA:CreateContent(contentContainer)
             table.insert(tanks, assignment[j])
         end
         
-        -- Determine role type for different display formats
-        local roleType = "other"
-        if role == "Tank" then
-            roleType = "tank"
-        elseif role == "Heal" then
-            roleType = "healer"
-        end
+        -- Get role type from entry object
+        local roleType = assignment.roleType or "other"
+        self:Debug("osd", "Using roleType for " .. role .. ": " .. roleType)
         
         -- Create row frame
         local rowFrame = CreateFrame("Frame", nil, contentContainer)
@@ -804,13 +839,7 @@ function TWRA:CreateContent(contentContainer)
         contentContainer.roleIcons[i] = roleIcon
         contentContainer.roleFontStrings[i] = roleFontString
         
-        local rowWidth = 0
-        -- Different layout based on role type
-        if roleType == "healer" then
-            rowWidth = self:CreateHealerRow(rowFrame, roleFontString, tanks, icon, target, playerData, playerStatus)
-        else
-            rowWidth = self:CreateTankOrOtherRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
-        end
+        local rowWidth = self:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
         
         -- Check if this row is wider than our current max
         if rowWidth > maxContentWidth then
@@ -1371,283 +1400,6 @@ function TWRA:ToggleOSD()
     return self.OSD.isVisible
 end
 
--- Switch OSD to progress display mode
-function TWRA:SwitchToProgressMode(sourcePlayer)
-    if not self.OSDFrame then
-        return false
-    end
-    
-    -- Update OSD display mode
-    self.OSD.displayMode = "progress"
-    
-    -- Update title text
-    self.OSDFrame.titleText:SetText("Receiving Data")
-    
-    -- Hide the content container (assignments)
-    self.OSDFrame.contentContainer:Hide()
-    
-    -- Hide the warning footer if it exists
-    if self.OSDFrame.footerContainer then
-        self.OSDFrame.footerContainer:Hide()
-    end
-    
-    -- Show and position progress container
-    local progressContainer = self.OSDFrame.progressBarContainer
-    
-    -- Set the width of progress container to exactly match the frame width (minus padding)
-    local progressWidth = 380 -- 400px frame width - 10px padding on each side
-    
-    -- Position the progress bar directly under the header with proper padding
-    progressContainer:ClearAllPoints()
-    progressContainer:SetPoint("TOPLEFT", self.OSDFrame.headerContainer, "BOTTOMLEFT", 10, -10)
-    progressContainer:SetPoint("TOPRIGHT", self.OSDFrame.headerContainer, "BOTTOMRIGHT", -10, -10)
-    progressContainer:SetHeight(25)
-    progressContainer:Show()
-    
-    -- Reset progress to 0
-    self:UpdateProgressBar(0, 0, 0)
-    
-    -- Create or update source text
-    if not progressContainer.sourceText then
-        progressContainer.sourceText = progressContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        progressContainer.sourceText:SetPoint("TOP", progressContainer, "BOTTOM", 0, -5)
-        progressContainer.sourceText:SetPoint("LEFT", progressContainer, "LEFT", 0, 0)
-        progressContainer.sourceText:SetPoint("RIGHT", progressContainer, "RIGHT", 0, 0)
-        progressContainer.sourceText:SetText("Getting data from " .. (sourcePlayer or "unknown"))
-        progressContainer.sourceText:SetHeight(20)
-    else
-        progressContainer.sourceText:SetText("Getting data from " .. (sourcePlayer or "unknown"))
-    end
-    
-    -- Calculate new reduced height for frame
-    local totalHeight = self.OSDFrame.headerContainer:GetHeight() + 
-                       progressContainer:GetHeight() +
-                       20 + -- sourceText height
-                       20   -- total padding
-    
-    -- Always use a fixed width of 400px for the progress display
-    local frameWidth = 400
-                       
-    -- Adjust frame size
-    self.OSDFrame:SetHeight(totalHeight)
-    self.OSDFrame:SetWidth(frameWidth)
-    
-    -- Store the progress width for later use in UpdateProgressBar
-    self.OSD.progressWidth = progressWidth
-    
-    return true
-end
-
--- Switch OSD to assignment display mode
-function TWRA:SwitchToAssignmentMode(sectionName)
-    if not self.OSDFrame then
-        return false
-    end
-    
-    -- Update OSD display mode
-    self.OSD.displayMode = "assignments"
-    
-    -- Update title text
-    if sectionName then
-        self.OSDFrame.titleText:SetText(sectionName)
-    end
-    
-    -- Show the content container (assignments)
-    self.OSDFrame.contentContainer:Show()
-    
-    -- Show the warning footer if it exists
-    if self.OSDFrame.footerContainer then
-        self.OSDFrame.footerContainer:Show()
-    end
-    
-    -- Hide progress container
-    if self.OSDFrame.progressBarContainer then
-        self.OSDFrame.progressBarContainer:Hide()
-    end
-    
-    -- Recalculate the proper frame height based on content
-    local headerHeight = self.OSDFrame.headerContainer:GetHeight()
-    local contentHeight = self.OSDFrame.contentContainer:GetHeight()
-    local footerHeight = self.OSDFrame.footerContainer:GetHeight()
-    
-    -- Calculate total height with padding
-    local totalHeight = headerHeight + contentHeight + footerHeight + 15  -- 15px total padding (5px between each container)
-    
-    -- Use the stored maximum content width to ensure consistent sizing
-    local frameWidth = self.OSD.maxContentWidth
-    
-    -- Ensure we have a reasonable width if for some reason maxContentWidth is not set
-    if not frameWidth or frameWidth < 400 then
-        frameWidth = 400
-    end
-    
-    -- Apply the calculated dimensions
-    self.OSDFrame:SetHeight(totalHeight)
-    self.OSDFrame:SetWidth(frameWidth)
-    
-    -- Log the resize for debugging
-    self:Debug("osd", "Restored assignment view dimensions: " .. frameWidth .. "x" .. totalHeight)
-    
-    return true
-end
-
--- Update progress bar with new values
-function TWRA:UpdateProgressBar(progress, current, total)
-    if not self.OSDFrame or not self.OSDFrame.progressBarContainer then
-        return false
-    end
-    
-    local progressContainer = self.OSDFrame.progressBarContainer
-    
-    -- Calculate percentage for display
-    local percent = 0
-    if total > 0 then
-        percent = math.floor((current / total) * 100)
-    end
-    
-    -- Update progress text
-    if progressContainer.progressText then
-        progressContainer.progressText:SetText(percent .. "% (" .. current .. "/" .. total .. ")")
-    end
-    
-    -- Use a fixed container width of 380px for all calculations (400px frame - 20px padding)
-    local containerWidth = 380
-    
-    -- Update progress bar fill
-    if progressContainer.progressBarFill then
-        -- When at 100%, fill exactly to container width, otherwise use percentage
-        if percent >= 100 then
-            progressContainer.progressBarFill:SetWidth(containerWidth)
-        else
-            progressContainer.progressBarFill:SetWidth(containerWidth * (percent / 100))
-        end
-        
-        -- Position the glow at the end of the fill
-        if progressContainer.progressBarGlow then
-            progressContainer.progressBarGlow:SetPoint("CENTER", progressContainer.progressBarFill, "RIGHT", 0, 0)
-        end
-    end
-    
-    return true
-end
-
--- Test function to simulate receiving data with progress updates
-function TWRA:TestDataOSD(duration, chunks)
-    -- Make sure OSD is initialized
-    if not self.OSD then
-        self:InitOSD()
-    end
-    
-    -- Default values if not specified
-    duration = duration or 5
-    chunks = chunks or 10
-    
-    -- Show OSD and switch to progress mode
-    self:ShowOSDPermanent()
-    self:SwitchToProgressMode("Azzco")
-    
-    -- Cancel any existing progress timer
-    if self.OSD.progressTimer then
-        self:CancelTimer(self.OSD.progressTimer)
-        self.OSD.progressTimer = nil
-    end
-    
-    -- Initialize progress tracking variables
-    self.OSD.startTime = GetTime()
-    self.OSD.duration = duration
-    self.OSD.totalChunks = chunks
-    self.OSD.lastProcessedChunk = 0
-    
-    -- Display initial progress (0%)
-    self:UpdateProgressBar(0, 0, chunks)
-    
-    -- Create a frame for OnUpdate handling to avoid timer issues
-    if not self.OSD.progressFrame then
-        self.OSD.progressFrame = CreateFrame("Frame")
-    end
-    
-    -- Set up the OnUpdate script
-    self.OSD.progressFrame:SetScript("OnUpdate", function()
-        -- Calculate elapsed time
-        local elapsed = GetTime() - self.OSD.startTime
-        
-        -- Calculate what chunk we should be on based on elapsed time
-        local chunkProgress = elapsed / self.OSD.duration * self.OSD.totalChunks
-        local currentChunk = math.min(math.floor(chunkProgress) + 1, self.OSD.totalChunks)
-        
-        -- Only process if we've moved to a new chunk
-        if currentChunk > self.OSD.lastProcessedChunk then
-            -- Debug output
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Processing chunk " .. currentChunk .. "/" .. self.OSD.totalChunks)
-            
-            -- Update progress display
-            self:UpdateProgressBar(currentChunk / self.OSD.totalChunks, currentChunk, self.OSD.totalChunks)
-            
-            -- Update last processed chunk
-            self.OSD.lastProcessedChunk = currentChunk
-            
-            -- If this is the last chunk, schedule cleanup
-            if currentChunk >= self.OSD.totalChunks then
-                -- Stop updates
-                self.OSD.progressFrame:SetScript("OnUpdate", nil)
-                
-                -- Schedule transition back to assignment mode
-                self:ScheduleTimer(function()
-                    if self.OSD.isVisible then
-                        self:SwitchToAssignmentMode("")
-                        
-                        -- Auto-hide after a delay
-                        self:ScheduleTimer(function()
-                            if self.OSD.isVisible then
-                                self:HideOSD()
-                            end
-                        end, 2)
-                    end
-                end, 1.0)
-            end
-        end
-    end)
-    
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Testing data transfer simulation with " .. chunks .. " chunks over " .. duration .. " seconds")
-    return true
-end
-
--- Test function to show specific progress bar state without animation
-function TWRA:TestDataOSDChunks(chunks, maxChunks)
-    -- Make sure OSD is initialized
-    if not self.OSD then
-        self:InitOSD()
-    end
-    
-    -- Default values if not specified
-    chunks = chunks or 0
-    maxChunks = maxChunks or 10
-    
-    -- Ensure we don't exceed maximum chunks
-    chunks = math.min(chunks, maxChunks)
-    
-    -- Show OSD and switch to progress mode
-    self:ShowOSDPermanent()
-    self:SwitchToProgressMode("Azzco")
-    
-    -- Cancel any existing progress timer/update
-    if self.OSD.progressTimer then
-        self:CancelTimer(self.OSD.progressTimer)
-        self.OSD.progressTimer = nil
-    end
-    
-    if self.OSD.progressFrame then
-        self.OSD.progressFrame:SetScript("OnUpdate", nil)
-    end
-    
-    -- Update progress display with the specified chunks
-    self:UpdateProgressBar(chunks / maxChunks, chunks, maxChunks)
-    
-    DEFAULT_CHAT_FRAME:AddMessage("TWRA: Showing progress bar at " .. chunks .. "/" .. maxChunks .. 
-                                  " (" .. math.floor((chunks / maxChunks) * 100) .. "%)")
-    return true
-end
-
 -- Test function to show the visual prototype
 function TWRA:TestOSDVisual()
     -- Make sure OSD is initialized
@@ -1671,21 +1423,6 @@ SlashCmdList["TWRAOSD"] = function(msg)
         TWRA:HideOSD()
     elseif msg == "toggle" then
         TWRA:ToggleOSD()
-    elseif string.find(msg, "^data%s+%d+%s+%d+$") then
-        -- Animated progress test with duration and chunks
-        local duration, chunks = string.match(msg, "data%s+(%d+)%s+(%d+)")
-        if duration and chunks then
-            TWRA:TestDataOSD(tonumber(duration), tonumber(chunks))
-        end
-    elseif string.find(msg, "^chunks%s+%d+%s+%d+$") then
-        -- Static progress display with current and max chunks
-        local chunks, maxChunks = string.match(msg, "chunks%s+(%d+)%s+(%d+)")
-        if chunks and maxChunks then
-            TWRA:TestDataOSDChunks(tonumber(chunks), tonumber(maxChunks))
-        end
-    elseif string.find(msg, "^data") then
-        -- Use default values if no parameters specified
-        TWRA:TestDataOSD()
     end
 end
 

@@ -305,16 +305,17 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
     
     -- Ensure TWRA_CompressedAssignments exists
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
-    TWRA_CompressedAssignments.timestamp = timestamp
     
     -- Store the structure data
     -- Ensure the compressed data has the marker if needed
     if string.byte(structureData, 1) ~= 241 then
         structureData = "\241" .. structureData
     end
-    
     -- Store the structure
     TWRA_CompressedAssignments.structure = structureData
+
+    -- Update Timestamp after storing the data
+    TWRA_CompressedAssignments.timestamp = timestamp
     
     -- IMPORTANT: Decompress the structure now to rebuild navigation
     local success, decodedStructure = pcall(function()
@@ -398,6 +399,8 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
             self:Debug("sync", "Invalid currentSection type, defaulting to section 1")
             currentSection = 1
         end
+        
+        -- Process the sections before navigating anywhere.
         
         if self.NavigateToSection then
             self:NavigateToSection(currentSection, "bulkSync")

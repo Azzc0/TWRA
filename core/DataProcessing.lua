@@ -335,24 +335,6 @@ function TWRA:ProcessDynamicPlayerInfoForSection(section, playerName, playerGrou
     return true
 end
 
--- -- UpdatePlayerInfo - Refreshes player info and updates UI elements with improved debugging
--- -- Now supports updating a single section
--- function TWRA:UpdatePlayerInfo(section)
---     if section then
---         self:Debug("data", "Updating player info for section: " .. (section["Section Name"] or "Unknown"))
---     else
---         self:Debug("data", "Updating player info for all sections")
---     end
-    
---     -- Process all sections or just the specified one
---     self:ProcessPlayerInfo(section)
-    
---     -- Update OSD if needed
---     self:UpdateOSDWithPlayerInfo()
-    
---     return true
--- end
-
 -- Helper function to update OSD with new player info
 function TWRA:UpdateOSDWithPlayerInfo()
     -- Only update if OSD is visible
@@ -1003,11 +985,42 @@ function TWRA:ProcessSectionData(sectionIndex)
     local preservedNeedsProcessing = TWRA_Assignments.data[sectionIndex]["NeedsProcessing"]
     local preservedSectionName = TWRA_Assignments.data[sectionIndex]["Section Name"]
     
+    -- Also preserve any existing metadata before overwriting the section
+    local preservedMetadata = nil
+    if TWRA_Assignments.data[sectionIndex]["Section Metadata"] then
+        preservedMetadata = self:DeepCopy(TWRA_Assignments.data[sectionIndex]["Section Metadata"])
+        self:Debug("data", "Preserved existing metadata for section " .. sectionName)
+    end
+    
     -- Replace the entire section with decompressed data
     TWRA_Assignments.data[sectionIndex] = decompressedData
     
     -- Restore the section name to ensure consistency
     TWRA_Assignments.data[sectionIndex]["Section Name"] = preservedSectionName
+    
+    -- Ensure Section Metadata exists
+    TWRA_Assignments.data[sectionIndex]["Section Metadata"] = TWRA_Assignments.data[sectionIndex]["Section Metadata"] or {}
+    
+    -- Restore or merge preserved metadata
+    if preservedMetadata then
+        -- Don't completely overwrite - merge instead
+        for key, value in pairs(preservedMetadata) do
+            -- Only restore if the key doesn't already exist in the new metadata
+            if not TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] then
+                TWRA_Assignments.data[sectionIndex]["Section Metadata"][key] = value
+                self:Debug("data", "Restored metadata key: " .. key .. " for section " .. sectionName)
+            end
+        end
+    end
+    
+    -- ALWAYS identify and store Tank Columns when processing section data
+    -- Ensures that even if metadata was lost during compression, it's regenerated here
+    local tankColumns = self:FindTankRoleColumns(TWRA_Assignments.data[sectionIndex])
+    if table.getn(tankColumns) > 0 then
+        TWRA_Assignments.data[sectionIndex]["Section Metadata"]["Tank Columns"] = tankColumns
+        self:Debug("data", "Regenerated " .. table.getn(tankColumns) .. 
+                  " tank columns for section " .. sectionName .. " during decompression")
+    end
     
     -- IMPROVED VALIDATION: Only mark as processed if all critical data was properly decompressed
     -- and we have at least one valid row with actual content
@@ -1062,6 +1075,16 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
     local metadata = section["Section Metadata"] or {}
     local tankColumns = metadata["Tank Columns"] or {}
     
+    -- If tank columns not found in metadata, try to identify them dynamically
+    if table.getn(tankColumns) == 0 then
+        tankColumns = self:FindTankRoleColumns(section)
+        -- Store in metadata for future use
+        if metadata then
+            metadata["Tank Columns"] = tankColumns
+            self:Debug("data", "Stored " .. table.getn(tankColumns) .. " tank columns in section metadata", false, true)
+        end
+    end
+    
     -- For each relevant row, extract useful information
     for _, rowIndex in ipairs(relevantRows) do
         local rowData = section["Section Rows"][rowIndex]
@@ -1087,14 +1110,41 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
                     local cellText = rowData[colIndex]
                     
                     -- For personal assignments or group assignments
-                    if (not isGroupAssignments and self:IsCellRelevantForPlayer(cellText)) or
-                       (isGroupAssignments and self:IsCellRelevantForPlayerGroup(cellText)) then
-                        table.insert(playerRoles, {
-                            role = headerText,
-                            column = colIndex
-                        })
-                        self:Debug("data", "Found role " .. headerText .. " in row " .. rowIndex .. 
-                                  ", column " .. colIndex, false, true)
+                    local referenceType = nil
+                    
+                    if isGroupAssignments then
+                        if self:IsCellRelevantForPlayerGroup(cellText) then
+                            referenceType = "group"
+                            table.insert(playerRoles, {
+                                role = headerText,
+                                column = colIndex,
+                                referenceType = referenceType
+                            })
+                            self:Debug("data", "Found role " .. headerText .. " in row " .. rowIndex .. 
+                                    ", column " .. colIndex .. " (group reference)", false, true)
+                        end
+                    else
+                        -- Check if it's a direct name match or class match
+                        if cellText == UnitName("player") then
+                            referenceType = "direct"
+                            table.insert(playerRoles, {
+                                role = headerText,
+                                column = colIndex,
+                                referenceType = referenceType
+                            })
+                            self:Debug("data", "Found role " .. headerText .. " in row " .. rowIndex .. 
+                                    ", column " .. colIndex .. " (direct name reference)", false, true)
+                        elseif self:IsCellRelevantForPlayer(cellText) and cellText ~= UnitName("player") then
+                            -- If it's not a direct match but still relevant, it must be a class match
+                            referenceType = "class"
+                            table.insert(playerRoles, {
+                                role = headerText,
+                                column = colIndex,
+                                referenceType = referenceType
+                            })
+                            self:Debug("data", "Found role " .. headerText .. " in row " .. rowIndex .. 
+                                    ", column " .. colIndex .. " (class reference)", false, true)
+                        end
                     end
                 end
             end
@@ -1127,12 +1177,36 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
                     table.insert(entry, tankName)   -- Tank name
                 end
                 
+                -- Determine roleType (tank/heal/other) based on role name
+                local roleType = "other"  -- Default
+                local lowerRole = string.lower(roleInfo.role)
+                
+                -- Use the ROLE_MAPPINGS table for flexible role categorization
+                -- Check for direct match in mappings
+                if self.ROLE_MAPPINGS[lowerRole] then
+                    roleType = self.ROLE_MAPPINGS[lowerRole]
+                else
+                    -- Check for partial matches if direct match fails
+                    for pattern, mappedRole in pairs(self.ROLE_MAPPINGS) do
+                        if string.find(lowerRole, pattern) then
+                            roleType = mappedRole
+                            break
+                        end
+                    end
+                end
+                
+                -- Add reference type and role type as fields in the entry table
+                entry.referenceType = roleInfo.referenceType
+                entry.roleType = roleType
+                
                 -- Add the entry to our results
                 table.insert(osdInfo, entry)
                 
                 self:Debug("data", "Added OSD entry for role " .. roleInfo.role .. 
                           " on target " .. target .. " with " .. 
-                          table.getn(tankNames) .. " tanks", false, true)
+                          table.getn(tankNames) .. " tanks, role type: " ..
+                          roleType .. ", reference type: " ..
+                          (roleInfo.referenceType or "none"), false, true)
             end
         end
     end

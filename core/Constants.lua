@@ -196,7 +196,103 @@ TWRA.COLORED_ICONS = {
     ['Star'] = '|cFFF7EF52[Star]|r',
 }
 
+-- Role mappings for categorization (determining if a role is tank, healer, or other)
 TWRA.ROLE_MAPPINGS = {
+    -- Tank role patterns
+    ["tank"] = "tank",
+    ["tanks"] = "tank", 
+    ["offtank"] = "tank",
+    ["off-tank"] = "tank",
+    ["off tank"] = "tank",
+    ["maintank"] = "tank",
+    ["main-tank"] = "tank",
+    ["main tank"] = "tank",
+    ["ranged tank"] = "tank",
+    ["r.tank"] = "tank",
+    ["t1"] = "tank",
+    ["t2"] = "tank",
+    ["t3"] = "tank",
+    ["t4"] = "tank",
+    ["tank1"] = "tank",
+    ["tank2"] = "tank",
+    ["tank3"] = "tank",
+    ["tank4"] = "tank",
+    ["mt"] = "tank",
+    ["ot"] = "tank",
+    
+    -- Healer role patterns
+    ["heal"] = "healer",
+    ["heals"] = "healer",
+    ["healer"] = "healer",
+    ["healers"] = "healer",
+    ["tank heal"] = "healer",
+    ["tank healer"] = "healer",
+    ["raid heal"] = "healer",
+    ["raid healer"] = "healer",
+    ["main heal"] = "healer",
+    ["h1"] = "healer",
+    ["h2"] = "healer",
+    ["h3"] = "healer",
+    ["h4"] = "healer",
+    ["heal1"] = "healer",
+    ["heal2"] = "healer",
+    ["heal3"] = "healer",
+    ["heal4"] = "healer",
+    ["healing"] = "healer",
+    ["holy"] = "healer",
+    ["disc"] = "healer",
+    ["resto"] = "healer",
+    ["restoration"] = "healer",
+    ["hps"] = "healer",
+    
+    -- Custom role mappings can be added here
+    -- You can add any role name to map to "tank", "healer", or any other category
+    -- Examples for DPS-specific roles that might be used in your raid assignments
+    ["dps"] = "dps",
+    ["damage"] = "dps",
+    ["mdps"] = "dps",
+    ["rdps"] = "dps",
+    ["ranged"] = "dps",
+    ["ranged dps"] = "dps",
+    ["melee"] = "dps",
+    ["melee dps"] = "dps",
+    
+    -- Examples for utility roles
+    ["kite"] = "utility",
+    ["kiter"] = "utility",
+    ["cc"] = "utility",
+    ["crowd control"] = "utility",
+    ["interrupt"] = "utility",
+    ["purge"] = "utility",
+    ["decurse"] = "utility",
+    ["dispell"] = "utility",
+    
+    -- Other roles default to "other" and don't need explicit mapping
+}
+TWRA_DECURSIVE = {
+    ["dc"] = "decurse",
+    ["decurse"] = "decurse",
+    ["depoison"] = "depoison",
+    ["poison"] = "depoison",
+    ["poison cure"] = "depoison",
+    ["remove poison"] = "depoison",
+    ["remove curse"] = "decurse",
+    ["remove disease"] = "didisease",
+    ["remove magic"] = "dispell",
+    ["remove magic curse"] = "dispell",
+    ["remove magic disease"] = "dispell",
+    ["remove magic poison"] = "dispell",
+    ["cure poison"] = "depoison",
+    ["abolish poison"] = "depoison",
+    ["cure poison"] = "depoison",
+    ["dispell"] = "dispell",
+    ["dispell magic"] = "dispell",
+    ["cure disease"] = "didisease",
+    ["abolish disease"] = "didesease",
+    ["cleanse"] = "cleanse",
+}
+-- Mapping of role names to icon paths (previously TWRA.ROLE_MAPPINGS)
+TWRA.ROLE_ICONS_MAPPINGS = {
     ["tank"] = "Tank",
     ["offtank"] = "Tank", 
     ["off-tank"] = "Tank",
@@ -218,7 +314,6 @@ TWRA.ROLE_MAPPINGS = {
     ["c.o.r"] = "CoR",
     ["curse of recklessness"] = "CoR",
  
-    
     ["kick"] = "Kick",
     ["interrupt"] = "Kick",
 
@@ -265,7 +360,6 @@ TWRA.ROLE_MAPPINGS = {
     ["tranquility"] = "Tranquility",
     
     ["misc"] = "Misc"
-    
 }
 
 -- Role icons for assignments

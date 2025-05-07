@@ -137,7 +137,7 @@ function TWRA:DisplayCurrentSection()
     return true
 end
 
--- Find tank role columns in section headers
+-- Helper function to find columns containing tank roles
 function TWRA:FindTankRoleColumns(section)
     local tankColumns = {}
     
@@ -147,7 +147,7 @@ function TWRA:FindTankRoleColumns(section)
     end
     
     -- The standardized tank role name
-    local tankRole = "Tank"
+    local tankRole = "tank"
     
     -- Check each header column
     for colIdx, headerText in ipairs(section["Section Header"]) do
@@ -160,8 +160,33 @@ function TWRA:FindTankRoleColumns(section)
             if self.ROLE_MAPPINGS and self.ROLE_MAPPINGS[lcHeader] == tankRole then
                 table.insert(tankColumns, colIdx)
                 self:Debug("data", "Found tank column: " .. colIdx .. " (" .. headerText .. ")", false, true)
+            -- Fallback to pattern matching if we don't have a direct match in ROLE_MAPPINGS
+            elseif string.find(lcHeader, "tank") or 
+                   string.find(lcHeader, "mt") or 
+                   string.find(lcHeader, "ot") or
+                   string.find(lcHeader, "maintank") or
+                   string.find(lcHeader, "main tank") or
+                   string.find(lcHeader, "offtank") or
+                   string.find(lcHeader, "off tank") or
+                   string.find(lcHeader, "t1") or
+                   string.find(lcHeader, "t2") or
+                   string.find(lcHeader, "t3") or
+                   string.find(lcHeader, "t4") or
+                   string.find(lcHeader, "tank1") or
+                   string.find(lcHeader, "tank2") or
+                   string.find(lcHeader, "tank3") or
+                   string.find(lcHeader, "tank4") then
+                
+                table.insert(tankColumns, colIdx)
+                self:Debug("data", "Found tank column via pattern: " .. colIdx .. " (" .. headerText .. ")", false, true)
             end
         end
+    end
+    
+    -- Always store found tank columns in section metadata for future use
+    if section["Section Metadata"] then
+        section["Section Metadata"]["Tank Columns"] = tankColumns
+        self:Debug("data", "Stored " .. table.getn(tankColumns) .. " tank columns in section metadata", false, true)
     end
     
     return tankColumns
