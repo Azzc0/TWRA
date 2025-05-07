@@ -324,7 +324,7 @@ function TWRA:UpdateOSDSettings()
 end
 
 -- Create the base elements (icon and text) for a row
-function TWRA:CreateRowBaseElements(rowFrame, role)
+function TWRA:CreateRowBaseElements(rowFrame, role, referenceType)
     -- Create role icon
     local roleIcon = rowFrame:CreateTexture(nil, "ARTWORK")
     
@@ -339,33 +339,85 @@ function TWRA:CreateRowBaseElements(rowFrame, role)
     -- Create role text
     local roleFontString = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     roleFontString:SetPoint("LEFT", roleIcon, "RIGHT", 3, 0)
-    
-    -- Handle nil role safely by providing a default empty string
-    local roleText = role or ""
-    if roleText ~= "" then
-        roleText = roleText .. " - "
-    end
-    roleFontString:SetText(roleText)
+    roleFontString:SetText(role)
     roleFontString:SetJustifyH("LEFT")
     
-    return roleIcon, roleFontString, 16 -- Return icon width for calculations
-end
+    -- Initialize width calculation with role icon + spacing + role text
+    local width = 16 + 3 + roleFontString:GetStringWidth()
+    
+    -- Create additional reference icon based on referenceType
+    local referenceIcon = rowFrame:CreateTexture(nil, "ARTWORK")
+    local dashFontString = nil
+    
+    -- Create dash/separator between baseelement and next element
+    dashFontString = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    dashFontString:SetText("-")
+    dashFontString:SetTextColor(0.7, 0.7, 0.7) -- Light gray for visual distinction  
 
--- Create initial row elements that are common for all row types
-function TWRA:InitializeRow(rowFrame, role)
-    -- Create role icon and font string
-    local roleIcon, roleFontString, iconWidth = self:CreateRowBaseElements(rowFrame, role)
-    
-    -- Calculate initial row width starting with left padding + role icon + padding + role text
-    local rowWidth = 5 + iconWidth + 3 + roleFontString:GetStringWidth()
-    
-    return roleIcon, roleFontString, rowWidth
+    if referenceType ~= "direct" then
+        -- Set up reference icon based on type
+        local refIconPath
+        if referenceType == "group" then
+            -- Note that we're using the texture without file extension
+            -- This works with both .blp and .tga formats
+            refIconPath = "Interface\\AddOns\\TWRA\\textures\\Group"
+            self:Debug("osd", "Loading group icon: " .. refIconPath)
+        elseif referenceType == "class" then
+            -- Use the class icons texture with the player's class coordinates
+            local playerClass, englishClass = UnitClass("player")
+            refIconPath = self.TEXTURES and self.TEXTURES.CLASS_ICONS or "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
+            
+            -- Set the texture directly
+            referenceIcon:SetTexture(refIconPath)
+            
+            -- Apply the class-specific texture coordinates if we have them
+            if englishClass and self.CLASS_COORDS and self.CLASS_COORDS[englishClass] then
+                local coords = self.CLASS_COORDS[englishClass]
+                referenceIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                self:Debug("osd", "Loading class icon with coords for: " .. englishClass)
+            else
+                -- Default texture coordinates
+                referenceIcon:SetTexCoord(0, 1, 0, 1)
+                self:Debug("osd", "Loading class icon with default coords")
+            end
+            
+            -- Skip the regular texture setting since we've set it directly
+            refIconPath = nil
+        end
+        
+        -- Only set the texture if we have a path and haven't set it directly
+        if refIconPath then
+            referenceIcon:SetTexture(refIconPath)
+            referenceIcon:SetTexCoord(0, 1, 0, 1) -- Reset texture coordinates
+        end
+        
+        -- Set icon size regardless of how we set the texture
+        referenceIcon:SetWidth(16)
+        referenceIcon:SetHeight(16)
+        
+        -- Try making the texture more visible in case it's there but not visible
+        referenceIcon:SetVertexColor(1, 1, 1, 1) -- Full opacity, normal color
+        referenceIcon:SetPoint("LEFT", roleFontString, "RIGHT", 5, 0)
+        -- Update width calculation with reference icon + spacing + dash
+        width = width + 5 + 16 + 5
+        dashFontString:SetPoint("LEFT", referenceIcon, "RIGHT", 5, 0)
+    else
+        dashFontString:SetPoint("LEFT", roleFontString, "RIGHT", 2, 0)
+    end
+
+    width = width + dashFontString:GetStringWidth() + 2
+
+    -- Return all created elements and calculated width
+    return roleIcon, roleFontString, width, referenceIcon, dashFontString
 end
 
 -- Create a unified assignment row for both healer and tank/other types
-function TWRA:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
+function TWRA:CreateAssignmentRow(rowFrame, role, roleType, referenceType, icon, target, tanks, playerData, playerStatus)
     -- Initialize the row with common elements
-    local _, _, rowWidth = self:InitializeRow(rowFrame, nil)
+    local roleIcon, roleFontString, rowWidth, referenceIcon, dashFontString = self:CreateRowBaseElements(rowFrame, role, referenceType)
+    
+    -- Determine the anchor point for subsequent elements
+    local lastBaseElement = dashFontString
     
     -- Different row layouts based on role type
     if roleType == "healer" then
@@ -395,8 +447,8 @@ function TWRA:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, targ
                 local xOffset
                 
                 if t == 1 then
-                    -- First tank anchors to roleFontString
-                    anchorFrame = roleFontString
+                    -- First tank anchors to the last base element
+                    anchorFrame = lastBaseElement
                     xOffset = 5
                 else
                     -- For subsequent tanks, we need to anchor to the LAST element of the previous tank
@@ -504,7 +556,7 @@ function TWRA:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, targ
         else
             -- No tanks assigned, directly show the heal target
             -- Format: [Heal] Heal - [RaidIcon]Target
-            rowWidth = rowWidth + self:AddTargetDisplay(rowFrame, roleFontString, icon, target, 5)
+            rowWidth = rowWidth + self:AddTargetDisplay(rowFrame, lastBaseElement, icon, target, 5)
         end
     else
         -- TANK/OTHER FORMAT: [RoleIcon]Role - [RaidIcon]Target with [tanks]
@@ -520,7 +572,7 @@ function TWRA:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, targ
             targetIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
             targetIcon:SetWidth(16)
             targetIcon:SetHeight(16)
-            targetIcon:SetPoint("LEFT", roleFontString, "RIGHT", 0, 0)
+            targetIcon:SetPoint("LEFT", lastBaseElement, "RIGHT", 5, 0)
             
             -- Add target text to the right of the icon
             local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -529,16 +581,16 @@ function TWRA:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, targ
             targetAnchor = targetText
             
             -- Add target width to calculation (icon + spacing + text)
-            rowWidth = rowWidth + 16 + 2 + targetText:GetStringWidth()
+            rowWidth = rowWidth + 5 + 16 + 2 + targetText:GetStringWidth()
         else
             -- No icon, just display the target text directly after the role
             local targetText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            targetText:SetPoint("LEFT", roleFontString, "RIGHT", 3, 0)
+            targetText:SetPoint("LEFT", lastBaseElement, "RIGHT", 5, 0)
             targetText:SetText(target)
             targetAnchor = targetText
             
             -- Add target width to calculation (just text with padding)
-            rowWidth = rowWidth + 3 + targetText:GetStringWidth()
+            rowWidth = rowWidth + 5 + targetText:GetStringWidth()
         end
         
         if table.getn(tanks) > 0 then
@@ -825,6 +877,7 @@ function TWRA:CreateContent(contentContainer)
         
         -- Get role type from entry object
         local roleType = assignment.roleType or "other"
+        local referenceType = assignment.referenceType or "direct"
         self:Debug("osd", "Using roleType for " .. role .. ": " .. roleType)
         
         -- Create row frame
@@ -834,15 +887,14 @@ function TWRA:CreateContent(contentContainer)
         rowFrame:SetHeight(rowHeight)
         contentContainer.rowFrames[i] = rowFrame
         
-        -- Create role icon and role text
-        local roleIcon, roleFontString = self:CreateRowBaseElements(rowFrame, role)
-        contentContainer.roleIcons[i] = roleIcon
-        contentContainer.roleFontStrings[i] = roleFontString
+        -- Create assignment row and get its width
+        local rowWidth = self:CreateAssignmentRow(rowFrame, role, roleType, referenceType, icon, target, tanks, playerData, playerStatus)
         
-        local rowWidth = self:CreateAssignmentRow(rowFrame, roleFontString, roleType, icon, target, tanks, playerData, playerStatus)
+        -- Debug output for troubleshooting width issues
+        self:Debug("osd", "Row #" .. i .. " (" .. role .. ") width calculation: " .. (rowWidth or "nil"))
         
         -- Check if this row is wider than our current max
-        if rowWidth > maxContentWidth then
+        if rowWidth and rowWidth > maxContentWidth then
             maxContentWidth = rowWidth
             self:Debug("osd", "New max width from row #" .. i .. ": " .. rowWidth)
         end
@@ -850,18 +902,22 @@ function TWRA:CreateContent(contentContainer)
         yOffset = yOffset + rowHeight + 2
     end
     
+    -- Add extra padding to ensure all content is visible
+    maxContentWidth = maxContentWidth + 20
+    
+    -- Ensure we have a minimum width
+    maxContentWidth = math.max(maxContentWidth, 400)
+    
+    -- Log the final calculated width
+    self:Debug("osd", "Final calculated OSD width: " .. maxContentWidth)
+    
     local parentFrame = contentContainer:GetParent()
     if parentFrame then
-        local currentWidth = parentFrame:GetWidth()
-        local neededWidth = maxContentWidth
-        
-        neededWidth = math.max(neededWidth, 400)
-        
-        parentFrame:SetWidth(neededWidth)
-        self:Debug("osd", "Set OSD width to " .. neededWidth)
+        parentFrame:SetWidth(maxContentWidth)
+        self:Debug("osd", "Set OSD width to " .. maxContentWidth)
         
         -- Store the calculated max content width for later reuse when switching modes
-        self.OSD.maxContentWidth = neededWidth
+        self.OSD.maxContentWidth = maxContentWidth
     end
     
     contentContainer:SetHeight(yOffset)

@@ -226,7 +226,7 @@ function TWRA:CreateMinimapButton()
     
     -- Set icon texture
     local icon = miniButton:CreateTexture(nil, "BACKGROUND")
-    icon:SetTexture("Interface\\AddOns\\TWRA\\textures\\minimap_icon")
+    icon:SetTexture("Interface\\AddOns\\TWRA\\textures\\MinimapIcon")
     
     -- If the custom texture doesn't exist, use a default
     if not icon:GetTexture() then

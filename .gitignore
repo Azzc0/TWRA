@@ -1,1 +1,8 @@
 docs/private/
+
+# Ignore textures/BLPConverter.exe
+textures/BLPConverter.exe
+
+# Ignore textures/old folder
+textures/old/
+Test.lua
