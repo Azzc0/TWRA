@@ -152,17 +152,6 @@ function TWRA:NavigateToSection(index, source)
     return true
 end
 
--- Helper function to rebuild navigation after data updates
-function TWRA:RebuildNavigation()
-    -- Use the implementation from core/Core.lua
-    if TWRA.core and TWRA.core.RebuildNavigation then
-        return TWRA.core:RebuildNavigation()
-    else
-        -- If not available, call implementation in Core.lua directly
-        return self:core_RebuildNavigation()
-    end
-end
-
 -- Main initialization - called only once
 function TWRA:Initialize()
     local frame = CreateFrame("Frame")
@@ -204,10 +193,51 @@ function TWRA:Initialize()
                 addon:Debug("error", "InitializePerformance function not found")
             end
             
+            -- Initialize Sync namespace if needed
+            addon.SYNC = addon.SYNC or {}
+            
+            -- *** IMPORTANT: Check LiveSync setting early and activate if needed ***
+            if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.liveSync then
+                addon:Debug("general", "LiveSync is enabled in saved settings, activating early")
+                addon.SYNC.liveSync = true
+                
+                -- Make sure CHAT_MSG_ADDON is registered for LiveSync
+                if frame and not frame:IsEventRegistered("CHAT_MSG_ADDON") then
+                    frame:RegisterEvent("CHAT_MSG_ADDON")
+                    addon:Debug("general", "Registered for CHAT_MSG_ADDON early for LiveSync")
+                end
+            else
+                addon:Debug("general", "LiveSync not enabled in saved settings")
+                addon.SYNC.liveSync = false
+            end
+            
+            -- *** IMPORTANT FIX: Register section change handler early, regardless of sync status ***
+            -- This ensures section changes are properly broadcasted
+            if addon.RegisterSectionChangeHandler then
+                addon:Debug("general", "Registering section change handler during main initialization")
+                addon:RegisterSectionChangeHandler()
+                
+                -- Verify that it registered successfully
+                if addon.SYNC and not addon.SYNC.sectionChangeHandlerRegistered then
+                    addon:Debug("error", "Section change handler was not registered properly. Trying again...")
+                    addon:RegisterSectionChangeHandler()
+                end
+                
+                -- Debug the LiveSync status
+                addon:Debug("error", "After registering section handler - LiveSync status: " .. tostring(addon.SYNC.liveSync))
+            else
+                addon:Debug("error", "RegisterSectionChangeHandler function not found!")
+            end
+            
             -- Initialize Sync system
             if addon.InitializeSync then
                 addon:Debug("general", "Initializing sync system")
                 addon:InitializeSync()
+                
+                -- Double-check LiveSync status after initialization
+                if addon.SYNC then
+                    addon:Debug("error", "After InitializeSync - LiveSync status: " .. tostring(addon.SYNC.liveSync))
+                end
             else
                 addon:Debug("error", "InitializeSync function not found - sync functionality will not work!")
             end
@@ -216,6 +246,23 @@ function TWRA:Initialize()
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- This fires on initial load and UI reload
             addon:Debug("general", "Player entering world - checking for UI reload")
+            
+            -- Extra check to make sure section change handler is registered
+            if addon.RegisterSectionChangeHandler and addon.SYNC and not addon.SYNC.sectionChangeHandlerRegistered then
+                addon:Debug("general", "Registering section change handler during PLAYER_ENTERING_WORLD")
+                addon:RegisterSectionChangeHandler()
+            end
+            
+            -- Extra check for LiveSync after reload
+            if addon.SYNC and TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.liveSync then
+                addon:Debug("general", "Re-activating LiveSync after UI reload")
+                addon.SYNC.liveSync = true
+                
+                -- If we have an ActivateLiveSync function, call it
+                if addon.ActivateLiveSync then
+                    addon:ActivateLiveSync()
+                end
+            end
             
             -- Delay slightly to ensure other systems are ready
             addon:ScheduleTimer(function()
@@ -311,29 +358,30 @@ logoutFrame:SetScript("OnEvent", function()
     end
 end)
 
--- Event handler for all game events
-function TWRA:OnEvent(frame, event, ...)
-    self:Debug("general", "Event received: " .. event)
+-- -- Event handler for all game events
+-- function TWRA:OnEvent(frame, event, ...)
+--     self:Debug("error", "OnEvent called from TWRA.lua")
+--     self:Debug("general", "Event received: " .. event)
     
-    if event == "ADDON_LOADED" and arg1 == "TWRA" then
-        self:Debug("general", "ADDON_LOADED fired for TWRA")
-        -- Initialize addon here
+--     if event == "ADDON_LOADED" and arg1 == "TWRA" then
+--         self:Debug("general", "ADDON_LOADED fired for TWRA")
+--         -- Initialize addon here
         
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        self:Debug("general", "PLAYER_ENTERING_WORLD fired")
-        -- Additional initialization
+--     elseif event == "PLAYER_ENTERING_WORLD" then
+--         self:Debug("general", "PLAYER_ENTERING_WORLD fired")
+--         -- Additional initialization
         
-    elseif event == "CHAT_MSG_ADDON" then
-        self:Debug("sync", "CHAT_MSG_ADDON: " .. arg1 .. " from " .. arg4)
-        self:OnChatMsgAddon(arg1, arg2, arg3, arg4)
+--     elseif event == "CHAT_MSG_ADDON" then
+--         self:Debug("sync", "CHAT_MSG_ADDON: " .. arg1 .. " from " .. arg4)
+--         self:OnChatMsgAddon(arg1, arg2, arg3, arg4)
         
-    elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
-        self:Debug("general", event .. " fired")
-        if self.OnGroupChanged then
-            self:OnGroupChanged()
-        end
-    end
-end
+--     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+--         self:Debug("general", event .. " fired")
+--         if self.OnGroupChanged then
+--             self:OnGroupChanged()
+--         end
+--     end
+-- end
 
 -- Add this utility function to clean data at all entry points
 function TWRA:CleanAssignmentData(data, isTableFormat)
@@ -395,6 +443,7 @@ end
 
 -- Function to check if we're dealing with example data
 function TWRA:IsExampleData(data)
+    self:Debug("error", "IsExampleData called from TWRA.lua")
     if not data then return false end
     
     -- Quick check for known example data markers
@@ -820,129 +869,6 @@ function TWRA:ShowOptionsView()
     end
     
     self:Debug("ui", "Switched to options view - currentView = " .. self.currentView)
-end
-
--- Function to clear current data before loading new data
-function TWRA:ClearData()
-    self:Debug("data", "Clearing current data")
-    
-    -- Clear fullData
-    self.fullData = nil
-    
-    -- Clear navigation
-    if self.navigation then
-        self.navigation.handlers = {}
-        -- self.navigation.currentIndex = 1 -- We need this information for persistance during an import.
-    end
-    
-    -- Clear rows
-    self:ClearRows()
-    
-    -- Clear UI elements if they exist
-    if self.mainFrame then
-        -- Clear highlights and footers
-        self:ClearFooters()
-        self:ClearRows()
-        
-        -- Clear standard footer elements
-        if self.footers then
-            for _, footer in pairs(self.footers) do
-                if footer.texture then
-                    footer.texture:Hide()
-                else
-                    if footer.icon then footer.icon:Hide() end
-                    if footer.text then footer.text:Hide() end
-                end
-            end
-        end
-        
-        -- Clear navigation elements
-        if self.navigation then
-            if self.navigation.prevButton then self.navigation.prevButton:Hide() end
-            if self.navigation.nextButton then self.navigation.nextButton:Hide() end
-            if self.navigation.menuButton then self.navigation.menuButton:Hide() end
-            if self.navigation.dropdownMenu then self.navigation.dropdownMenu:Hide() end
-            if self.navigation.handlerText then self.navigation.handlerText:Hide() end
-        end
-        
-        -- Clear action buttons
-        if self.announceButton then self.announceButton:Hide() end
-        if self.updateTanksButton then self.updateTanksButton:Hide() end
-        
-        -- Reset any example-related flags
-        self.usingExampleData = false
-        
-        self:Debug("data", "Data cleared successfully")
-    end
-end
-
--- Handle CHAT_MSG_ADDON events
-function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
-    self:Debug("sync", "OnChatMsgAddon called - prefix: " .. prefix .. ", from: " .. sender)
-    
-    -- Forward to sync handler only if it's our prefix
-    if prefix == self.SYNC.PREFIX then
-        self:Debug("sync", "Recognized our prefix, forwarding to sync handlers")
-        
-        -- If message monitoring is enabled, show the message in chat frame
-        if self.SYNC.monitorMessages then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF00FF[ADDON MSG]|r |cFF33FF33" .. 
-                prefix .. "|r from |cFF33FFFF" .. sender .. "|r: |cFFFFFFFF" .. message .. "|r")
-        end
-        
-        -- Skip our own messages
-        if sender == UnitName("player") then
-            self:Debug("sync", "Ignoring own message")
-            return
-        end
-        
-        -- Forward to our handler
-        if self.HandleAddonMessage then
-            self:Debug("sync", "Calling HandleAddonMessage")
-            self:HandleAddonMessage(message, distribution, sender)
-        else
-            self:Debug("error", "HandleAddonMessage function not available")
-        end
-    end
-end
-
--- Process imported data
-function TWRA:ProcessImportedData(stringData)
-    -- Use our ClearData function to properly preserve metadata
-    if self.ClearData then
-        self:ClearData()
-    else
-        -- Fallback if ClearData function doesn't exist
-        self:Debug("data", "Clearing current data (fallback method)")
-        self.fullData = nil
-        if self.navigation then
-            self.navigation.handlers = {}
-        end
-    end
-    
-    -- Parse the string data into table form
-    local parsed = self:ParseImportString(stringData)
-    if not parsed then
-        self:Debug("error", "Failed to parse import string")
-        return nil
-    end
-    
-    -- Set the imported data as our current data
-    self.fullData = parsed
-    
-    -- Update flag for example data
-    local isExampleData = self:IsExampleData(parsed)
-    self.usingExampleData = isExampleData
-    
-    -- Rebuild navigation with new section names
-    self:RebuildNavigation()
-    
-    -- Process relevance information for the player
-    self:ProcessPlayerRelevantInfo()
-    
-    self:Debug("data", "Import data processed successfully")
-    
-    return parsed
 end
 
 -- Handle group composition changes

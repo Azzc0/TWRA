@@ -5,6 +5,7 @@ TWRA.originalFunctions = {}
 
 -- Check if we're dealing with example data
 function TWRA:IsExampleData(data)
+    self:Debug("error", " TWRA:IsExampleData called from Frame.lua")
     return data == self.EXAMPLE_DATA
 end
 

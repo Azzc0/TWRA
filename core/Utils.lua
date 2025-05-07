@@ -3,21 +3,6 @@
 
 TWRA = TWRA or {}
 
--- Deep copy a table
-function TWRA:DeepCopy(orig)
-    local orig_type = type(orig)
-    local copy
-    if orig_type == 'table' then
-        copy = {}
-        for orig_key, orig_value in pairs(orig) do
-            copy[orig_key] = self:DeepCopy(orig_value)
-        end
-    else
-        copy = orig
-    end
-    return copy
-end
-
 function TWRA:ScheduleTimer(callback, delay)
     if not callback or type(delay) ~= "number" then return end
     
@@ -83,11 +68,6 @@ function TWRA:SplitString(str, delimiter)
     self:Debug("sync", resultInfo .. " (total: " .. table.getn(result) .. " parts)", false, true) -- Mark as details
     
     return result
-end
-
--- Check if oRA2 is available
-function TWRA:IsORA2Available()
-    return oRA and oRA.maintanktable ~= nil  -- Changed to lowercase
 end
 
 -- Add frame creation logic to convert from 0/1 to boolean

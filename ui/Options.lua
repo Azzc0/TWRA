@@ -1239,32 +1239,82 @@ function TWRA:DirectImport(importText)
         pcall(function() self:ProcessPlayerInfo() end)
     end
     
+    -- Store the current section name if it exists in the imported data
+    local currentSectionName = nil
+    if importData.currentSection and importData.data and importData.data[importData.currentSection] then
+        currentSectionName = importData.data[importData.currentSection]["Section Name"]
+        self:Debug("nav", "Found current section in imported data: " .. (currentSectionName or "unknown"))
+    end
+
+    -- Find the index of the current section name in our navigation handlers
+    local targetSectionIndex = 1
+    if currentSectionName then
+        for idx, name in ipairs(self.navigation.handlers) do
+            if name == currentSectionName then
+                targetSectionIndex = idx
+                self:Debug("nav", "Will navigate to imported current section: " .. name .. " (index " .. idx .. ")")
+                break
+            end
+        end
+    end
+    
+    -- Store the target section in TWRA_Assignments so other processes don't reset it
+    TWRA_Assignments.currentSection = targetSectionIndex
+    self:Debug("nav", "Set TWRA_Assignments.currentSection to " .. targetSectionIndex)
+    
     -- Step 10: Update UI
     if self.DisplayCurrentSection then
-        self:Debug("ui", "Updating display with new data")
-        self:DisplayCurrentSection()
+        self:Debug("ui", "Updating display with new data with sync suppressed")
+        
+        -- Set a flag indicating we're in an import operation to completely suppress sync
+        -- This flag should be checked in navigation and sync functions
+        self.isImportingData = true
+        
+        -- Prevent rebuilding navigation after import from resetting to section 1
+        self.preventAutoNavigation = true
+        
+        -- Display the target section without triggering sync
+        self:DisplayCurrentSection(targetSectionIndex, true) -- Pass the target section index with fromImport=true
+        
+        -- Clear the flags after a short delay to allow rendering to complete
+        self:ScheduleTimer(function()
+            self.isImportingData = nil
+            self.preventAutoNavigation = nil
+            self:Debug("data", "Import operation completed, normal sync operations resumed")
+        end, 0.5) -- Increased delay to ensure all processes complete
+    end
+
+    -- Step 11: Send all sections in bulk to other players in the raid ONLY if we're in a group
+    -- Always sync after import when in a group, regardless of liveSync setting
+    if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+        self:Debug("sync", "Import complete - preparing to send all sections to group members")
+        
+        if self.SendAllSections then
+            -- Create a longer delay to ensure all processing is fully complete
+            -- and that isImportingData and preventAutoNavigation flags have been cleared
+            self:ScheduleTimer(function()
+                -- Double-check that we're still on the correct section before syncing
+                if self.navigation and self.navigation.currentIndex ~= targetSectionIndex then
+                    self:Debug("nav", "Section changed during import processing - restoring to " .. targetSectionIndex)
+                    self.isImportingData = true
+                    self:DisplayCurrentSection(targetSectionIndex, true)
+                    self:ScheduleTimer(function() self.isImportingData = nil end, 0.2)
+                end
+                
+                self:Debug("sync", "Executing SendAllSections as the final step of import")
+                -- Use direct modern sync method only
+                self:SendAllSections()
+            end, 1.0) -- 1.0 second delay to ensure all flags have been cleared
+        else
+            self:Debug("sync", "SendAllSections function not available")
+        end
+    else
+        self:Debug("sync", "Not in a group - skipping bulk sync after import")
     end
     
     -- Success message
     DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Successfully imported new format data with " .. 
         sectionCount .. " sections")
-    
-    -- Step 11 (NEW): NOW that all data processing is complete and structures are fully prepared,
-    -- send all sections in bulk to other players in the raid ONLY if we're in a raid
-    if GetNumRaidMembers() > 0 then
-        self:Debug("sync", "Import complete - now sending all sections to raid members")
-        if self.SendAllSections then
-            -- Create a slight delay to ensure all processing is fully complete
-            self:ScheduleTimer(function()
-                self:Debug("sync", "Executing SendAllSections as the final step of import")
-                self:SendAllSections()
-            end, 0.5) -- 0.5 second delay
-        else
-            self:Debug("error", "SendAllSectionsB function not available")
-        end
-    else
-        self:Debug("sync", "Not in a raid - skipping bulk sync after import")
-    end
     
     return true
 end

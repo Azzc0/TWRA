@@ -281,6 +281,11 @@ function TWRA:LoadExampleData()
     -- Set the flag to indicate we're using example data
     self.usingExampleData = true
     
+    -- IMPORTANT: Clear compressed assignments when using example data
+    -- Example data doesn't need compressed format
+    TWRA_CompressedAssignments = nil
+    self:Debug("data", "Cleared TWRA_CompressedAssignments for example data")
+    
     -- Temporarily disable OSD from showing on navigation change
     local originalShowOnNavigation = nil
     if self.OSD then
@@ -592,6 +597,7 @@ end
 
 -- Function to check if data is example data
 function TWRA:IsExampleData(data)
+    self:Debug("error", "TWRA:IsExampleData called from Example.lua")
     if not data then return false end
     
     -- Check for explicit example flag

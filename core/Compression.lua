@@ -656,87 +656,10 @@ function TWRA:StoreSegmentedData()
     return true
 end
 
--- Function to get the compressed structure from TWRA_CompressedAssignments
-function TWRA:GetCompressedStructure()
-    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.structure then
-        self:Debug("compress", "No compressed structure available")
-        return nil
-    end
-    
-    return TWRA_CompressedAssignments.structure
-end
-
--- Get compressed structure data
-function TWRA:GetCompressedStructure()
-    -- Ensure our storage exists
-    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
-    
-    -- Check if we have saved assignments
-    if not TWRA_Assignments or not TWRA_Assignments.data then
-        return nil, "No saved assignments"
-    end
-    
-    -- Check if structure exists and is current
-    local currentTimestamp = TWRA_Assignments.timestamp or 0
-    
-    if not TWRA_CompressedAssignments.structure or
-       not TWRA_CompressedAssignments.timestamp or
-       TWRA_CompressedAssignments.timestamp ~= currentTimestamp then
-        
-        -- Generate structure data
-        self:Debug("compress", "Generating new structure data")
-        self:StoreSegmentedData()
-    end
-    
-    return TWRA_CompressedAssignments.structure
-end
-
--- Get compressed section data
-function TWRA:GetCompressedSection(sectionIndex)
-    -- Ensure our storage exists
-    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
-    TWRA_CompressedAssignments.sections = TWRA_CompressedAssignments.sections or {}
-    
-    -- Check if we have saved assignments
-    if not TWRA_Assignments or not TWRA_Assignments.data or
-       not TWRA_Assignments.data[sectionIndex] then
-        return nil, "Section not found"
-    end
-    
-    -- Check if section data exists and is current
-    local currentTimestamp = TWRA_Assignments.timestamp or 0
-    
-    if not TWRA_CompressedAssignments.sections[sectionIndex] or
-       not TWRA_CompressedAssignments.timestamp or
-       TWRA_CompressedAssignments.timestamp ~= currentTimestamp then
-        
-        -- Check if we need to store all data
-        if not TWRA_CompressedAssignments.useSectionCompression then
-            -- Full refresh of all compressed data
-            self:Debug("compress", "Initializing segmented compression")
-            self:StoreSegmentedData()
-        else
-            -- Just compress the required section
-            self:Debug("compress", "Generating compressed data for section " .. sectionIndex)
-            local sectionData = self:CompressSectionData(sectionIndex)
-            if sectionData then
-                TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
-                -- Update timestamp if needed
-                if not TWRA_CompressedAssignments.timestamp then
-                    TWRA_CompressedAssignments.timestamp = currentTimestamp
-                end
-            else
-                return nil, "Failed to compress section data"
-            end
-        end
-    end
-    
-    return TWRA_CompressedAssignments.sections[sectionIndex]
-end
-
 -- Decompress data received via sync
 -- Returns decompressed table or nil if decompression failed
 function TWRA:DecompressAssignmentsData(compressedData)
+    self:Debug("error", "DecompressAssignmentsData called from Compression.lua")
     if not compressedData or type(compressedData) ~= "string" then
         self:Debug("error", "Invalid compressed data")
         return nil, "Invalid compressed data"

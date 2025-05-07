@@ -364,6 +364,60 @@ SlashCmdList["TWRA"] = function(msg)
         return
     end
     
+    -- Check for decursive commands
+    if args[1] == "decursive" then
+        -- Get the subcommand (if any)
+        local subCommand = args[2] or ""
+        
+        if subCommand == "auto" then
+            -- Toggle auto feature
+            if TWRA_SavedVariables and TWRA_SavedVariables.options then
+                local currentValue = TWRA_SavedVariables.options.decursivePrio or false
+                TWRA_SavedVariables.options.decursivePrio = not currentValue
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Auto Decursive feature " .. 
+                    (TWRA_SavedVariables.options.decursivePrio and "enabled" or "disabled"))
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Could not save settings - SavedVariables not available")
+            end
+            return
+        elseif subCommand == "on" then
+            -- Turn on auto feature
+            if TWRA_SavedVariables and TWRA_SavedVariables.options then
+                TWRA_SavedVariables.options.decursivePrio = true
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Auto Decursive feature enabled")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Could not save settings - SavedVariables not available")
+            end
+            return
+        elseif subCommand == "off" then
+            -- Turn off auto feature
+            if TWRA_SavedVariables and TWRA_SavedVariables.options then
+                TWRA_SavedVariables.options.decursivePrio = false
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Auto Decursive feature disabled")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Could not save settings - SavedVariables not available")
+            end
+            return
+        elseif subCommand == "update" then
+            -- Update priority list without changing auto setting
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Updating Decursive priority list...")
+            if TWRA.UpdateDecursivePriorityList then
+                TWRA:UpdateDecursivePriorityList()
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Decursive priority feature not initialized")
+            end
+            return
+        else
+            -- Show decursive help (this now runs when subCommand is empty or not recognized)
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Decursive Commands|r:")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive auto - Toggle automatic updates")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive on - Enable automatic updates")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive off - Disable automatic updates")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive update - Update priority list now")
+            return
+        end
+    end
+    
     -- Command to toggle OSD visibility
     if msg == "osd" then
         if TWRA.ToggleOSD then
@@ -444,8 +498,10 @@ SlashCmdList["TWRA"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /twra prev - Go to previous section")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra # - Go to specific section number")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Access debug commands")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive - Decursive priority list commands")
         DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra perf' for performance monitoring options")
         DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra debug' for detailed debug options")
+        DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra decursive' for Decursive priority list options")
     end
 end
 
@@ -630,72 +686,6 @@ function TWRA:SaveCurrentSection(name)
     end
 end
 
--- Basic implementation of CreateMainFrame (will be overridden by Frame.lua)
-function TWRA:CreateMainFrame()
-    self:Debug("ui", "Creating basic main frame (placeholder)")
-    
-    -- Initialize important UI namespace
-    TWRA.UI = TWRA.UI or {}
-    
-    self.navigation = { handlers = {}, currentIndex = 1 }
-    self.mainFrame = CreateFrame("Frame", "TWRAMainFrame", UIParent)
-    self.mainFrame:SetWidth(800)
-    self.mainFrame:SetHeight(300)
-    self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    
-    -- Basic backdrop
-    self.mainFrame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true,
-        tileSize = 32,
-        edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
-    })
-    
-    -- Add the frame to UISpecialFrames so it can be closed with Escape key
-    tinsert(UISpecialFrames, "TWRAMainFrame")
-    
-    -- Make the frame movable
-    self.mainFrame:SetMovable(true)
-    self.mainFrame:EnableMouse(true)
-    self.mainFrame:RegisterForDrag("LeftButton")
-    self.mainFrame:SetScript("OnDragStart", function() self.mainFrame:StartMoving() end)
-    self.mainFrame:SetScript("OnDragStop", function() self.mainFrame:StopMovingOrSizing() end)
-    
-    -- Add a title
-    local titleText = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetPoint("TOP", 0, -15)
-    titleText:SetText("Raid Assignments")
-    
-    -- Add a simple "Under Construction" message
-    local constructionText = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    constructionText:SetPoint("CENTER", 0, 0)
-    constructionText:SetText("Loading addon components...")
-    
-    self.mainFrame:Hide() -- Initially hidden
-    
-    return self.mainFrame    
-end
-
--- Add empty placeholder functions that will be overridden
-function TWRA:DisplayCurrentSection()
-    -- This is a placeholder that will be overridden by the implementation in ui/OSD.lua
-    self:Debug("ui", "DisplayCurrentSection placeholder called - implementation should be in ui/OSD.lua")
-end
-
--- Debug function placeholder in case Debug.lua hasn't loaded yet
-if not TWRA.Debug then
-    function TWRA:Debug(category, message)
-        -- Simple debug output if the full debug system isn't loaded yet
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug [" .. category .. "]:|r " .. (message or "nil"))
-    end
-    
-    function TWRA:Error(message)
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333TWRA Error:|r " .. (message or "nil"))
-    end
-end
-
 -- Add this function to ensure we have the necessary UI utilities
 function TWRA:EnsureUIUtils()
     -- Ensure UI namespace exists
@@ -739,18 +729,3 @@ function TWRA:BuildNavigationFromNewFormat()
     self:Debug("nav", "BuildNavigationFromNewFormat is deprecated - forwarding to RebuildNavigation")
     return self:RebuildNavigation()
 end
-
--- Add CreateMinimapButton function - moved from OSD.lua to TWRA.lua as requested
-function TWRA:CreateMinimapButton()
-    -- This function is now implemented in ui/Minimap.lua
-    -- Call the implementation there to maintain backwards compatibility
-    if self.InitializeMinimapButton then
-        return self:InitializeMinimapButton()
-    else
-        -- Fallback in case the file isn't loaded
-        self:Debug("error", "Minimap.lua not loaded properly. Check your TOC file.")
-        return nil
-    end
-end
-
--- Add this function to your Core.lua file to handle slash command registration

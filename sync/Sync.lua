@@ -417,8 +417,21 @@ function TWRA:InitializeSync()
     self:Debug("sync", "Initializing sync module")
     
     -- Register for SECTION_CHANGED event early, regardless of sync settings
-    -- We'll check sync settings when the event fires, not when registering
-    self:RegisterSectionChangeHandler()
+    -- Ensure this is actually called by adding explicit debugging and error checking
+    if self.RegisterSectionChangeHandler then
+        self:Debug("sync", "Calling RegisterSectionChangeHandler...")
+        self:RegisterSectionChangeHandler()
+        
+        -- Verify registration was successful
+        if not self.SYNC.sectionChangeHandlerRegistered then
+            self:Debug("error", "Section change handler was not registered properly. Trying again...")
+            self:RegisterSectionChangeHandler()
+        else
+            self:Debug("sync", "Section change handler registered successfully!")
+        end
+    else
+        self:Debug("error", "RegisterSectionChangeHandler function not available!")
+    end
     
     -- Check saved variables for sync settings
     if TWRA_SavedVariables and TWRA_SavedVariables.options then
@@ -457,6 +470,14 @@ function TWRA:InitializeSync()
     end
     
     self:Debug("sync", "Sync initialization complete")
+    
+    -- As a safety measure, also register a backup timer to check registration
+    self:ScheduleTimer(function()
+        if not self.SYNC.sectionChangeHandlerRegistered then
+            self:Debug("error", "Section change handler still not registered after initialization. Registering now...")
+            self:RegisterSectionChangeHandler()
+        end
+    end, 5)  -- Check 5 seconds after initialization
 end
 
 -- Function to register with CHAT_MSG_ADDON event
@@ -629,6 +650,7 @@ end
 
 -- Function to handle section changes for sync
 function TWRA:RegisterSectionChangeHandler()
+    self:Debug("error", "RegisterSectionChangeHandler called from sync/Sync.lua")
     self:Debug("sync", "Registering section change handler (only registers once)")
     
     -- Check if we've already registered to avoid duplicate handlers
@@ -640,10 +662,7 @@ function TWRA:RegisterSectionChangeHandler()
     -- Register for the SECTION_CHANGED message - we always want to listen
     -- for this event regardless of sync settings
     self:RegisterEvent("SECTION_CHANGED", function(sectionName, sectionIndex, numSections, context)
-        -- Always log that we received the event regardless of LiveSync status
-        self:Debug("sync", "SECTION_CHANGED event received: " .. tostring(sectionName) .. 
-                  " (" .. tostring(sectionIndex) .. "), liveSync=" .. tostring(self.SYNC.liveSync))
-        
+       
         -- Only broadcast if Live Sync is enabled
         if not self.SYNC.liveSync then
             self:Debug("sync", "Skipping section broadcast - LiveSync not enabled")
@@ -698,24 +717,9 @@ end
 
 -- Function to get compressed structure data
 function TWRA:GetCompressedStructure() -- Probably redundant, structure is readily available from TWRA_CompressedAssignments.structure
-    -- This stub would be implemented in the core compression module
-    self:Debug("sync", "GetCompressedStructure called - needs implementation")
-    
+    -- This stub would be implemented in the core compression module    
     if TWRA_CompressedAssignments and TWRA_CompressedAssignments.structure then
         return TWRA_CompressedAssignments.structure
-    end
-    
-    return nil
-end
-
--- Function to get compressed section data by index
-function TWRA:GetCompressedSection(sectionIndex) -- Probably completly redundant, compressed sections are readily available from TWRA_CompressedAssignments.section[index]
-    -- This stub would be implemented in the core compression module
-    self:Debug("sync", "GetCompressedSection called for section " .. sectionIndex .. " - needs implementation")
-    
-    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.data and 
-       TWRA_CompressedAssignments.data[sectionIndex] then
-        return TWRA_CompressedAssignments.data[sectionIndex]
     end
     
     return nil

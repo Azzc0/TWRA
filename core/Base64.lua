@@ -138,6 +138,7 @@ end
 
 -- Function to decompress data compressed with CompressAssignmentsData
 function TWRA:DecompressAssignmentsData(compressedData)
+    self:Debug("error", "DecompressAssignmentsData called from Base64.lua")
     if not compressedData then
         self:Debug("error", "DecompressAssignmentsData: nil data provided", true)
         return nil
@@ -407,64 +408,6 @@ function TWRA:ExpandAbbreviations(data)
                     section["sn"] = self.ABBREVIATION_MAPPINGS[section["sn"]]
                     self:Debug("data", "Expanded short section name: " .. section["sn"])
                 end
-            end
-        end
-    end
-    
-    return data
-end
-
-function TWRA:EnsureCompleteRows(data)
-    if not data then 
-        self:Debug("error", "EnsureCompleteRows: Invalid data structure", true)
-        return data 
-    end
-    
-    self:Debug("data", "Ensuring all rows have entries for all columns")
-    
-    -- Handle the new format structure
-    if data.data and type(data.data) == "table" then
-        -- Process each section
-        for sectionIndex, section in pairs(data.data) do
-            -- Only process table sections (new format)
-            if type(section) == "table" and section["Section Name"] and section["Section Rows"] and section["Section Header"] then
-                local maxColumns = table.getn(section["Section Header"])
-                
-                self:Debug("data", "Processing section '" .. section["Section Name"] .. "', ensuring " .. maxColumns .. " columns per row", false, true)
-                
-                -- Process each row, including special rows
-                for rowIndex, row in pairs(section["Section Rows"]) do
-                    -- Create a new row with sequential indices regardless of row type
-                    local newRow = {}
-                    
-                    -- Determine the max columns to ensure for this row
-                    local rowMaxColumns = maxColumns
-                    -- Special rows like "Note", "Warning", "GUID" potentially have different column needs
-                    if type(row[1]) == "string" and (row[1] == "Note" or row[1] == "Warning" or row[1] == "GUID") then
-                        local specialRowLength = 0
-                        for _ in pairs(row) do
-                            specialRowLength = specialRowLength + 1
-                        end
-                        if specialRowLength > rowMaxColumns then
-                            rowMaxColumns = specialRowLength
-                        end
-                    end
-                    
-                    -- Fill in all column indices from 1 to rowMaxColumns
-                    for colIndex = 1, rowMaxColumns do
-                        -- Handle both nil values and missing indices
-                        if row[colIndex] ~= nil then
-                            newRow[colIndex] = row[colIndex]
-                        else
-                            newRow[colIndex] = ""
-                        end
-                    end
-                    
-                    -- Replace the original sparse row with the complete row
-                    section["Section Rows"][rowIndex] = newRow
-                end
-                
-                self:Debug("data", "Completed filling indices for section '" .. section["Section Name"] .. "'")
             end
         end
     end
