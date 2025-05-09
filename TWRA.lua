@@ -483,9 +483,9 @@ function TWRA:AnnounceAssignments()
     -- First pass: collect all the messages we'll send
     local messageQueue = {}
     
-    -- Add section header message
+    -- Add section header message with subtle gold color for emphasis
     table.insert(messageQueue, {
-        text = "Raid Assignments: " .. currentSection,
+        text = "|cFFDDCC55Raid Assignments:|r " .. currentSection,
         type = "header"
     })
     
@@ -516,6 +516,20 @@ function TWRA:AnnounceAssignments()
     end
     
     self:Debug("ui", "Role order: " .. table.concat(roleOrder, ", "))
+    
+    -- Define role colors with more muted tones
+    local roleColors = {
+        ["Tank"] = "|cFF7799CC", -- Muted blue
+        ["Tanks"] = "|cFF7799CC", -- Muted blue
+        ["Heal"] = "|cFF88BB99", -- Muted green
+        ["Heals"] = "|cFF88BB99", -- Muted green
+        ["Healer"] = "|cFF88BB99", -- Muted green
+        ["Healers"] = "|cFF88BB99", -- Muted green
+        ["Pull"] = "|cFFCCBB77", -- Muted yellow
+        ["default"] = "|cFF88BBAA", -- Muted teal
+    }
+    
+    local roleEndColor = "|r"
     
     -- Process normal assignment rows
     if sectionData["Section Rows"] then
@@ -564,15 +578,18 @@ function TWRA:AnnounceAssignments()
                             displayRoleName = roleName .. "s"
                         end
                         
-                        -- Add role header
+                        -- Get color for this role
+                        local roleColor = roleColors[displayRoleName] or roleColors["default"]
+                        
+                        -- Add role header with proper color and delimiter
                         if roleAdded then
-                            messageText = messageText .. " " .. displayRoleName .. ": "
+                            messageText = messageText .. " " .. roleColor .. displayRoleName .. ":" .. roleEndColor .. " "
                         else
-                            messageText = messageText .. " " .. displayRoleName .. ": "
+                            messageText = messageText .. " " .. roleColor .. displayRoleName .. ":" .. roleEndColor .. " "
                             roleAdded = true
                         end
                         
-                        -- Add members with comma separation and "and" for last
+                        -- Add members with comma separation and "and" for last (no coloring for names)
                         if table.getn(members) == 1 then
                             messageText = messageText .. members[1]
                         elseif table.getn(members) == 2 then
@@ -606,11 +623,11 @@ function TWRA:AnnounceAssignments()
     if sectionData["Section Metadata"] and sectionData["Section Metadata"]["Warning"] then
         local warnings = sectionData["Section Metadata"]["Warning"]
         
-        -- Add each warning to the message queue
+        -- Add each warning to the message queue with more subtle red highlighting
         for _, warningText in ipairs(warnings) do
             if warningText and warningText ~= "" then
                 table.insert(messageQueue, {
-                    text = warningText,
+                    text = "|cFFDD5555WARNING:|r " .. warningText,
                     type = "warning"
                 })
                 self:Debug("ui", "Warning message added from metadata: " .. warningText)
