@@ -22,7 +22,9 @@ TWRA.SYNC.COMMANDS = {
     BULK_STRUCTURE = "BSTR", -- Final structure transmission in bulk mode
     MISS_SEC_REQ = "MSREQ", -- Request for missing sections
     MISS_SEC_ACK = "MSACK", -- Acknowledge handling missing section request
-    MISS_SEC_RESP = "MSRES" -- Response with missing section data
+    MISS_SEC_RESP = "MSRES", -- Response with missing section data
+    BULK_SYNC_REQ = "BSREQ", -- Request for complete bulk sync
+    BULK_SYNC_ACK = "BSACK"  -- Acknowledge handling bulk sync request
 }
 
 -- Function to register all sync-related events
@@ -213,6 +215,18 @@ function TWRA:CreateMissingSectionResponseMessage(timestamp, sectionIndex, secti
     return self.SYNC.COMMANDS.MISS_SEC_RESP .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
 end
 
+-- Function to create a bulk sync request message (BSREQ)
+function TWRA:CreateBulkSyncRequestMessage()
+    -- No timestamp needed in the request
+    return self.SYNC.COMMANDS.BULK_SYNC_REQ
+end
+
+-- Function to create a bulk sync acknowledgment message (BSACK)
+function TWRA:CreateBulkSyncAckMessage(timestamp, sender)
+    -- Include the timestamp in the acknowledgment
+    return self.SYNC.COMMANDS.BULK_SYNC_ACK .. ":" .. timestamp .. ":" .. sender
+end
+
 -- Compare timestamps and return relationship between them
 -- Returns: 
 --   1 if local timestamp is newer
@@ -274,6 +288,65 @@ function TWRA:RequestStructureSync(timestamp)
     self:Debug("sync", "Requesting raid structure from group...", true)
     
     return true
+end
+
+-- Function to request a complete bulk sync from anyone with complete data
+function TWRA:RequestBulkSync()
+    self:Debug("sync", "Requesting complete bulk sync from anyone with complete data")
+    
+    -- Throttle requests to prevent spam
+    local now = GetTime()
+    if now - self.SYNC.lastRequestTime < self.SYNC.requestTimeout then
+        self:Debug("sync", "Bulk sync request throttled - too soon since last request")
+        return false
+    end
+    
+    -- Update last request time
+    self.SYNC.lastRequestTime = now
+    
+    -- Check if we're in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("sync", "Not in a group, skipping bulk sync request")
+        return false
+    end
+    
+    -- IMPORTANT: Reset any existing sync state
+    if self.SYNC.syncInProgress then
+        self:Debug("sync", "Clearing existing syncInProgress flag before requesting new sync", true)
+        self.SYNC.syncInProgress = false
+    end
+    
+    -- Reset any other sync variables to prevent stale state
+    self.SYNC.newerTimestampResponded = nil
+    self.SYNC.pendingBulkResponse = nil
+    
+    -- Create the request message (no timestamp needed)
+    local message = self:CreateBulkSyncRequestMessage()
+    
+    -- Send the request to the group
+    local success = self:SendAddonMessage(message)
+    
+    if success then
+        -- Start a timeout timer to report if we don't get a response
+        if self.SYNC.bulkSyncRequestTimeout then
+            self:CancelTimer(self.SYNC.bulkSyncRequestTimeout)
+        end
+        
+        self.SYNC.bulkSyncRequestTimeout = self:ScheduleTimer(function()
+            self:Debug("sync", "No response to bulk sync request after timeout period", true)
+            -- Also reset the sync state if timeout occurs
+            self.SYNC.syncInProgress = false
+        end, 10) -- 10 second timeout
+        
+        -- Clear any previous tracking of acknowledgments
+        self.SYNC.bulkSyncAcknowledgments = {}
+        
+        self:Debug("sync", "Sent bulk sync request to group", true)
+    else
+        self:Debug("error", "Failed to send bulk sync request", true)
+    end
+    
+    return success
 end
 
 -- Enhanced BroadcastSectionChange function using the message generator
@@ -833,7 +906,7 @@ function TWRA:SendAllSections()
     
     -- Make sure we have compressed assignments data
     if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections then
-        self:Debug("error", "No compressed sections available to send")
+        self:Debug("error", "No compressed assignments data available to send")
         return false
     end
     
@@ -842,6 +915,21 @@ function TWRA:SendAllSections()
     if TWRA_Assignments and TWRA_Assignments.timestamp then
         timestamp = TWRA_Assignments.timestamp
     end
+    
+    -- CRITICAL: Prevent sending if we are already in the middle of receiving
+    if TWRA_CompressedAssignments.bulkSyncTimestamp then
+        return false
+    end
+    
+    -- CRITICAL: Prevent multiple SendAllSections calls in a short period
+    local now = GetTime()
+    if self.SYNC.lastSendAllSectionsTime and (now - self.SYNC.lastSendAllSectionsTime < 10) then
+        self:Debug("error", "Not sending sections - already sent sections recently", true)
+        return false
+    end
+    
+    -- Update the last send time
+    self.SYNC.lastSendAllSectionsTime = now
     
     -- Count how many sections we have
     local sectionCount = 0
@@ -974,7 +1062,6 @@ function TWRA:SendAllSections()
             if success then
                 self:Debug("sync", "Successfully sent final structure message via chunk manager")
             else
-                self:Debug("error", "Failed to send final structure message via chunk manager")
                 return false
             end
         else
@@ -996,6 +1083,12 @@ function TWRA:SendAllSections()
     self.SYNC.sendingBulkSections = nil
     self.SYNC.bulkSectionCount = nil
     self.SYNC.bulkSectionsSent = 0
+    
+    -- Schedule clearing the lastSendAllSectionsTime after a cooldown period
+    self:ScheduleTimer(function()
+        self.SYNC.lastSendAllSectionsTime = nil
+        self:Debug("sync", "Cleared send cooldown, ready for next sync if needed")
+    end, 15) -- 15 second cooldown before allowing another send
     
     -- Clear the temporary message cache to free memory
     preparedMessages = nil

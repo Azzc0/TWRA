@@ -23,6 +23,8 @@ function TWRA:InitializeHandlerMap()
         MSREQ = self.HandleMissingSectionsRequestCommand, -- Missing sections request handler
         MSACK = self.HandleMissingSectionsAckCommand, -- Missing sections acknowledgment handler
         MSRES = self.HandleMissingSectionResponseCommand, -- Missing section response handler
+        BSREQ = self.HandleBulkSyncRequestCommand, -- Bulk sync request handler
+        BSACK = self.HandleBulkSyncAckCommand, -- Bulk sync acknowledgment handler
     }  
     self:Debug("sync", "Initialized message handler map with " .. self:GetTableSize(self.syncHandlers) .. " handlers")
 end
@@ -87,6 +89,16 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
         -- Handle MSRES (missing section response)
         if self.HandleMissingSectionResponseCommand then
             self:HandleMissingSectionResponseCommand(components[2], components[3], self:ExtractDataPortion(message, 4), sender)
+        end
+    elseif command == self.SYNC.COMMANDS.BULK_SYNC_REQ then
+        -- Handle BSREQ (bulk sync request)
+        if self.HandleBulkSyncRequestCommand then
+            self:HandleBulkSyncRequestCommand(sender)
+        end
+    elseif command == self.SYNC.COMMANDS.BULK_SYNC_ACK then
+        -- Handle BSACK (bulk sync acknowledgment)
+        if self.HandleBulkSyncAckCommand then
+            self:HandleBulkSyncAckCommand(components[2], components[3])
         end
     else
         -- Unknown command - log it but don't act
@@ -166,22 +178,13 @@ function TWRA:HandleSectionCommand(timestamp, sectionIndex, sender)
                   " > " .. timestamp .. "), ignoring section change", true)
     
     else -- comparisonResult < 0
-        -- They have a newer version - request their data
+        -- They have a newer version - LOG ONLY, NO SYNC REQUEST
         self:Debug("sync", "Detected newer data from " .. sender .. " (timestamp " .. 
-                  timestamp .. " > " .. ourTimestamp .. "), requesting data", true)
+                  timestamp .. " > " .. ourTimestamp .. "), but automatic sync is disabled", true)
         
-        -- Store the section index to navigate to after sync completes
+        -- Only store the section index for reference, but don't trigger sync
         self.SYNC.pendingSection = sectionIndex
-        self:Debug("sync", "Stored pending section index " .. sectionIndex .. " to navigate after sync", true)
-        
-        -- Request the data using the RECEIVED timestamp (not our own)
-        -- Use segmented sync if available, otherwise fall back to legacy sync
-        if self.RequestStructureSync then
-            self:Debug("sync", "Using segmented sync for newer data")
-            self:RequestStructureSync(timestamp)
-        else
-            self:Debug("sync", "Legacy sync not available in this version", true)
-        end
+        self:Debug("sync", "User must manually request newer data using /twra sync", true)
     end
 end
 
@@ -216,9 +219,11 @@ function TWRA:HandleBulkSectionCommand(timestamp, sectionIndex, sectionData, sen
     TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
     
     -- Update the timestamp if it's newer than our current one
+    -- Note: We don't trigger a new sync request here, just update the timestamp
     if TWRA_Assignments then
         local currentTimestamp = TWRA_Assignments.timestamp or 0
         if tonumber(timestamp) > currentTimestamp then
+            self:Debug("sync", "Updating our timestamp to " .. timestamp .. " from BULK_SECTION without triggering a new sync")
             TWRA_Assignments.timestamp = tonumber(timestamp)
         end
     end
@@ -305,7 +310,9 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
     end
     
     -- Update assignment timestamp to match the structure
+    -- IMPORTANT: Just update the timestamp without triggering new sync requests
     if TWRA_Assignments then
+        self:Debug("sync", "Updating our timestamp to " .. timestamp .. " from BULK_STRUCTURE without triggering a new sync")
         TWRA_Assignments.timestamp = timestamp
     else
         TWRA_Assignments = { timestamp = timestamp }
@@ -860,6 +867,232 @@ function TWRA:SendMissingSections(timestamp, sectionList, requester)
             -- Increase delay for next section
             sendDelay = sendDelay + 0.3 -- 300ms between sections
         end
+    end
+    
+    return true
+end
+
+-- Function to handle bulk sync request (BSREQ)
+function TWRA:HandleBulkSyncRequestCommand(sender)
+    self:Debug("sync", "Received bulk sync request from " .. sender)
+    
+    -- ANTI-LOOP: Check if we've already received and processed this request
+    local now = GetTime()
+    
+    -- Initialize tracking table if it doesn't exist
+    self.SYNC.processedBulkRequests = self.SYNC.processedBulkRequests or {}
+    
+    -- Track specific sender+timestamp combinations
+    local requestKey = sender .. "_" .. now
+    
+    -- If this exact request was processed in the last 60 seconds, ignore it completely
+    if self.SYNC.processedBulkRequests[requestKey] then
+        self:Debug("sync", "Already processed this exact request, ignoring duplicate")
+        return false
+    end
+    
+    -- Mark this request as processed IMMEDIATELY to prevent any chance of duplicate processing
+    self.SYNC.processedBulkRequests[requestKey] = now
+    
+    -- Clean up old entries from tracking table (older than 60 seconds)
+    for key, timestamp in pairs(self.SYNC.processedBulkRequests) do
+        if now - timestamp > 60 then
+            self.SYNC.processedBulkRequests[key] = nil
+        end
+    end
+    
+    -- Check if we have data to respond with
+    if not TWRA_Assignments or not TWRA_Assignments.data then
+        self:Debug("sync", "No assignments data available to share")
+        return false
+    end
+    
+    -- Check if we have compressed assignments data
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections then
+        self:Debug("sync", "No compressed assignments data available to share")
+        return false
+    end
+    
+    -- Get our timestamp
+    local ourTimestamp = TWRA_Assignments.timestamp or 0
+    
+    -- Count how many sections we have vs. how many we should have
+    local sectionsWeHave = 0
+    for sectionIndex, _ in pairs(TWRA_CompressedAssignments.sections) do
+        if type(sectionIndex) == "number" then
+            sectionsWeHave = sectionsWeHave + 1
+        end
+    end
+    
+    -- Count how many sections should be in the structure
+    local expectedSections = 0
+    for sectionIndex, _ in pairs(TWRA_Assignments.data) do
+        if type(sectionIndex) == "number" then
+            expectedSections = expectedSections + 1
+        end
+    end
+    
+    -- Check if we have all expected sections
+    if sectionsWeHave < expectedSections then
+        self:Debug("sync", "Not responding to bulk sync request - we only have " .. 
+                  sectionsWeHave .. " of " .. expectedSections .. " expected sections")
+        return false
+    end
+    
+    -- Verify that every section has data
+    local missingData = false
+    for sectionIndex, _ in pairs(TWRA_Assignments.data) do
+        if type(sectionIndex) == "number" then
+            if not TWRA_CompressedAssignments.sections[sectionIndex] then
+                missingData = true
+                self:Debug("sync", "Missing compressed data for section " .. sectionIndex)
+                break
+            end
+        end
+    end
+    
+    if missingData then
+        self:Debug("sync", "Not responding to bulk sync request - missing compressed data for some sections")
+        return false
+    end
+    
+    -- CRITICAL: Prevent multiple active sync sessions
+    if self.SYNC.syncInProgress then
+        self:Debug("sync", "Another sync is already in progress, ignoring this request", true)
+        return false
+    end
+    
+    -- Mark that sync is now in progress to prevent multiple simultaneous responses
+    self.SYNC.syncInProgress = true
+    
+    -- All checks passed, we can respond
+    -- Send acknowledgment with our timestamp
+    local ackMessage = self:CreateBulkSyncAckMessage(ourTimestamp, UnitName("player"))
+    self:SendAddonMessage(ackMessage)
+    self:Debug("sync", "Sent bulk sync acknowledgment with timestamp " .. ourTimestamp)
+    
+    -- IMPORTANT: Clean up old timer if there's one running
+    if self.SYNC.pendingBulkResponse and self.SYNC.pendingBulkResponse.timer then
+        self:CancelTimer(self.SYNC.pendingBulkResponse.timer)
+        self.SYNC.pendingBulkResponse.timer = nil
+    end
+    
+    -- Set up a delayed response
+    -- The delay is randomized based on raid size to prevent network flooding
+    local responseDelay = 2 + (math.random() * 2) -- Base delay 2-4 seconds
+    
+    -- Store our response info
+    self.SYNC.pendingBulkResponse = {
+        timestamp = ourTimestamp,
+        requester = sender,
+        responseTime = now,
+        timer = self:ScheduleTimer(function()
+            -- Check if someone with a newer timestamp has already responded
+            if self.SYNC.newerTimestampResponded and self.SYNC.newerTimestampResponded > ourTimestamp then
+                self:Debug("sync", "Not sending bulk data - someone with newer timestamp already responded: " .. 
+                          self.SYNC.newerTimestampResponded .. " > " .. ourTimestamp)
+                self.SYNC.syncInProgress = false
+                return
+            end
+            
+            -- We have the newest timestamp (or tied), send the data
+            self:Debug("sync", "We have the newest data, sending all sections")
+            local success = self:SendAllSections()
+            
+            -- IMPORTANT: Clear the sync in progress flag AFTER sending completes
+            self.SYNC.syncInProgress = false
+            
+            -- Log the result
+            if success then
+                self:Debug("sync", "Successfully sent all sections, sync complete", true)
+            else
+                self:Debug("error", "Failed to send all sections", true)
+            end
+            
+            -- IMPORTANT: Schedule cleanup of state variables
+            self:ScheduleTimer(function()
+                self:Debug("sync", "Cleaning up bulk sync state variables")
+                self.SYNC.newerTimestampResponded = nil
+                self.SYNC.pendingBulkResponse = nil
+            end, 5) -- Clean up 5 seconds after sending
+        end, responseDelay)
+    }
+    
+    -- Setup safety timeout to clear syncInProgress flag if something goes wrong
+    self:ScheduleTimer(function()
+        if self.SYNC.syncInProgress then
+            self:Debug("sync", "Safety timeout: clearing syncInProgress flag", true)
+            self.SYNC.syncInProgress = false
+        end
+    end, responseDelay + 30) -- 30 seconds after expected response time
+    
+    self:Debug("sync", "Will respond with all sections in " .. responseDelay .. " seconds unless someone with newer data responds")
+    
+    return true
+end
+
+-- Function to handle bulk sync acknowledgment (BSACK)
+function TWRA:HandleBulkSyncAckCommand(timestamp, acknowledgedBy)
+    self:Debug("sync", "Received bulk sync acknowledgment from " .. acknowledgedBy .. " with timestamp " .. timestamp)
+    
+    -- Convert timestamp to number
+    timestamp = tonumber(timestamp)
+    if not timestamp then
+        self:Debug("error", "Invalid timestamp format in bulk sync acknowledgment")
+        return false
+    end
+    
+    -- Cancel the timeout timer since someone is responding
+    if self.SYNC.bulkSyncRequestTimeout then
+        self:CancelTimer(self.SYNC.bulkSyncRequestTimeout)
+        self.SYNC.bulkSyncRequestTimeout = nil
+    end
+    
+    -- Record this acknowledgment
+    self.SYNC.bulkSyncAcknowledgments = self.SYNC.bulkSyncAcknowledgments or {}
+    self.SYNC.bulkSyncAcknowledgments[acknowledgedBy] = timestamp
+    
+    -- Update the newest timestamp seen
+    if not self.SYNC.newerTimestampResponded or timestamp > self.SYNC.newerTimestampResponded then
+        self.SYNC.newerTimestampResponded = timestamp
+    end
+    
+    -- If we're the requester, show a message about the response
+    if self.SYNC.lastRequestTime and (GetTime() - self.SYNC.lastRequestTime < 15) then
+        self:Debug("sync", acknowledgedBy .. " acknowledged with timestamp " .. timestamp, true)
+        
+        -- IMPORTANT: Schedule cleanup of requester state variables to prevent recurring sync loops
+        local cleanupTime = 15 -- 15 seconds cleanup time
+        
+        -- Cancel existing cleanup timer if it exists
+        if self.SYNC.requesterCleanupTimer then
+            self:CancelTimer(self.SYNC.requesterCleanupTimer)
+        end
+        
+        -- Create new cleanup timer
+        self.SYNC.requesterCleanupTimer = self:ScheduleTimer(function()
+            self:Debug("sync", "Cleaning up requester state variables")
+            self.SYNC.bulkSyncAcknowledgments = {}
+            self.SYNC.newerTimestampResponded = nil
+            self.SYNC.lastRequestTime = 0 -- Reset request time to prevent auto-triggering
+            self.SYNC.requesterCleanupTimer = nil
+        end, cleanupTime)
+    end
+    
+    -- If we have a pending response and the incoming timestamp is newer than ours, cancel our response
+    if self.SYNC.pendingBulkResponse and timestamp > self.SYNC.pendingBulkResponse.timestamp then
+        self:Debug("sync", "Canceling our pending response - " .. acknowledgedBy .. 
+                  " has newer data (" .. timestamp .. " > " .. self.SYNC.pendingBulkResponse.timestamp .. ")")
+        
+        if self.SYNC.pendingBulkResponse.timer then
+            self:CancelTimer(self.SYNC.pendingBulkResponse.timer)
+            self.SYNC.pendingBulkResponse.timer = nil
+        end
+        
+        -- Make sure to clear syncInProgress flag
+        self.SYNC.syncInProgress = false
+        
+        self.SYNC.pendingBulkResponse = nil
     end
     
     return true

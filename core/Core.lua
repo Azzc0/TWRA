@@ -265,10 +265,15 @@ function TWRA:OnEvent()
             self:Debug("general", "Creating minimap button after addon loaded")
             self:CreateMinimapButton()
         end
-    elseif event == "GROUP_ROSTER_UPDATE" then
-        -- Handle group composition changes
-        if self.OnGroupChanged then
-            self:OnGroupChanged()
+    elseif event == "RAID_ROSTER_UPDATE" then
+        -- Route to our dedicated handler
+        if self.OnRaidRosterUpdate then
+            self:OnRaidRosterUpdate()
+        end
+    elseif event == "PARTY_MEMBERS_CHANGED" then
+        -- Route to our dedicated handler
+        if self.OnPartyMembersChanged then
+            self:OnPartyMembersChanged()
         end
     end
 end
@@ -753,4 +758,62 @@ function TWRA:RegisterAddonMessaging()
     
     -- Add explicit debug output for these registrations
     self:Debug("whisper", "Addon messaging registered, can now send/receive WHISPER communications", true)
+end
+
+-- Function to handle group composition changes
+function TWRA:OnGroupChanged()
+    self:Debug("sync", "Group composition changed")
+    
+    -- Check if we're in a group now
+    local inGroup = (GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0)
+    local wasInGroup = self.wasInGroup or false
+    
+    -- Save current group state for next check
+    self.wasInGroup = inGroup
+    
+    -- If we just joined a group, request a bulk sync
+    if inGroup and not wasInGroup then
+        self:Debug("sync", "Joined a new group, requesting bulk sync")
+        
+        -- Add a small delay to allow the server to catch up with group roster
+        self:ScheduleTimer(function()
+            -- Double-check that we're still in a group
+            if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+                self:Debug("sync", "Requesting bulk sync after joining group", true)
+                
+                -- Only request sync if LiveSync is enabled
+                if self.SYNC.liveSync then
+                    if self.RequestBulkSync then
+                        self:RequestBulkSync()
+                    else
+                        self:Debug("error", "RequestBulkSync function not available")
+                    end
+                else
+                    self:Debug("sync", "Not requesting bulk sync - LiveSync is disabled")
+                end
+            else
+                self:Debug("sync", "No longer in group, skipping bulk sync request")
+            end
+        end, 2) -- 2 second delay before requesting sync
+    elseif not inGroup and wasInGroup then
+        -- We left a group
+        self:Debug("sync", "Left group")
+    end
+    
+    -- Always update player table when group changes
+    if self.UpdatePlayerTable then
+        self:UpdatePlayerTable()
+    end
+end
+
+-- Function to handle RAID_ROSTER_UPDATE event
+function TWRA:OnRaidRosterUpdate()
+    -- Forward to OnGroupChanged for consistent handling
+    self:OnGroupChanged()
+end
+
+-- Function to handle PARTY_MEMBERS_CHANGED event
+function TWRA:OnPartyMembersChanged()
+    -- Forward to OnGroupChanged for consistent handling
+    self:OnGroupChanged()
 end
