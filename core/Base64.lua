@@ -475,6 +475,22 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
                 self:Debug("ui", "Clearing import edit box")
                 self.importEditBox:SetText("")
             end
+
+            -- IMPORTANT: Auto-send data to group after manual import (if in a group)
+            if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+                -- Check if we have the SendAllSections function
+                if self.SendAllSections then
+                    self:Debug("sync", "Manual import detected, sending data to group", true)
+                    -- Small delay to ensure the data is fully processed before sending
+                    self:ScheduleTimer(function()
+                        self:SendAllSections()
+                    end, 0.5)
+                else
+                    self:Debug("error", "SendAllSections function not available, can't share data")
+                end
+            else
+                self:Debug("sync", "Not in a group, no need to send data after manual import")
+            end
         else
             self:Debug("error", "SaveAssignments function not found")
         end
@@ -859,6 +875,22 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                         if self.importEditBox then
                             self:Debug("ui", "Clearing import edit box")
                             self.importEditBox:SetText("")
+                        end
+
+                        -- IMPORTANT: Auto-send data to group after manual import (if in a group)
+                        if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+                            -- Check if we have the SendAllSections function
+                            if self.SendAllSections then
+                                self:Debug("sync", "Manual import detected, sending data to group", true)
+                                -- Small delay to ensure the data is fully processed before sending
+                                self:ScheduleTimer(function()
+                                    self:SendAllSections()
+                                end, 0.5)
+                            else
+                                self:Debug("error", "SendAllSections function not available, can't share data")
+                            end
+                        else
+                            self:Debug("sync", "Not in a group, no need to send data after manual import")
                         end
                     else
                         self:Debug("error", "SaveAssignments function not found")
