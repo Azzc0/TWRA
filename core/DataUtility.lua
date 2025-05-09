@@ -632,18 +632,70 @@ function TWRA:CaptureSpecialRows(data)
                             table.insert(specialRowIndices, rowIdx)
                             
                         elseif row[1] == "GUID" and row[2] then
-                            -- Add to metadata if not already there
-                            local exists = false
-                            for _, existingGUID in ipairs(metadata["GUID"]) do
-                                if existingGUID == row[2] then
-                                    exists = true
-                                    break
-                                end
-                            end
+                            -- Clean up and extract just the 18-character GUID
+                            local fullGuidText = row[2]
+                            local extractedGuid = nil
                             
-                            if not exists then
-                                table.insert(metadata["GUID"], row[2])
-                                self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. row[2])
+                            -- Look for a GUID pattern using string.find (since string.match doesn't exist in Lua 5.0)
+                            -- This will match patterns like "0xF130003F1101594B"
+                            local startPos, endPos = string.find(fullGuidText, "%w[xX]%w+")
+                            if startPos then
+                                -- Extract the matched substring
+                                extractedGuid = string.sub(fullGuidText, startPos, endPos)
+                                
+                                -- Take exactly 18 characters if available
+                                if string.len(extractedGuid) >= 18 then
+                                    extractedGuid = string.sub(extractedGuid, 1, 18)
+                                    self:Debug("data", "Extracted GUID from '" .. fullGuidText .. "' to '" .. extractedGuid .. "'")
+                                    
+                                    -- Add to metadata if not already there
+                                    local exists = false
+                                    for _, existingGUID in ipairs(metadata["GUID"]) do
+                                        if existingGUID == extractedGuid then
+                                            exists = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if not exists then
+                                        table.insert(metadata["GUID"], extractedGuid)
+                                        self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. extractedGuid)
+                                    end
+                                else
+                                    -- If matched text is too short
+                                    self:Debug("data", "Extracted GUID too short: " .. extractedGuid)
+                                    
+                                    -- Add original value to metadata if not already there
+                                    local exists = false
+                                    for _, existingGUID in ipairs(metadata["GUID"]) do
+                                        if existingGUID == fullGuidText then
+                                            exists = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if not exists then
+                                        table.insert(metadata["GUID"], fullGuidText)
+                                        self:Debug("data", "Stored original GUID text: " .. fullGuidText)
+                                    end
+                                end
+                            else
+                                -- If we can't extract a valid GUID, store the original value but log a warning
+                                self:Debug("data", "Could not extract valid GUID pattern from: " .. fullGuidText)
+                                
+                                -- Add original value to metadata if not already there
+                                local exists = false
+                                for _, existingGUID in ipairs(metadata["GUID"]) do
+                                    if existingGUID == fullGuidText then
+                                        exists = true
+                                        break
+                                    end
+                                end
+                                
+                                if not exists then
+                                    table.insert(metadata["GUID"], fullGuidText)
+                                    self:Debug("data", "Stored original GUID text: " .. fullGuidText)
+                                end
                             end
                             
                             -- Mark for removal from rows

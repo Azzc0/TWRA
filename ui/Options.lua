@@ -56,7 +56,6 @@ function TWRA:InitOptions()
     -- Set up auto-navigate module
     self.AUTONAVIGATE = self.AUTONAVIGATE or {}
     self.AUTONAVIGATE.enabled = options.autoNavigate
-    self.AUTONAVIGATE.scanFreq = options.scanFrequency
     
     -- Initialize OSD if needed
     if self.InitOSD then
@@ -231,23 +230,9 @@ function TWRA:CreateOptionsInMainFrame()
     table.insert(self.optionsElements, autoNavIcon)
     table.insert(self.optionsElements, autoNavIconFrame)
     
-    -- Scan frequency slider (indented)
-    local scanSlider = CreateFrame("Slider", "TWRA_ScanFrequencySlider", leftColumn, "OptionsSliderTemplate")
-    scanSlider:SetPoint("TOPLEFT", autoNavigate, "BOTTOMLEFT", 20, -10)
-    scanSlider:SetWidth(160)
-    scanSlider:SetHeight(16)
-    scanSlider:SetMinMaxValues(1, 10)
-    scanSlider:SetValueStep(1)
-    scanSlider:SetOrientation("HORIZONTAL")
-    table.insert(self.optionsElements, scanSlider)
-    
-    -- Set slider text
-    getglobal(scanSlider:GetName() .. "Low"):SetText("Fast")
-    getglobal(scanSlider:GetName() .. "High"):SetText("Slow")
-    
     -- Announcement section
     local announceTitle = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    announceTitle:SetPoint("TOPLEFT", scanSlider, "BOTTOMLEFT", -20, -20)
+    announceTitle:SetPoint("TOPLEFT", autoNavigate, "BOTTOMLEFT", 0, -20)
     announceTitle:SetText("Announcement Channel")
     table.insert(self.optionsElements, announceTitle)
     
@@ -501,14 +486,6 @@ function TWRA:CreateOptionsInMainFrame()
     end
     autoNavigate:SetChecked(autoNavEnabled)
     
-    -- Scan frequency slider
-    local scanFreq = self.AUTONAVIGATE and self.AUTONAVIGATE.scanFreq or 3
-    if options.scanFrequency ~= nil then
-        scanFreq = options.scanFrequency
-    end
-    scanSlider:SetValue(scanFreq)
-    getglobal(scanSlider:GetName() .. "Text"):SetText("Scan: " .. scanFreq .. "s")
-    
     -- Announcement channel radio buttons
     local announceChannel = options.announceChannel or "GROUP"
     groupRadio:SetChecked(announceChannel == "GROUP")
@@ -630,44 +607,18 @@ function TWRA:CreateOptionsInMainFrame()
                 self:Debug("nav", "AutoNavigate scanning stopped")
             end
         end
-        
-        -- Update slider state
-        self:UpdateSliderState(scanSlider, isChecked)
     end)
     
     -- Update initial AutoNavigate UI state
     if not SUPERWOW_VERSION then
         -- SuperWoW not available, gray out everything
         autoNavigateText:SetTextColor(0.5, 0.5, 0.5)
-        self:UpdateSliderState(scanSlider, false)
         autoNavigate:EnableMouse(false)
     else
         -- SuperWoW is available, ensure AutoNavigate text is normal color
         autoNavigateText:SetTextColor(1, 1, 1)
         autoNavigate:EnableMouse(true)
-        
-        -- Initialize slider state based on AutoNavigate state
-        self:UpdateSliderState(scanSlider, autoNavEnabled)
     end
-    
-    -- Scan frequency slider behavior
-    scanSlider:SetScript("OnValueChanged", function()
-        local value = math.floor(this:GetValue())
-        
-        -- Save to config and update runtime value
-        TWRA_SavedVariables.options.scanFrequency = value
-        if self.AUTONAVIGATE then
-            self.AUTONAVIGATE.scanFreq = value
-        end
-        
-        -- Update display text
-        getglobal(this:GetName() .. "Text"):SetText("Scan: " .. value .. "s")
-        
-        -- Restart AutoNavigate timer with new frequency if enabled
-        if self.AUTONAVIGATE and self.AUTONAVIGATE.enabled and self.RestartAutoNavigateTimer then
-            self:RestartAutoNavigateTimer()
-        end
-    end)
     
     -- Radio button behaviors for announcement channels
     groupRadio:SetScript("OnClick", function()
@@ -969,7 +920,6 @@ function TWRA:RestartAutoNavigateTimer()
     if not self.AUTONAVIGATE then
         self.AUTONAVIGATE = {
             enabled = false,
-            scanFreq = 3,
             timer = nil
         }
         return
@@ -984,7 +934,7 @@ function TWRA:RestartAutoNavigateTimer()
     -- Start a new timer if enabled
     if self.AUTONAVIGATE.enabled then
         if self.StartAutoNavigate then
-            self:Debug("auto", "Restarting AutoNavigate timer with frequency: " .. self.AUTONAVIGATE.scanFreq)
+            self:Debug("auto", "Restarting AutoNavigate timer")
             self:StartAutoNavigate()
         end
     else
@@ -1051,12 +1001,8 @@ function TWRA:ApplyInitialSettings()
         if SUPERWOW_VERSION and self.StartAutoNavigateScan then
             self.AUTONAVIGATE = self.AUTONAVIGATE or {}
             self.AUTONAVIGATE.enabled = true
-            -- Set scan frequency from saved value
-            if options.scanFrequency and options.scanFrequency > 0 then
-                self.AUTONAVIGATE.scanFreq = options.scanFrequency
-            end
             self:StartAutoNavigateScan()
-            self:Debug("nav", "AutoNavigate activated with scan frequency: " .. self.AUTONAVIGATE.scanFreq .. "s")
+            self:Debug("nav", "AutoNavigate activated")
         else
             self:Debug("nav", "SuperWoW not available, AutoNavigate remains disabled")
         end

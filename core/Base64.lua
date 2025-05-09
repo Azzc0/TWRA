@@ -708,58 +708,58 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                 self:Debug("data", "Expanding abbreviations in the imported data")
                 result = self:ExpandAbbreviations(result)
                 
-                -- Process metadata and special rows
-                self:Debug("data", "Processing special rows after abbreviation expansion")
+                -- -- Process metadata and special rows
+                -- self:Debug("data", "Processing special rows after abbreviation expansion")
                 
-                -- Process each section
-                for sectionIdx, section in pairs(result.data) do
-                    -- Skip if not a table or doesn't have rows
-                    if type(section) == "table" and section["Section Rows"] then
-                        -- Initialize Section Metadata if not present
-                        section["Section Metadata"] = section["Section Metadata"] or {}
-                        local metadata = section["Section Metadata"]
+                -- -- Process each section
+                -- for sectionIdx, section in pairs(result.data) do
+                --     -- Skip if not a table or doesn't have rows
+                --     if type(section) == "table" and section["Section Rows"] then
+                --         -- Initialize Section Metadata if not present
+                --         section["Section Metadata"] = section["Section Metadata"] or {}
+                --         local metadata = section["Section Metadata"]
 
-                        -- Store section name in metadata
-                        metadata["Name"] = { section["Section Name"] or "" }
+                --         -- Store section name in metadata
+                --         metadata["Name"] = { section["Section Name"] or "" }
                         
-                        -- Initialize metadata arrays
-                        metadata["Note"] = metadata["Note"] or {}
-                        metadata["Warning"] = metadata["Warning"] or {}
-                        metadata["GUID"] = metadata["GUID"] or {}
+                --         -- Initialize metadata arrays
+                --         metadata["Note"] = metadata["Note"] or {}
+                --         metadata["Warning"] = metadata["Warning"] or {}
+                --         metadata["GUID"] = metadata["GUID"] or {}
                         
-                        -- Track indices of rows to remove later
-                        local rowsToRemove = {}
-                        local sectionName = section["Section Name"] or tostring(sectionIdx)
+                --         -- Track indices of rows to remove later
+                --         local rowsToRemove = {}
+                --         local sectionName = section["Section Name"] or tostring(sectionIdx)
                         
-                        -- Process each row looking for special rows
-                        for rowIdx, rowData in ipairs(section["Section Rows"]) do
-                            if type(rowData) == "table" then
-                                -- After abbreviation expansion, we should only have "Note", "Warning", "GUID"
-                                if rowData[1] == "Note" and rowData[2] then
-                                    table.insert(metadata["Note"], rowData[2])
-                                    table.insert(rowsToRemove, rowIdx)
-                                    self:Debug("data", "Found Note in section " .. sectionName .. ": " .. rowData[2])
-                                elseif rowData[1] == "Warning" and rowData[2] then
-                                    table.insert(metadata["Warning"], rowData[2])
-                                    table.insert(rowsToRemove, rowIdx)
-                                    self:Debug("data", "Found Warning in section " .. sectionName .. ": " .. rowData[2])
-                                elseif rowData[1] == "GUID" and rowData[2] then
-                                    table.insert(metadata["GUID"], rowData[2])
-                                    table.insert(rowsToRemove, rowIdx)
-                                    self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. rowData[2])
-                                end
-                            end
-                        end
+                --         -- Process each row looking for special rows
+                --         for rowIdx, rowData in ipairs(section["Section Rows"]) do
+                --             if type(rowData) == "table" then
+                --                 -- After abbreviation expansion, we should only have "Note", "Warning", "GUID"
+                --                 if rowData[1] == "Note" and rowData[2] then
+                --                     table.insert(metadata["Note"], rowData[2])
+                --                     table.insert(rowsToRemove, rowIdx)
+                --                     self:Debug("data", "Found Note in section " .. sectionName .. ": " .. rowData[2])
+                --                 elseif rowData[1] == "Warning" and rowData[2] then
+                --                     table.insert(metadata["Warning"], rowData[2])
+                --                     table.insert(rowsToRemove, rowIdx)
+                --                     self:Debug("data", "Found Warning in section " .. sectionName .. ": " .. rowData[2])
+                --                 -- elseif rowData[1] == "GUID" and rowData[2] then
+                --                 --     table.insert(metadata["GUID"], rowData[2])
+                --                 --     table.insert(rowsToRemove, rowIdx)
+                --                 --     self:Debug("data", "Found GUID in section " .. sectionName .. ": " .. rowData[2])
+                --                 end
+                --             end
+                --         end
                         
-                        -- Store the rows to remove in the section itself
-                        section["_specialRowIndices"] = rowsToRemove
+                --         -- Store the rows to remove in the section itself
+                --         section["_specialRowIndices"] = rowsToRemove
                         
-                        self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
-                                  table.getn(metadata["Note"]) .. " notes, " ..
-                                  table.getn(metadata["Warning"]) .. " warnings, " ..
-                                  table.getn(metadata["GUID"]) .. " GUIDs")
-                    end
-                end
+                --         self:Debug("data", "Section '" .. sectionName .. "': Found " .. 
+                --                   table.getn(metadata["Note"]) .. " notes, " ..
+                --                   table.getn(metadata["Warning"]) .. " warnings, " ..
+                --                   table.getn(metadata["GUID"]) .. " GUIDs")
+                --     end
+                -- end
                 
                 -- Ensure all rows have entries for all columns
                 result = self:EnsureCompleteRows(result)
