@@ -257,7 +257,7 @@ local function main()
     local functionMap = generateFunctionMap(allFunctions, addonFiles)
     
     -- Write the function map to file
-    local outputPath = "docs/private/Functionmap.md"
+    local outputPath = "docs/Functionmap.md"
     if writeFile(outputPath, functionMap) then
         print("Function map successfully written to " .. outputPath)
     else

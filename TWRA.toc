@@ -16,7 +16,6 @@ core\Utils.lua
 core\Events.lua
 core\Base64.lua
 core\Compression.lua
-core\Performance.lua
 Example.lua
 TWRA.lua
 core\Core.lua
