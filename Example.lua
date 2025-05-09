@@ -473,111 +473,41 @@ function TWRA:LoadExampleDataAndShow()
             self:Debug("ui", "Switched from options to main view during LoadExampleDataAndShow")
         end
         
-        -- Force complete refresh of dropdown menu
+        -- CRITICAL CHANGE: Handle the dropdown menu properly
         if self.navigation and self.navigation.dropdownMenu then
-            self:Debug("nav", "Force refreshing dropdown menu during LoadExampleDataAndShow")
+            -- Hide the dropdown if showing
+            self.navigation.dropdownMenu:Hide()
             
-            -- Clean up any existing buttons
+            -- Completely reset the dropdown buttons
             if self.navigation.dropdownMenu.buttons then
                 for _, button in pairs(self.navigation.dropdownMenu.buttons) do
-                    button:Hide()
-                    button:SetParent(nil)
+                    if button and button.Hide then
+                        button:Hide()
+                    end
+                    if button and button.text then
+                        button.text:SetText("")
+                    end
                 end
             end
+            
+            -- Clear the buttons array to force recreation with proper formatting
             self.navigation.dropdownMenu.buttons = {}
             
-            -- Rebuild dropdown button list from current handlers
-            local menuButton = self.navigation.menuButton
-            local dropdownMenu = self.navigation.dropdownMenu
+            -- Reset the offset to ensure proper positioning
+            self.navigation.dropdownMenu.offset = 0
             
-            if menuButton and dropdownMenu then
-                -- Position menu correctly
-                dropdownMenu:ClearAllPoints()
-                dropdownMenu:SetPoint("TOP", menuButton, "BOTTOM", 0, -2)
-                dropdownMenu:SetWidth(menuButton:GetWidth())
-                
-                -- Calculate menu height based on sections
-                local buttonHeight = 20
-                local padding = 10  -- 5px top and bottom
-                local menuHeight = (buttonHeight * table.getn(self.navigation.handlers)) + padding
-                dropdownMenu:SetHeight(menuHeight)
-                
-                -- Create buttons for each section
-                for i, handler in ipairs(self.navigation.handlers) do
-                    local button = CreateFrame("Button", nil, dropdownMenu)
-                    button:SetHeight(buttonHeight)
-                    button:SetWidth(dropdownMenu:GetWidth() - 10)  -- 5px padding on each side
-                    button:SetPoint("TOPLEFT", dropdownMenu, "TOPLEFT", 5, -5 - ((i-1) * buttonHeight))
-                    
-                    button:SetScript("OnClick", function()
-                        self:NavigateToSection(i)
-                        dropdownMenu:Hide()
-                    end)
-                    
-                    button:SetScript("OnEnter", function()
-                        button:SetBackdropColor(0.3, 0.3, 0.3, 1)
-                    end)
-                    
-                    button:SetScript("OnLeave", function()
-                        button:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-                    end)
-                    
-                    -- Set up button appearance
-                    button:SetBackdrop({
-                        bgFile = "Interface\\Buttons\\WHITE8x8",
-                        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                        tile = true, tileSize = 16, edgeSize = 16,
-                        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-                    })
-                    button:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-                    
-                    -- Add text
-                    local text = button:CreateFontString(nil, "OVERLAY")
-                    text:SetFont("Fonts\\FRIZQT__.TTF", 10)
-                    text:SetTextColor(1, 1, 1, 1)
-                    text:SetPoint("LEFT", button, "LEFT", 5, 0)
-                    text:SetText(handler)
-                    
-                    -- Store reference to button
-                    dropdownMenu.buttons[i] = button
-                end
-                
-                self:Debug("nav", "Rebuilt dropdown menu with " .. table.getn(self.navigation.handlers) .. " sections")
-            end
+            self:Debug("nav", "Reset dropdown menu for proper recreation")
         end
         
-        -- Use NavigateToSection to properly refresh UI
+        -- Set current section to 1 (first section)
+        if self.navigation then
+            self.navigation.currentIndex = 1
+        end
+        
+        -- Navigate to first section to refresh all UI components
         if self.navigation and self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
             self:Debug("nav", "Calling NavigateToSection to ensure complete UI refresh")
             self:NavigateToSection(1, "fromExample")
-        else
-            -- Fallback if navigation handlers aren't available
-            -- If main frame is already showing, force a refresh of the current view
-            if self.mainFrame and self.mainFrame:IsShown() then
-                -- Force refresh of current view content
-                if self.FilterAndDisplayHandler and self.navigation and 
-                   self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
-                    local sectionName = self.navigation.handlers[self.navigation.currentIndex]
-                    
-                    -- Clear any existing content first to ensure a complete refresh
-                    if self.ClearRows then
-                        self:ClearRows()
-                    end
-                    if self.ClearFooters then
-                        self:ClearFooters()
-                    end
-                    
-                    -- Force filtering and display of the current section
-                    self:FilterAndDisplayHandler(sectionName)
-                    
-                    -- Make sure all UI elements are properly updated
-                    if self.navigation.handlerText then
-                        self.navigation.handlerText:SetText(sectionName)
-                    end
-                    
-                    self:Debug("ui", "Forced refresh of main view content")
-                end
-            end
         end
         
         -- Make sure OSD is not showing after loading example data
