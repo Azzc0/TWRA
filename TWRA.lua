@@ -525,8 +525,11 @@ function TWRA:AnnounceAssignments()
         ["Heals"] = "|cFF88BB99", -- Muted green
         ["Healer"] = "|cFF88BB99", -- Muted green
         ["Healers"] = "|cFF88BB99", -- Muted green
+        ["DPS"] = "|cFFCC8877", -- Muted red
         ["Pull"] = "|cFFCCBB77", -- Muted yellow
-        ["default"] = "|cFF88BBAA", -- Muted teal
+        ["MC"] = "|cFFAA99BB",  -- Muted purple
+        ["Raid Depoison"] = "|cFF88BBAA", -- Muted teal
+        ["default"] = "|cFFBBAA88" -- Muted orange for other roles
     }
     
     local roleEndColor = "|r"
