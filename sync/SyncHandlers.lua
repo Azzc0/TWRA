@@ -134,19 +134,19 @@ end
 function TWRA:HandleSectionCommand(timestamp, sectionIndex, sender)
     -- Add debug statement right at the start
     self:Debug("sync", "HandleSectionCommand called with sectionIndex: " .. sectionIndex .. 
-              ", timestamp: " .. timestamp .. " from " .. sender, true)
+              ", timestamp: " .. timestamp .. " from " .. sender)
     
     -- Convert to numbers (default to 0 if conversion fails)
     local sectionIndexNum = tonumber(sectionIndex)
     local timestampNum = tonumber(timestamp)
     
     if not sectionIndexNum then
-        self:Debug("sync", "Failed to convert section index to number: " .. sectionIndex, true)
+        self:Debug("sync", "Failed to convert section index to number: " .. sectionIndex)
         return
     end
     
     if not timestampNum then
-        self:Debug("sync", "Failed to convert timestamp to number: " .. timestamp, true)
+        self:Debug("sync", "Failed to convert timestamp to number: " .. timestamp)
         return
     end
     
@@ -155,36 +155,36 @@ function TWRA:HandleSectionCommand(timestamp, sectionIndex, sender)
     
     -- Always debug what we received
     self:Debug("sync", string.format("Section change from %s (index: %d, timestamp: %d)", 
-        sender, sectionIndex, timestamp), true)
+        sender, sectionIndex, timestamp))
     
     -- Get our own timestamp for comparison
     local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
 
     -- Debug the timestamp comparison
     self:Debug("sync", "Comparing timestamps - Received: " .. timestamp .. 
-               " vs Our: " .. ourTimestamp, true)
+               " vs Our: " .. ourTimestamp)
     
     -- Compare timestamps and act accordingly
     local comparisonResult = self:CompareTimestamps(ourTimestamp, timestamp)
     
     if comparisonResult == 0 then
         -- Timestamps match - navigate to the section
-        self:Debug("sync", "Timestamps match - navigating to section " .. sectionIndex, true)
+        self:Debug("sync", "Timestamps match - navigating to section " .. sectionIndex)
         self:NavigateToSection(sectionIndex, "fromSync")
         
     elseif comparisonResult > 0 then
         -- We have a newer version - just log it and don't navigate
         self:Debug("sync", "We have a newer version (timestamp " .. ourTimestamp .. 
-                  " > " .. timestamp .. "), ignoring section change", true)
+                  " > " .. timestamp .. "), ignoring section change")
     
     else -- comparisonResult < 0
         -- They have a newer version - LOG ONLY, NO SYNC REQUEST
         self:Debug("sync", "Detected newer data from " .. sender .. " (timestamp " .. 
-                  timestamp .. " > " .. ourTimestamp .. "), but automatic sync is disabled", true)
+                  timestamp .. " > " .. ourTimestamp .. "), but automatic sync is disabled")
         
         -- Only store the section index for reference, but don't trigger sync
         self.SYNC.pendingSection = sectionIndex
-        self:Debug("sync", "User must manually request newer data using /twra sync", true)
+        self:Debug("sync", "User must manually request newer data using /twra sync")
     end
 end
 
@@ -406,7 +406,7 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
             self:RebuildOSDIfVisible()
         end
         
-        self:Debug("sync", "Bulk sync data processing and navigation rebuild complete!", true)
+        self:Debug("sync", "Bulk sync data processing and navigation rebuild complete!")
     else
         self:Debug("sync", "Received bulk structure but no sections")
         
@@ -808,7 +808,7 @@ function TWRA:HandleMissingSectionResponseCommand(timestamp, sectionIndex, secti
             self:RebuildOSDIfVisible()
         end
         
-        self:Debug("sync", "Missing sections sync complete!", true)
+        self:Debug("sync", "Missing sections sync complete!")
     else
         self:Debug("sync", "Still missing " .. stillMissing .. " sections")
     end
@@ -958,7 +958,7 @@ function TWRA:HandleBulkSyncRequestCommand(sender)
     
     -- CRITICAL: Prevent multiple active sync sessions
     if self.SYNC.syncInProgress then
-        self:Debug("sync", "Another sync is already in progress, ignoring this request", true)
+        self:Debug("sync", "Another sync is already in progress, ignoring this request")
         return false
     end
     
@@ -1004,9 +1004,9 @@ function TWRA:HandleBulkSyncRequestCommand(sender)
             
             -- Log the result
             if success then
-                self:Debug("sync", "Successfully sent all sections, sync complete", true)
+                self:Debug("sync", "Successfully sent all sections, sync complete")
             else
-                self:Debug("error", "Failed to send all sections", true)
+                self:Debug("error", "Failed to send all sections")
             end
             
             -- IMPORTANT: Schedule cleanup of state variables
@@ -1021,7 +1021,7 @@ function TWRA:HandleBulkSyncRequestCommand(sender)
     -- Setup safety timeout to clear syncInProgress flag if something goes wrong
     self:ScheduleTimer(function()
         if self.SYNC.syncInProgress then
-            self:Debug("sync", "Safety timeout: clearing syncInProgress flag", true)
+            self:Debug("sync", "Safety timeout: clearing syncInProgress flag")
             self.SYNC.syncInProgress = false
         end
     end, responseDelay + 30) -- 30 seconds after expected response time
@@ -1059,23 +1059,14 @@ function TWRA:HandleBulkSyncAckCommand(timestamp, acknowledgedBy)
     
     -- If we're the requester, show a message about the response
     if self.SYNC.lastRequestTime and (GetTime() - self.SYNC.lastRequestTime < 15) then
-        self:Debug("sync", acknowledgedBy .. " acknowledged with timestamp " .. timestamp, true)
+        self:Debug("sync", acknowledgedBy .. " acknowledged with timestamp " .. timestamp)
         
         -- IMPORTANT: Schedule cleanup of requester state variables to prevent recurring sync loops
         local cleanupTime = 15 -- 15 seconds cleanup time
-        
-        -- Cancel existing cleanup timer if it exists
-        if self.SYNC.requesterCleanupTimer then
-            self:CancelTimer(self.SYNC.requesterCleanupTimer)
-        end
-        
-        -- Create new cleanup timer
-        self.SYNC.requesterCleanupTimer = self:ScheduleTimer(function()
+        self:ScheduleTimer(function()
             self:Debug("sync", "Cleaning up requester state variables")
             self.SYNC.bulkSyncAcknowledgments = {}
             self.SYNC.newerTimestampResponded = nil
-            self.SYNC.lastRequestTime = 0 -- Reset request time to prevent auto-triggering
-            self.SYNC.requesterCleanupTimer = nil
         end, cleanupTime)
     end
     
@@ -1088,9 +1079,6 @@ function TWRA:HandleBulkSyncAckCommand(timestamp, acknowledgedBy)
             self:CancelTimer(self.SYNC.pendingBulkResponse.timer)
             self.SYNC.pendingBulkResponse.timer = nil
         end
-        
-        -- Make sure to clear syncInProgress flag
-        self.SYNC.syncInProgress = false
         
         self.SYNC.pendingBulkResponse = nil
     end

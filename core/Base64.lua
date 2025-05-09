@@ -480,7 +480,7 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
             if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
                 -- Check if we have the SendAllSections function
                 if self.SendAllSections then
-                    self:Debug("sync", "Manual import detected, sending data to group", true)
+                    self:Debug("sync", "Manual import detected, sending data to group")
                     -- Small delay to ensure the data is fully processed before sending
                     self:ScheduleTimer(function()
                         self:SendAllSections()
@@ -881,7 +881,7 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                         if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
                             -- Check if we have the SendAllSections function
                             if self.SendAllSections then
-                                self:Debug("sync", "Manual import detected, sending data to group", true)
+                                self:Debug("sync", "Manual import detected, sending data to group")
                                 -- Small delay to ensure the data is fully processed before sending
                                 self:ScheduleTimer(function()
                                     self:SendAllSections()

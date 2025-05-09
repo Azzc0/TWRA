@@ -285,7 +285,7 @@ function TWRA:RequestStructureSync(timestamp)
     self:Debug("sync", "Requested structure sync with timestamp " .. timestamp)
     
     -- Show a message to the user
-    self:Debug("sync", "Requesting raid structure from group...", true)
+    self:Debug("sync", "Requesting raid structure from group...")
     
     return true
 end
@@ -312,7 +312,7 @@ function TWRA:RequestBulkSync()
     
     -- IMPORTANT: Reset any existing sync state
     if self.SYNC.syncInProgress then
-        self:Debug("sync", "Clearing existing syncInProgress flag before requesting new sync", true)
+        self:Debug("sync", "Clearing existing syncInProgress flag before requesting new sync")
         self.SYNC.syncInProgress = false
     end
     
@@ -333,7 +333,7 @@ function TWRA:RequestBulkSync()
         end
         
         self.SYNC.bulkSyncRequestTimeout = self:ScheduleTimer(function()
-            self:Debug("sync", "No response to bulk sync request after timeout period", true)
+            self:Debug("sync", "No response to bulk sync request after timeout period")
             -- Also reset the sync state if timeout occurs
             self.SYNC.syncInProgress = false
         end, 10) -- 10 second timeout
@@ -341,9 +341,9 @@ function TWRA:RequestBulkSync()
         -- Clear any previous tracking of acknowledgments
         self.SYNC.bulkSyncAcknowledgments = {}
         
-        self:Debug("sync", "Sent bulk sync request to group", true)
+        self:Debug("sync", "Sent bulk sync request to group")
     else
-        self:Debug("error", "Failed to send bulk sync request", true)
+        self:Debug("error", "Failed to send bulk sync request")
     end
     
     return success
@@ -924,7 +924,7 @@ function TWRA:SendAllSections()
     -- CRITICAL: Prevent multiple SendAllSections calls in a short period
     local now = GetTime()
     if self.SYNC.lastSendAllSectionsTime and (now - self.SYNC.lastSendAllSectionsTime < 10) then
-        self:Debug("error", "Not sending sections - already sent sections recently", true)
+        self:Debug("error", "Not sending sections - already sent sections recently")
         return false
     end
     
@@ -1095,7 +1095,7 @@ function TWRA:SendAllSections()
     usesChunking = nil
     
     -- Final user notification
-    TWRA:Debug("sync", "Bulk sync complete with reversed order (sections first, structure last)!", true)
+    TWRA:Debug("sync", "Bulk sync complete with reversed order (sections first, structure last)!")
     
     collectgarbage("collect")
     return true

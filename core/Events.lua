@@ -3,7 +3,7 @@
 TWRA = TWRA or {}
 
 -- Add debug message to verify file is loading
-DEFAULT_CHAT_FRAME:AddMessage("TWRA Events.lua loaded")
+-- DEFAULT_CHAT_FRAME:AddMessage("TWRA Events.lua loaded")
 
 -- Initialize event system storage
 TWRA.events = TWRA.events or {}
