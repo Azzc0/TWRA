@@ -856,9 +856,10 @@ function TWRA:ShowOptionsView()
         if self.navigation.handlerText then self.navigation.handlerText:Hide() end
     end
     
-    -- Hide other main view buttons
+    -- Hide other main view buttons but show Sync All
     if self.announceButton then self.announceButton:Hide() end
     if self.updateTanksButton then self.updateTanksButton:Hide() end
+    if self.syncAllButton then self.syncAllButton:Show() end  -- Show Sync All button in options view
     
     -- Reset frame height to default while in options
     self.mainFrame:SetHeight(300)

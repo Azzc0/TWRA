@@ -108,6 +108,7 @@ function TWRA:CreateMainFrame()
         self:SendAllSections()
     end)
     self.syncAllButton = syncAllButton  -- Store reference
+    syncAllButton:Hide()  -- Hide the Sync All button by default
 
     -- Options button
     local optionsButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
@@ -581,7 +582,7 @@ function TWRA:ShowMainView()
     -- Show other main view buttons
     if self.announceButton then self.announceButton:Show() end
     if self.updateTanksButton then self.updateTanksButton:Show() end
-    if self.syncAllButton then self.syncAllButton:Show() end
+    if self.syncAllButton then self.syncAllButton:Hide() end  -- Hide Sync All button in main view
 
     -- Change button text if options button exists
     if self.optionsButton then
