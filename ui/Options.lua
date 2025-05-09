@@ -1047,7 +1047,13 @@ function TWRA:DirectImport(importText)
     end
     
     -- Debug the decoded string beginning (only for diagnostics)
-    self:Debug("data", "Decoded string length: " .. string.len(decodedString))
+    -- Add type checking to prevent errors when decodedString is not a string
+    if type(decodedString) == "string" then
+        self:Debug("data", "Decoded string length: " .. string.len(decodedString))
+    else
+        self:Debug("error", "Decoded data is not a string (type: " .. type(decodedString) .. ")", true)
+        return false
+    end
     
     -- Step 2: Create a temporary environment to evaluate the string safely
     local env = {}

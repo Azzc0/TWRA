@@ -494,4 +494,5 @@ TWRA.ITEM_DATABASE = {
     ["Flask of Supreme Power"] = {id = 13512, quality = "Common"},
     ["Flask of Chromatic Resistance"] = {id = 13522, quality = "Common"},
     ["Nordanaar Herbal Tea"] = {id = 61675, quality = "Uncommon"},
+    ["Onyxia Scale Cloak"] = {id = 15138, quality = "Epic"}
 }

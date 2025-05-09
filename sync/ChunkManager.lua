@@ -26,9 +26,15 @@ function TWRA.chunkManager:SendChunkedMessage(data, prefix)
         return false
     end
     
+    -- Ensure we're initialized
+    if not self.maxChunkSize then
+        TWRA:Debug("sync", "ChunkManager: maxChunkSize not set, initializing with default")
+        self:Initialize()
+    end
+    
     -- Calculate total size and chunks needed
     local dataLength = string.len(data)
-    local maxChunkSize = self.maxChunkSize
+    local maxChunkSize = self.maxChunkSize or 1800  -- Fallback if still nil
     local totalChunks = math.ceil(dataLength / maxChunkSize)
     
     TWRA:Debug("sync", "ChunkManager: Sending " .. dataLength .. " bytes in " .. totalChunks .. " chunks")
