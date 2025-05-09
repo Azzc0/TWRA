@@ -57,18 +57,14 @@ function TWRA:DestroyMinimapButton()
         self.minimapButton.highlight = nil
     end
     
-    -- Hide and remove the button
+    -- Instead of destroying the button, just hide it and preserve its reference
+    -- This prevents PFUI from losing track of the button on zone changes
     self.minimapButton:Hide()
-    self.minimapButton:SetParent(nil)
-    self.minimapButton:ClearAllPoints()
     
-    -- Clear our reference
-    self.minimapButton = nil
-    
-    -- Update state
+    -- Update state but DON'T set minimapButton to nil
     self.minimapState.buttonCreated = false
     
-    self:Debug("ui", "Minimap button destroyed successfully")
+    self:Debug("ui", "Minimap button hidden for preservation")
     return true
 end
 
@@ -76,8 +72,14 @@ end
 function TWRA:InitializeMinimapButton()
     -- Check if we already have a button or creation is on cooldown
     local currentTime = GetTime()
-    if self.minimapState.buttonCreated and self.minimapButton then
-        self:Debug("ui", "Minimap button already exists - skipping initialization")
+    
+    -- If button exists and is working, don't recreate it
+    if self.minimapButton and self.minimapState.buttonCreated then
+        -- Button exists, just check if it needs to be shown
+        if not self.minimapButton:IsShown() then
+            self.minimapButton:Show()
+            self:Debug("ui", "Showing existing minimap button")
+        end
         return true
     end
     
@@ -87,17 +89,14 @@ function TWRA:InitializeMinimapButton()
         return false
     end
     
-    -- Force proper cleanup of any existing button (even if reference is broken)
-    self:DestroyMinimapButton()
-    
-    -- Look for any orphaned buttons with our name and remove them
+    -- Look for any orphaned buttons with our name
     local existingButton = _G["TWRAMinimapButton"]
-    if existingButton then
-        self:Debug("ui", "Found orphaned minimap button - cleaning up")
-        existingButton:Hide()
-        existingButton:SetParent(nil)
-        existingButton:ClearAllPoints()
-        _G["TWRAMinimapButton"] = nil
+    if existingButton and not self.minimapButton then
+        -- Reuse the existing button instead of creating a new one
+        self:Debug("ui", "Found existing button - reusing it")
+        self.minimapButton = existingButton
+        self.minimapState.buttonCreated = true
+        return true
     end
     
     -- Create new minimap button
@@ -153,7 +152,7 @@ function TWRA:InitializeMinimapButton()
             end, "MinimapDropdown")
         end
         
-        -- Register for PLAYER_ENTERING_WORLD to prevent duplicate buttons
+        -- Register for PLAYER_ENTERING_WORLD to handle zone changes properly
         if self.RegisterEvent then
             self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
                 -- Reset zone change handled flag
@@ -170,12 +169,17 @@ function TWRA:InitializeMinimapButton()
                     -- Mark as handled
                     self.minimapState.zoneChangeHandled = true
                     
-                    -- Check button state
-                    if not self.minimapButton then
-                        self:Debug("ui", "No minimap button after zone change - recreating")
-                        self:InitializeMinimapButton()
+                    -- Check if button exists and is properly showing
+                    if self.minimapButton then
+                        -- Make sure it's showing and properly attached
+                        if not self.minimapButton:IsShown() then
+                            self.minimapButton:Show()
+                            self:Debug("ui", "Reshowing minimap button after zone change")
+                        end
                     else
-                        self:Debug("ui", "Minimap button exists after zone change")
+                        -- Button reference is missing completely, recreate it
+                        self:Debug("ui", "No minimap button reference after zone change - recreating")
+                        self:InitializeMinimapButton()
                     end
                 end, 1.0)
             end, "MinimapZoneChange")
@@ -190,12 +194,17 @@ end
 
 -- Create the minimap button
 function TWRA:CreateMinimapButton()
-    self:Debug("general", "Creating minimap button")
+    self:Debug("general", "CreateMinimapButton called")
     
-    -- Final check for existing button before creating
-    if self.minimapButton then
-        self:Debug("ui", "Button already exists - destroying before recreation")
-        self:DestroyMinimapButton()
+    -- Check if button already exists - if it does, just return it
+    if self.minimapButton and self.minimapButton:IsShown() then
+        self:Debug("ui", "Minimap button already exists and is shown - not recreating")
+        return self.minimapButton
+    elseif self.minimapButton then
+        -- If button exists but is hidden, just show it and return
+        self.minimapButton:Show()
+        self:Debug("ui", "Existing minimap button was hidden - showing it")
+        return self.minimapButton
     end
     
     -- Create a frame for our minimap button (with explicit global name for cleanup)
