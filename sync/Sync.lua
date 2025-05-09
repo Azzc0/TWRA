@@ -527,34 +527,6 @@ function TWRA:CHAT_MSG_ADDON(prefix, message, distribution, sender)
     self:OnChatMsgAddon(prefix, message, distribution, sender)
 end
 
--- Function to request a specific section from group
-function TWRA:RequestSectionSync(sectionIndex, timestamp)
-    -- Check if we're in a group
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
-        self:Debug("sync", "Not in a group, skipping section request")
-        return false
-    end
-    
-    -- Make sure we have a valid timestamp
-    if not timestamp or timestamp == 0 then
-        self:Debug("sync", "No specific timestamp provided for section request, using current")
-        if TWRA_Assignments and TWRA_Assignments.timestamp then
-            timestamp = TWRA_Assignments.timestamp
-        else
-            timestamp = 0
-        end
-    end
-    
-    -- Create the request message using our generator
-    local message = self:CreateSectionRequestMessage(timestamp, sectionIndex)
-    
-    -- Send the request
-    self:SendAddonMessage(message)
-    self:Debug("sync", "Requested section " .. sectionIndex .. " with timestamp " .. timestamp)
-    
-    return true
-end
-
 -- Function to send structure data in response to a request
 function TWRA:SendStructureResponse(timestamp)
     -- Get the structure data
@@ -1097,7 +1069,7 @@ function TWRA:SendAllSections()
     -- Final user notification
     TWRA:Debug("sync", "Bulk sync complete with reversed order (sections first, structure last)!")
     
-    collectgarbage("collect")
+    collectgarbage(0) -- Fixed: In Lua 5.0, collectgarbage takes a number, not a string
     return true
 end
 

@@ -376,6 +376,25 @@ SlashCmdList["TWRA"] = function(msg)
         return
     end
     
+    -- Check for GUID-related commands
+    if args[1] == "guid" or args[1] == "targetguid" then
+        -- Get current target GUID
+        if TWRA.GetCurrentTargetGuid then
+            TWRA:GetCurrentTargetGuid()
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: GetCurrentTargetGuid function not available")
+        end
+        return
+    elseif args[1] == "listguids" then
+        -- List all stored GUIDs
+        if TWRA.ListAllGuids then
+            TWRA:ListAllGuids()
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: ListAllGuids function not available")
+        end
+        return
+    end
+    
     -- Check for decursive commands
     if args[1] == "decursive" then
         -- Get the subcommand (if any)
@@ -511,6 +530,8 @@ SlashCmdList["TWRA"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /twra # - Go to specific section number")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Access debug commands")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive - Decursive priority list commands")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra guid - Get current target GUID")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra listguids - List all stored GUIDs")
         DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra perf' for performance monitoring options")
         DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra debug' for detailed debug options")
         DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra decursive' for Decursive priority list options")
@@ -783,7 +804,7 @@ function TWRA:OnGroupChanged()
         self:ScheduleTimer(function()
             -- Double-check that we're still in a group
             if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-                self:Debug("sync", "Requesting bulk sync after joining group", true)
+                self:Debug("sync", "Requesting bulk sync after joining group")
                 
                 -- Only request sync if LiveSync is enabled
                 if self.SYNC.liveSync then

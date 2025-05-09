@@ -935,7 +935,14 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
                 -- Format: [Role, Icon, Target, Tank1, Tank2, ...]
                 table.insert(entry, roleInfo.role)  -- Role
                 table.insert(entry, icon)           -- Icon
-                table.insert(entry, target)         -- Target
+                
+                -- If target is empty but icon is present, use icon name as target
+                if (not target or target == "") and icon and icon ~= "" then
+                    self:Debug("data", "Using icon name as target for empty target: " .. icon, false, true)
+                    table.insert(entry, icon)       -- Use icon name as target
+                else
+                    table.insert(entry, target)     -- Target
+                end
                 
                 -- Add all tank names
                 for _, tankName in ipairs(tankNames) do
@@ -968,7 +975,7 @@ function TWRA:GenerateOSDInfoForSection(section, relevantRows, isGroupAssignment
                 table.insert(osdInfo, entry)
                 
                 self:Debug("data", "Added OSD entry for role " .. roleInfo.role .. 
-                          " on target " .. target .. " with " .. 
+                          " on target " .. (entry[3] or "none") .. " with " .. 
                           table.getn(tankNames) .. " tanks, role type: " ..
                           roleType .. ", reference type: " ..
                           (roleInfo.referenceType or "none"), false, true)

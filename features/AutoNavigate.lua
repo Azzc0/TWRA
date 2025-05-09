@@ -498,5 +498,42 @@ function TWRA:ListAllGuids()
     self:Debug("nav", "End of GUID listing")
 end
 
+-- Extract GUID of current target and add to chat for easier assignment setup
+function TWRA:GetCurrentTargetGuid()
+    -- Check if SuperWoW is available
+    if not self:CheckSuperWoWSupport(true) then
+        self:Debug("error", "SuperWoW is required to get target GUID")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444TWRA:|r SuperWoW is required to get target GUID")
+        return
+    end
+    
+    -- Check if player has a target
+    if not UnitExists("target") then
+        self:Debug("nav", "No target selected")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r No target selected. Please select a target to get its GUID.")
+        return
+    end
+    
+    -- Get target info using SuperWoW's enhanced UnitExists
+    local exists, guid = UnitExists("target")
+    local name = UnitName("target")
+    
+    -- Validate GUID
+    if not guid or guid == "" then
+        self:Debug("nav", "No GUID available for current target")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Could not get GUID for " .. name)
+        return
+    end
+    
+    -- Format the output in a way that's easy to copy-paste
+    local output = "GUID: " .. guid .. " - " .. name
+    
+    -- Print to chat for user to copy
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r " .. output)
+    
+    -- Return the GUID in case other functions want to use it
+    return guid
+end
+
 -- Execute registration immediately
 TWRA:RegisterAutoNavigateEvents()

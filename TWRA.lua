@@ -74,9 +74,9 @@ function TWRA:NavigateToSection(index, source)
         if self.SYNC then
             self.SYNC.pendingSection = index
         end
-        if self.RequestSectionSync then
+        if self.RequestBulkSync then
             self:Debug("nav", "Requesting section data for index: " .. index)
-            self:RequestSectionSync(index)
+            self:RequestBulkSync(index)
         else
             self:Debug("nav", "RequestSectionData function not available but data is missing")
         end
@@ -831,6 +831,20 @@ SlashCmdList["TWRA"] = function(msg)
             TWRA:HandlePerfCommand(args)
         else
             DEFAULT_CHAT_FRAME:AddMessage("TWRA: Performance monitoring system not initialized")
+        end
+    elseif command == "guid" or command == "targetguid" then
+        -- Get current target GUID
+        if TWRA.GetCurrentTargetGuid then
+            TWRA:GetCurrentTargetGuid()
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: GetCurrentTargetGuid function not available")
+        end
+    elseif command == "listguids" then
+        -- List all stored GUIDs
+        if TWRA.ListAllGuids then
+            TWRA:ListAllGuids()
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: ListAllGuids function not available")
         end
     else
         -- Default behavior - toggle main frame
