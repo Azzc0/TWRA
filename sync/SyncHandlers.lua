@@ -6,7 +6,6 @@ TWRA = TWRA or {}
 if not TWRA.SYNC then
     TWRA.SYNC = {
         PREFIX = "TWRA",
-        useSegmentedSync = true, -- Enable segmented sync by default
         pendingSection = nil     -- Section to navigate to after sync
     }
 end
@@ -18,18 +17,12 @@ function TWRA:InitializeHandlerMap()
     self.syncHandlers = {
         -- Standard messages
         SECTION = self.HandleSectionCommand,
-        ANC = self.HandleAnnounceCommand,
-        SREQ = self.HandleStructureRequestCommand,
-        SRES = self.HandleStructureResponseCommand,
-        SECREQ = self.HandleSectionRequestCommand, 
-        SECRES = self.HandleSectionResponseCommand,
         VER = self.UnusedCommand,
-        DREQ = self.UnusedCommand,
-        DRES = self.UnusedCommand,
-        BULKREQ = self.HandleBulkRequestCommand,
-        BULKRES = self.HandleBulkResponseCommand,
-        BSEC = self.HandleBulkSectionCommand, -- Added BULK_SECTION handler
-        BSTR = self.HandleBulkStructureCommand, -- Added BULK_STRUCTURE handler
+        BSEC = self.HandleBulkSectionCommand, -- Bulk section handler
+        BSTR = self.HandleBulkStructureCommand, -- Bulk structure handler
+        MSREQ = self.HandleMissingSectionsRequestCommand, -- Missing sections request handler
+        MSACK = self.HandleMissingSectionsAckCommand, -- Missing sections acknowledgment handler
+        MSRES = self.HandleMissingSectionResponseCommand, -- Missing section response handler
     }  
     self:Debug("sync", "Initialized message handler map with " .. self:GetTableSize(self.syncHandlers) .. " handlers")
 end
@@ -65,31 +58,6 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
         if self.HandleSectionCommand then
             self:HandleSectionCommand(components[2], components[3], sender)
         end
-    elseif command == self.SYNC.COMMANDS.ANNOUNCE then
-        -- Handle ANNOUNCE (new import)
-        if self.HandleAnnounceCommand then
-            self:HandleAnnounceCommand(components[2], sender)
-        end
-    elseif command == self.SYNC.COMMANDS.STRUCTURE_REQUEST then
-        -- Handle SREQ (structure request)
-        if self.HandleStructureRequestCommand then
-            self:HandleStructureRequestCommand(components[2], sender)
-        end
-    elseif command == self.SYNC.COMMANDS.STRUCTURE_RESPONSE then
-        -- Handle SRES (structure response)
-        if self.HandleStructureResponseCommand then
-            self:HandleStructureResponseCommand(message, sender)
-        end
-    elseif command == self.SYNC.COMMANDS.SECTION_REQUEST then
-        -- Handle SECREQ (section request)
-        if self.HandleSectionRequestCommand then
-            self:HandleSectionRequestCommand(components[2], components[3], sender)
-        end
-    elseif command == self.SYNC.COMMANDS.SECTION_RESPONSE then
-        -- Handle SECRES (section response)
-        if self.HandleSectionResponseCommand then
-            self:HandleSectionResponseCommand(components[2], components[3], self:ExtractDataPortion(message, 4), sender)
-        end
     elseif command == self.SYNC.COMMANDS.BULK_SECTION then
         -- Handle BSEC (bulk section transmission without processing)
         if self.HandleBulkSectionCommand then
@@ -104,6 +72,21 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
         -- Handle VER (version check)
         if self.HandleVersionCommand then
             self:HandleVersionCommand(components[2], sender)
+        end
+    elseif command == self.SYNC.COMMANDS.MISS_SEC_REQ then
+        -- Handle MSREQ (missing sections request)
+        if self.HandleMissingSectionsRequestCommand then
+            self:HandleMissingSectionsRequestCommand(components[2], components[3], components[4], sender)
+        end
+    elseif command == self.SYNC.COMMANDS.MISS_SEC_ACK then
+        -- Handle MSACK (missing sections acknowledgment)
+        if self.HandleMissingSectionsAckCommand then
+            self:HandleMissingSectionsAckCommand(components[2], components[3], components[4], sender)
+        end
+    elseif command == self.SYNC.COMMANDS.MISS_SEC_RESP then
+        -- Handle MSRES (missing section response)
+        if self.HandleMissingSectionResponseCommand then
+            self:HandleMissingSectionResponseCommand(components[2], components[3], self:ExtractDataPortion(message, 4), sender)
         end
     else
         -- Unknown command - log it but don't act
@@ -193,12 +176,10 @@ function TWRA:HandleSectionCommand(timestamp, sectionIndex, sender)
         
         -- Request the data using the RECEIVED timestamp (not our own)
         -- Use segmented sync if available, otherwise fall back to legacy sync
-        if self.SYNC.useSegmentedSync and self.RequestStructureSync then
+        if self.RequestStructureSync then
             self:Debug("sync", "Using segmented sync for newer data")
             self:RequestStructureSync(timestamp)
         else
-            self:Debug("sync", "Falling back to legacy sync for newer data")
-            -- Legacy sync is not implemented in this version, so log that
             self:Debug("sync", "Legacy sync not available in this version", true)
         end
     end
@@ -296,10 +277,6 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
             
             -- Reset the entire compressed assignments table
             TWRA_CompressedAssignments = {}
-        else
-            -- Timestamps match, remove the bulkSyncTimestamp flag
-            self:Debug("sync", "BULK_STRUCTURE timestamp matches bulkSyncTimestamp, clearing flag")
-            TWRA_CompressedAssignments.bulkSyncTimestamp = nil
         end
     end
     
@@ -363,7 +340,7 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
     end
     
     if hasSections then
-        self:Debug("sync", "Processing bulk structure after receiving bulk sections")
+        self:Debug("sync", "Sections available after receiving bulk structure")
         
         -- Get the current section name or index
         local currentSection = TWRA_Assignments and TWRA_Assignments.currentSectionName or 1
@@ -399,11 +376,15 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
             self:Debug("sync", "Invalid currentSection type, defaulting to section 1")
             currentSection = 1
         end
+
+        self:ProcessSectionData()
         
-        -- Process the sections before navigating anywhere.
-        
+        -- Navigate to the selected section after processing all data
         if self.NavigateToSection then
-            self:NavigateToSection(currentSection, "bulkSync")
+            -- CRITICAL FIX: Use "fromSync" context instead of "bulkSync" to prevent broadcast
+            -- "bulkSync" wasn't being recognized in the broadcast prevention logic
+            self:Debug("sync", "Navigating to section " .. currentSection .. " with 'fromSync' context to prevent broadcasting")
+            self:NavigateToSection(currentSection, "fromSync")
         else
             self:Debug("error", "NavigateToSection function not available")
         end
@@ -439,6 +420,28 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
                 self:Debug("sync", "Navigated to first section (no section data)")
             end
         end, 0.3)
+    end
+    
+    -- Check if we have any missing sections after processing
+    local missingCount = 0
+    if TWRA_CompressedAssignments.sections and TWRA_CompressedAssignments.sections.missing then
+        for idx, _ in pairs(TWRA_CompressedAssignments.sections.missing) do
+            if type(idx) == "number" then
+                missingCount = missingCount + 1
+            end
+        end
+    end
+    
+    -- Only clear bulkSyncTimestamp if we have no missing sections
+    if missingCount == 0 then
+        self:Debug("sync", "No missing sections, clearing bulkSyncTimestamp")
+        TWRA_CompressedAssignments.bulkSyncTimestamp = nil
+    else
+        self:Debug("sync", "Still have " .. missingCount .. " missing sections, keeping bulkSyncTimestamp")
+        
+        -- Request missing sections through whisper to sender
+        self:Debug("sync", "Requesting " .. missingCount .. " missing sections from " .. sender)
+        self:RequestMissingSectionsWhisper(sender, timestamp)
     end
     
     return true
@@ -499,243 +502,366 @@ function TWRA:HandleStructureResponseCommand(timestamp, structureData, sender)
         end
         
         self:ProcessStructureData(structureData, timestamp, sender)
+        TWRA:ProcessSectionData()
     end
     
     return true
 end
 
--- Function to process structure data (shared by both SRES and BSTR handlers)
-function TWRA:ProcessStructureData(structureData, timestamp, sender)
-    self:Debug("sync", "Processing structure data with timestamp: " .. timestamp)
+-- Function to request missing sections via whisper to the original sender
+function TWRA:RequestMissingSectionsWhisper(sender, timestamp, timeoutSeconds)
+    self:Debug("sync", "Requesting missing sections via hidden addon whisper to " .. sender)
     
-    -- Make sure we have valid data
-    if not structureData or structureData == "" then
-        self:Debug("error", "Cannot process empty structure data")
+    -- Skip if not valid
+    if not sender or not timestamp then
+        self:Debug("error", "Missing required arguments for RequestMissingSectionsWhisper")
         return false
     end
     
-    -- Ensure TWRA_CompressedAssignments exists
-    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
-    
-    -- Store the compressed structure
-    TWRA_CompressedAssignments.structure = structureData
-    TWRA_CompressedAssignments.timestamp = timestamp
-    
-    -- Update TWRA_Assignments timestamp
-    TWRA_Assignments = TWRA_Assignments or {}
-    TWRA_Assignments.timestamp = timestamp
-    
-    -- Try to decompress the structure
-    local success, decodedStructure = pcall(function()
-        return self:DecompressStructureData(structureData)
-    end)
-    
-    if not success or not decodedStructure then
-        self:Debug("error", "Failed to decompress structure data: " .. (decodedStructure or "unknown error"))
+    -- Ensure TWRA_CompressedAssignments exists and has sections
+    if not TWRA_CompressedAssignments or not TWRA_CompressedAssignments.sections then
+        self:Debug("error", "No compressed assignments data available")
         return false
     end
     
-    -- IMPORTANT: Completely rebuild TWRA_Assignments to match the new structure
-    -- Initialize data table if it doesn't exist
-    TWRA_Assignments.data = TWRA_Assignments.data or {}
+    -- Mark as timestamp for this sync process
+    TWRA_CompressedAssignments.bulkSyncTimestamp = timestamp
     
-    -- If we're receiving a completely new structure, clear the existing data table
-    -- but preserve any sections that exist in the new structure to retain data
-    local preserveSections = {}
-    for index, _ in pairs(decodedStructure) do
-        if type(index) == "number" and TWRA_Assignments.data[index] then
-            preserveSections[index] = TWRA_Assignments.data[index]
-        end
+    -- Initialize missing sections list if needed
+    if not TWRA_CompressedAssignments.sections.missing then
+        self:Debug("sync", "No missing sections to request")
+        return false
     end
     
-    -- Clear and rebuild the data table
-    TWRA_Assignments.data = {}
+    -- Build a comma-separated list of missing section indices
+    local missingSectionsList = ""
+    local missingSectionsCount = 0
     
-    -- Process section structure into TWRA_Assignments
-    local sectionsFound = 0
-    for index, sectionName in pairs(decodedStructure) do
-        if type(index) == "number" and type(sectionName) == "string" then
-            -- Check if we had preserved data for this section
-            if preserveSections[index] then
-                -- Restore the preserved section data but update the name
-                TWRA_Assignments.data[index] = preserveSections[index]
-                TWRA_Assignments.data[index]["Section Name"] = sectionName
-                self:Debug("sync", "Restored preserved section data for: " .. sectionName)
-            else
-                -- Create a new section entry
-                TWRA_Assignments.data[index] = {
-                    ["Section Name"] = sectionName,
-                    ["Section Index"] = index,
-                    ["NeedsProcessing"] = true,
-                    ["Section Metadata"] = {
-                        ["Note"] = {},
-                        ["Warning"] = {},
-                        ["GUID"] = {}
-                    }
-                }
-                self:Debug("sync", "Created new section entry for: " .. sectionName)
+    for idx, _ in pairs(TWRA_CompressedAssignments.sections.missing) do
+        if type(idx) == "number" then
+            if missingSectionsList ~= "" then
+                missingSectionsList = missingSectionsList .. ","
             end
-            sectionsFound = sectionsFound + 1
+            missingSectionsList = missingSectionsList .. idx
+            missingSectionsCount = missingSectionsCount + 1
         end
     end
     
-    -- Store section count and update currentSection if needed
-    TWRA_Assignments.sectionCount = sectionsFound
-    if not TWRA_Assignments.currentSection or TWRA_Assignments.currentSection > sectionsFound then
-        TWRA_Assignments.currentSection = 1
-        self:Debug("sync", "Reset currentSection to 1 as previous section was invalid")
+    if missingSectionsList == "" then
+        self:Debug("sync", "No missing sections to request after filtering")
+        return false
     end
     
-    self:Debug("sync", "Updated TWRA_Assignments with " .. sectionsFound .. " sections from structure")
+    -- Create the request message
+    local message = self:CreateMissingSectionsRequestMessage(timestamp, missingSectionsList, "")
     
-    -- Request sections for this structure if we don't already have them
-    if not self.SYNC.bulkSyncInProgress then
-        self:Debug("sync", "Requesting sections for updated structure")
-        self:RequestSectionsAfterStructure(decodedStructure, timestamp)
-    else
-        self:Debug("sync", "Bulk sync in progress, not requesting sections")
+    -- IMPORTANT FIX: Use SendAddonMessage with WHISPER distribution instead of SendChatMessage
+    SendAddonMessage(self.SYNC.PREFIX, message, "WHISPER", sender)
+    
+    self:Debug("sync", "Sent hidden addon whisper request for " .. missingSectionsCount .. " missing sections to " .. sender)
+    
+    -- Set up timeout to fall back to group request if no response
+    local timeoutDelay = timeoutSeconds or 5 -- Default 5 second timeout
+    
+    -- Cancel any existing timeout
+    if self.SYNC.missingSectionsTimeout then
+        self:CancelTimer(self.SYNC.missingSectionsTimeout)
     end
+    
+    -- Store original sender for later reference
+    self.SYNC.missingSectionsOriginalSender = sender
+    self.SYNC.missingSectionsList = missingSectionsList
+    
+    -- Set up the timeout
+    self.SYNC.missingSectionsTimeout = self:ScheduleTimer(function()
+        self:Debug("sync", "Whisper request to " .. sender .. " timed out, falling back to group request")
+        self:RequestMissingSectionsGroup(timestamp, missingSectionsList, sender)
+    end, timeoutDelay)
     
     return true
 end
 
--- Function to process bulk sync data (structure + sections)
-function TWRA:ProcessBulkSyncData(decodedStructure, timestamp)
-    self:Debug("sync", "Processing complete bulk sync data with timestamp: " .. timestamp)
+-- Function to request missing sections from the group (fallback when whisper times out)
+function TWRA:RequestMissingSectionsGroup(timestamp, sectionList, originalSender)
+    self:Debug("sync", "Requesting missing sections from group")
     
-    -- Ensure TWRA_Assignments is initialized
-    TWRA_Assignments = TWRA_Assignments or {}
-    TWRA_Assignments.timestamp = timestamp
-    TWRA_Assignments.data = TWRA_Assignments.data or {}
-    
-    -- Count received sections to check if any are missing
-    local receivedSections = 0
-    local expectedSections = 0
-    for index, _ in pairs(decodedStructure) do
-        if type(index) == "number" then
-            expectedSections = expectedSections + 1
-            if TWRA_CompressedAssignments.sections[index] then
-                receivedSections = receivedSections + 1
-            end
-        end
+    -- Skip if not in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("sync", "Not in a group, cannot request missing sections")
+        return false
     end
     
-    self:Debug("sync", "Received " .. receivedSections .. " out of " .. expectedSections .. " expected sections")
+    -- Either use the provided list or build a new one
+    local missingSectionsList = sectionList
     
-    if receivedSections < expectedSections then
-        -- Some sections are missing, request them
-        self:Debug("sync", "Some sections missing - requesting them")
-        self:RequestMissingSectionsForBulkSync(decodedStructure, timestamp)
-    else
-        -- All sections received, process everything
-        self:Debug("sync", "All sections received, processing complete bulk data")
+    if not missingSectionsList or missingSectionsList == "" then
+        -- Build a comma-separated list of missing section indices
+        missingSectionsList = ""
+        local missingSectionsCount = 0
         
-        -- Process all sections
-        for index, _ in pairs(decodedStructure) do
-            if type(index) == "number" and TWRA_CompressedAssignments.sections[index] then
-                -- Create section placeholders first
-                self:CreateSectionPlaceholder(index, timestamp)
-                
-                -- Then process the section data
-                local sectionData = TWRA_CompressedAssignments.sections[index]
-                local success = self:ProcessCompressedSection(index, sectionData, false, true)
-                
-                if not success then
-                    self:Debug("error", "Failed to process section " .. index .. " during bulk sync")
+        for idx, _ in pairs(TWRA_CompressedAssignments.sections.missing) do
+            if type(idx) == "number" then
+                if missingSectionsList ~= "" then
+                    missingSectionsList = missingSectionsList .. ","
                 end
+                missingSectionsList = missingSectionsList .. idx
+                missingSectionsCount = missingSectionsCount + 1
             end
         end
         
-        -- Extract player-relevant data if needed
-        if self.ExtractPlayerRelevantData then
-            self:ExtractPlayerRelevantData()
-        end
-        
-        -- Navigate to current section and update UI
-        local currentSection = TWRA_Assignments.currentSection or 1
-        self:Debug("sync", "Navigating to section " .. currentSection .. " after processing bulk data")
-        
-        -- Use a timer to allow processing to complete
-        self:ScheduleTimer(function()
-            if self.NavigateToSection then
-                self:NavigateToSection(currentSection, "bulkSync")
-            end
-            
-            -- Refresh UI
-            if self.RefreshAssignmentTable then
-                self:RefreshAssignmentTable()
-            end
-            
-            if self.RebuildOSDIfVisible then
-                self:RebuildOSDIfVisible()
-            end
-            
-            -- Notify user
-            self:Debug("sync", "Bulk sync data processing complete!", true)
-        end, 0.5)
-    end
-end
-
--- Function to request missing sections for bulk sync
-function TWRA:RequestMissingSectionsForBulkSync(decodedStructure, timestamp)
-    self:Debug("sync", "Requesting missing sections for bulk sync")
-    
-    local requestedCount = 0
-    local requestDelay = 0
-    
-    -- Request each missing section with staggered timing
-    for index, _ in pairs(decodedStructure) do
-        if type(index) == "number" then
-            -- Check if we already have this section
-            if not TWRA_CompressedAssignments.sections or not TWRA_CompressedAssignments.sections[index] then
-                -- Schedule each request with increasing delay to prevent network flooding
-                self:ScheduleTimer(function()
-                    if self.RequestSectionSync then
-                        self:Debug("sync", "Requesting missing section " .. index .. " for bulk sync")
-                        self:RequestSectionSync(index, timestamp)
-                        requestedCount = requestedCount + 1
-                    end
-                end, requestDelay)
-                
-                requestDelay = requestDelay + 0.2 -- 200ms between requests
-            end
+        if missingSectionsList == "" then
+            self:Debug("sync", "No missing sections to request from group")
+            return false
         end
     end
     
-    -- Set up a timer to check if we've received all sections
-    self:ScheduleTimer(function()
-        self:CheckBulkSyncCompleteness(decodedStructure, timestamp)
-    end, requestDelay + 5.0) -- Check 5 seconds after last request
+    -- Create and send the request message to the group
+    local message = self:CreateMissingSectionsRequestMessage(timestamp, missingSectionsList, originalSender or "")
+    local success = self:SendAddonMessage(message)
     
-    self:Debug("sync", "Scheduled requests for missing sections: " .. requestedCount)
-end
-
--- Function to check if bulk sync is complete after requesting missing sections
-function TWRA:CheckBulkSyncCompleteness(decodedStructure, timestamp)
-    self:Debug("sync", "Checking bulk sync completeness")
-    
-    -- Count total expected sections and received sections
-    local expectedSections = 0
-    local receivedSections = 0
-    
-    for index, _ in pairs(decodedStructure) do
-        if type(index) == "number" then
-            expectedSections = expectedSections + 1
-            if TWRA_CompressedAssignments.sections and TWRA_CompressedAssignments.sections[index] then
-                receivedSections = receivedSections + 1
-            end
-        end
-    end
-    
-    self:Debug("sync", "Received " .. receivedSections .. " out of " .. expectedSections .. " expected sections")
-    
-    if receivedSections == expectedSections then
-        -- All sections received, process full data
-        self:Debug("sync", "All sections received after requests, processing complete bulk data")
-        self:ProcessBulkSyncData(decodedStructure, timestamp)
+    if success then
+        self:Debug("sync", "Group request for missing sections sent")
     else
-        -- Still missing sections - could retry or notify user
-        self:Debug("sync", "Still missing " .. (expectedSections - receivedSections) .. " sections after requests", true)
+        self:Debug("error", "Failed to send group request for missing sections")
     end
+    
+    return success
+end
+
+-- Function to handle missing sections request messages (MSREQ)
+function TWRA:HandleMissingSectionsRequestCommand(timestamp, sectionList, originalSender, requester)
+    self:Debug("sync", "Received missing sections request from " .. requester .. " with sectionList: " .. sectionList)
+    
+    -- Skip if invalid
+    if not timestamp or not sectionList then
+        self:Debug("error", "Invalid missing sections request: missing timestamp or section list")
+        return false
+    end
+    
+    -- Convert timestamp to number
+    timestamp = tonumber(timestamp)
+    if not timestamp then
+        self:Debug("error", "Invalid timestamp in missing sections request")
+        return false
+    end
+    
+    -- If we're the original sender, respond immediately without acknowledgment
+    local isDirectWhisper = (originalSender == "")
+    local playerName = UnitName("player")
+    
+    if isDirectWhisper or originalSender == playerName then
+        self:Debug("sync", "We are the original sender or this is a direct whisper, responding immediately")
+        return self:SendMissingSections(timestamp, sectionList, requester)
+    end
+    
+    -- Check if we have the requested data with matching timestamp
+    if not TWRA_CompressedAssignments or 
+       not TWRA_CompressedAssignments.timestamp or 
+       TWRA_CompressedAssignments.timestamp ~= timestamp then
+        self:Debug("sync", "We don't have the requested data with matching timestamp")
+        return false
+    end
+    
+    -- Parse the section list
+    local sectionsToSend = {}
+    local sectionsWeHave = {}
+    local sectionsMissing = {}
+    
+    -- Split the comma-separated list
+    for sectionIdx in string.gfind(sectionList, "([^,]+)") do
+        local idx = tonumber(sectionIdx)
+        if idx then
+            table.insert(sectionsToSend, idx)
+            
+            -- Check if we have this section
+            if TWRA_CompressedAssignments.sections and TWRA_CompressedAssignments.sections[idx] then
+                sectionsWeHave[idx] = true
+            else
+                sectionsMissing[idx] = true
+            end
+        end
+    end
+    
+    -- Count how many sections we have
+    local countWeHave = 0
+    for _, _ in pairs(sectionsWeHave) do
+        countWeHave = countWeHave + 1
+    end
+    
+    if countWeHave == 0 then
+        self:Debug("sync", "We don't have any of the requested sections")
+        return false
+    end
+    
+    -- Send acknowledgment to the group first to prevent multiple responses
+    local ackMessage = self:CreateMissingSectionsAckMessage(timestamp, sectionList, requester)
+    self:SendAddonMessage(ackMessage)
+    self:Debug("sync", "Sent acknowledgment for missing sections request to prevent duplication")
+    
+    -- Add a short delay before sending the actual data to allow for other acks
+    self:ScheduleTimer(function()
+        self:SendMissingSections(timestamp, sectionList, requester)
+    end, 0.5)
+    
+    return true
+end
+
+-- Function to handle missing sections acknowledgment messages (MSACK)
+function TWRA:HandleMissingSectionsAckCommand(timestamp, sectionList, requester, respondent)
+    self:Debug("sync", respondent .. " acknowledged missing sections request from " .. requester)
+    
+    -- Only care about acknowledgments for our own requests
+    local playerName = UnitName("player")
+    if requester ~= playerName then
+        self:Debug("sync", "Ignoring acknowledgment for someone else's request")
+        return false
+    end
+    
+    -- Mark that someone is handling our request
+    self.SYNC.missingSectionsAcknowledged = true
+    self.SYNC.missingSectionsRespondent = respondent
+    
+    self:Debug("sync", "Our missing sections request is being handled by " .. respondent)
+    
+    -- Cancel timeout timer for group request since someone is handling it
+    if self.SYNC.missingSectionsTimeout then
+        self:CancelTimer(self.SYNC.missingSectionsTimeout)
+        self.SYNC.missingSectionsTimeout = nil
+    end
+    
+    return true
+end
+
+-- Function to handle missing section response messages (MSRES)
+function TWRA:HandleMissingSectionResponseCommand(timestamp, sectionIndex, sectionData, sender)
+    self:Debug("sync", "Received missing section " .. sectionIndex .. " from " .. sender)
+    
+    -- Skip if invalid
+    if not timestamp or not sectionIndex or not sectionData then
+        self:Debug("error", "Invalid missing section response: missing timestamp, index, or data")
+        return false
+    end
+    
+    -- Convert parameters to proper types
+    timestamp = tonumber(timestamp)
+    sectionIndex = tonumber(sectionIndex)
+    
+    if not timestamp or not sectionIndex then
+        self:Debug("error", "Invalid types in missing section response")
+        return false
+    end
+    
+    -- Make sure TWRA_CompressedAssignments and its sections exist
+    if not TWRA_CompressedAssignments then
+        TWRA_CompressedAssignments = {}
+    end
+    
+    if not TWRA_CompressedAssignments.sections then
+        TWRA_CompressedAssignments.sections = {}
+    end
+    
+    -- Store the data
+    TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
+    
+    -- Update the missing sections tracking
+    if TWRA_CompressedAssignments.sections.missing then
+        TWRA_CompressedAssignments.sections.missing[sectionIndex] = nil
+    end
+    
+    self:Debug("sync", "Stored missing section " .. sectionIndex)
+    
+    -- Check if we have all sections now
+    local stillMissing = 0
+    if TWRA_CompressedAssignments.sections.missing then
+        for idx, _ in pairs(TWRA_CompressedAssignments.sections.missing) do
+            if type(idx) == "number" then
+                stillMissing = stillMissing + 1
+            end
+        end
+    end
+    
+    -- If no more missing sections, clear the bulkSyncTimestamp and process all data
+    if stillMissing == 0 then
+        self:Debug("sync", "All missing sections received, processing complete data")
+        
+        -- Clear the bulkSyncTimestamp to indicate sync is complete
+        TWRA_CompressedAssignments.bulkSyncTimestamp = nil
+        
+        -- Process all section data
+        self:ProcessSectionData()
+        
+        -- Refresh UI
+        if self.RefreshAssignmentTable then
+            self:RefreshAssignmentTable()
+        else
+            self:Debug("error", "RefreshAssignmentTable function not available")
+        end
+        
+        if self.RebuildOSDIfVisible then
+            self:RebuildOSDIfVisible()
+        end
+        
+        self:Debug("sync", "Missing sections sync complete!", true)
+    else
+        self:Debug("sync", "Still missing " .. stillMissing .. " sections")
+    end
+    
+    return true
+end
+
+-- Function to send missing sections to a requester
+function TWRA:SendMissingSections(timestamp, sectionList, requester)
+    self:Debug("sync", "Sending missing sections to " .. requester)
+    
+    -- Make sure we have the data with matching timestamp
+    if not TWRA_CompressedAssignments or 
+       not TWRA_CompressedAssignments.timestamp or 
+       TWRA_CompressedAssignments.timestamp ~= tonumber(timestamp) then
+        self:Debug("sync", "We don't have the data with matching timestamp")
+        return false
+    end
+    
+    -- Process the section list
+    local sectionsToSend = {}
+    
+    -- Split the comma-separated list
+    for sectionIdx in string.gfind(sectionList, "([^,]+)") do
+        local idx = tonumber(sectionIdx)
+        if idx then
+            table.insert(sectionsToSend, idx)
+        end
+    end
+    
+    -- Count how many we'll send
+    local sectionsCount = table.getn(sectionsToSend)
+    self:Debug("sync", "Preparing to send " .. sectionsCount .. " sections to " .. requester)
+    
+    -- Send each section with a small delay between to prevent network flooding
+    local sendDelay = 0
+    local sentCount = 0
+    
+    for _, sectionIndex in ipairs(sectionsToSend) do
+        -- Check if we have this section
+        if TWRA_CompressedAssignments.sections and TWRA_CompressedAssignments.sections[sectionIndex] then
+            local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
+            
+            -- Schedule sending with increasing delay
+            self:ScheduleTimer(function()
+                -- Create the response message
+                local message = self:CreateMissingSectionResponseMessage(timestamp, sectionIndex, sectionData)
+                
+                -- Use SendAddonMessage with WHISPER distribution for hidden communication
+                SendAddonMessage(self.SYNC.PREFIX, message, "WHISPER", requester)
+                
+                sentCount = sentCount + 1
+                self:Debug("sync", "Sent section " .. sectionIndex .. " via hidden addon whisper to " .. requester .. " (" .. sentCount .. "/" .. sectionsCount .. ")")
+            end, sendDelay)
+            
+            -- Increase delay for next section
+            sendDelay = sendDelay + 0.3 -- 300ms between sections
+        end
+    end
+    
+    return true
 end
 

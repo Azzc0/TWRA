@@ -151,6 +151,9 @@ function TWRA:OnLoad(eventFrame)
         self:Debug("warning", "InitializeGroupMonitoring function not found, group monitoring not initialized")
     end
     
+    -- Register addon messaging
+    self:RegisterAddonMessaging()
+    
     self:Debug("general", "Addon loaded. Type /twra for options.")
 
     -- Create minimap button during load
@@ -728,4 +731,26 @@ function TWRA:BuildNavigationFromNewFormat()
     -- Forward to the canonical implementation
     self:Debug("nav", "BuildNavigationFromNewFormat is deprecated - forwarding to RebuildNavigation")
     return self:RebuildNavigation()
+end
+
+-- Function to register the addon message prefix
+function TWRA:RegisterAddonMessaging()
+    -- Register our addon message prefix if the function exists (introduced in later patches)
+    if RegisterAddonMessagePrefix then
+        local success = RegisterAddonMessagePrefix(self.SYNC.PREFIX)
+        self:Debug("sync", "Registered addon message prefix: " .. self.SYNC.PREFIX .. 
+                 ", Result: " .. tostring(success))
+    end
+
+    -- Register for CHAT_MSG_ADDON event to receive messages from all channels (PARTY, RAID, WHISPER, etc)
+    local frame = getglobal("TWRAEventFrame")
+    if frame then
+        frame:RegisterEvent("CHAT_MSG_ADDON")
+        self:Debug("sync", "Registered for CHAT_MSG_ADDON events")
+    else
+        self:Debug("error", "Event frame not found, couldn't register for CHAT_MSG_ADDON events")
+    end
+    
+    -- Add explicit debug output for these registrations
+    self:Debug("whisper", "Addon messaging registered, can now send/receive WHISPER communications", true)
 end

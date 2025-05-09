@@ -1,8 +1,6 @@
 -- Sync functionality for TWRA
 TWRA = TWRA or {}
 
--- Can a CHAT_MSG_ADDON have a lot of argument? I see that we're sending TWRA SECREQ:TIMESTAMP:INDEX RAID Clickyou
-
 -- Setup initial SYNC module properties
 TWRA.SYNC = TWRA.SYNC or {}
 TWRA.SYNC.PREFIX = "TWRA" -- Addon message prefix
@@ -20,17 +18,11 @@ TWRA.SYNC.sectionChangeHandlerRegistered = false -- Section change handler regis
 TWRA.SYNC.COMMANDS = {
     VERSION = "VER",        -- For version checking
     SECTION = "SECTION",    -- For live section updates
-    DATA_REQUEST = "DREQ",  -- Request full data (legacy)
-    DATA_RESPONSE = "DRES", -- Send full data (legacy)
-    ANNOUNCE = "ANC",        -- Announce new import
-    STRUCTURE_REQUEST = "SREQ",  -- Request structure data
-    STRUCTURE_RESPONSE = "SRES", -- Send structure data
-    SECTION_REQUEST = "SECREQ",   -- Request specific section data
-    SECTION_RESPONSE = "SECRES",  -- Send specific section data
-    BULK_REQUEST = "BULK_REQ",     -- Request bulk data transfer
-    BULK_RESPONSE = "BULK_RES",     -- Bulk data transfer response
-    BULK_SECTION = "BSEC",        -- Bulk section transmission without processing
-    BULK_STRUCTURE = "BSTR"        -- Final structure transmission in bulk mode
+    BULK_SECTION = "BSEC",  -- Bulk section transmission without processing
+    BULK_STRUCTURE = "BSTR", -- Final structure transmission in bulk mode
+    MISS_SEC_REQ = "MSREQ", -- Request for missing sections
+    MISS_SEC_ACK = "MSACK", -- Acknowledge handling missing section request
+    MISS_SEC_RESP = "MSRES" -- Response with missing section data
 }
 
 -- Function to register all sync-related events
@@ -69,6 +61,15 @@ function TWRA:RegisterSyncEvents()
                 end, 0.2)
             end
         end
+    end
+
+    -- Register for the CHAT_MSG_WHISPER event to handle whispered sync commands
+    local frame = getglobal("TWRAEventFrame")
+    if frame then
+        frame:RegisterEvent("CHAT_MSG_WHISPER")
+        self:Debug("sync", "Registered for CHAT_MSG_WHISPER events")
+    else
+        self:Debug("error", "Could not find event frame to register whisper events")
     end
 
     -- Immediately register for the SECTION_CHANGED event
@@ -181,59 +182,6 @@ function TWRA:CreateSectionMessage(timestamp, sectionIndex)
     return self.SYNC.COMMANDS.SECTION .. ":" .. timestamp .. ":" .. sectionIndex
 end
 
--- Function to create an announcement message (ANC)
-function TWRA:CreateAnnounceMessage(timestamp)
-    -- return self.SYNC.COMMANDS.ANNOUNCE .. ":" .. timestamp
-end
-
--- Function to create a structure request message (SREQ)
-function TWRA:CreateStructureRequestMessage(timestamp)
-    return self.SYNC.COMMANDS.STRUCTURE_REQUEST .. ":" .. timestamp
-end
-
--- Function to create a structure response message (SRES)
-function TWRA:CreateStructureResponseMessage(timestamp, structureData)
-    return self.SYNC.COMMANDS.STRUCTURE_RESPONSE .. ":" .. timestamp .. ":" .. structureData
-end
-
--- Function to create a section request message (SECREQ)
-function TWRA:CreateSectionRequestMessage(timestamp, sectionIndex)
-    return self.SYNC.COMMANDS.SECTION_REQUEST .. ":" .. timestamp .. ":" .. sectionIndex
-end
-
--- Function to create a section response message (SECRES)
-function TWRA:CreateSectionResponseMessage(timestamp, sectionIndex, sectionData)
-    return self.SYNC.COMMANDS.SECTION_RESPONSE .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
-end
-
--- Legacy function to create a data request message (DREQ) - Deprecated
-function TWRA:CreateDataRequestMessage(timestamp)
-    self:Debug("sync", "WARNING: Using deprecated DREQ message format")
-    return self.SYNC.COMMANDS.DATA_REQUEST .. ":" .. timestamp
-end
-
--- Legacy function to create a data response message (DRES) - Deprecated
-function TWRA:CreateDataResponseMessage(timestamp, data)
-    self:Debug("sync", "WARNING: Using deprecated DRES message format")
-    return self.SYNC.COMMANDS.DATA_RESPONSE .. ":" .. timestamp .. ":" .. data
-end
-
--- Function to create a version check message (VER)
-function TWRA:CreateVersionMessage(versionNumber)
-    return self.SYNC.COMMANDS.VERSION .. ":" .. versionNumber
-end
-
--- Create a bulk request message (BULKREQ)
-function TWRA:CreateBulkRequestMessage(timestamp, requestId, dataType)
-    return self.SYNC.COMMANDS.BULK_REQUEST .. ":" .. timestamp .. ":" .. requestId .. ":" .. dataType
-end
-
--- Create a bulk response message (BULKRES)
-function TWRA:CreateBulkResponseMessage(timestamp, requestId, dataType, chunk, totalChunks, data)
-    return self.SYNC.COMMANDS.BULK_RESPONSE .. ":" .. timestamp .. ":" .. requestId .. ":" .. 
-           dataType .. ":" .. chunk .. ":" .. totalChunks .. ":" .. data
-end
-
 -- Function to create a bulk section message (BSEC)
 function TWRA:CreateBulkSectionMessage(timestamp, sectionIndex, sectionData)
     return self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
@@ -242,6 +190,27 @@ end
 -- Function to create a bulk structure message (BSTR)
 function TWRA:CreateBulkStructureMessage(timestamp, structureData)
     return self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":" .. structureData
+end
+
+-- Function to create a version message (VER)
+function TWRA:CreateVersionMessage(version)
+    return self.SYNC.COMMANDS.VERSION .. ":" .. version
+end
+
+-- Function to create a missing sections request message (MSREQ)
+function TWRA:CreateMissingSectionsRequestMessage(timestamp, sectionList, originalSender)
+    -- sectionList should be a comma-separated list of section indices
+    return self.SYNC.COMMANDS.MISS_SEC_REQ .. ":" .. timestamp .. ":" .. sectionList .. ":" .. (originalSender or "")
+end
+
+-- Function to create a missing sections acknowledgment message (MSACK)
+function TWRA:CreateMissingSectionsAckMessage(timestamp, sectionList, requester)
+    return self.SYNC.COMMANDS.MISS_SEC_ACK .. ":" .. timestamp .. ":" .. sectionList .. ":" .. requester
+end
+
+-- Function to create a missing section response message (MSRES)
+function TWRA:CreateMissingSectionResponseMessage(timestamp, sectionIndex, sectionData)
+    return self.SYNC.COMMANDS.MISS_SEC_RESP .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
 end
 
 -- Compare timestamps and return relationship between them
@@ -982,8 +951,8 @@ function TWRA:SendAllSections()
     
     -- Report section sending results
     self:Debug("sync", "Completed sending sections. Successfully sent " .. 
-             sentCount .. " out of " .. sectionCount .. " sections. " ..
-             emptyCount .. " empty sections skipped. " ..
+             sentCount .. " out of " .. sectionCount .. " sections. " .. 
+             emptyCount .. " empty sections skipped. " .. 
              errorCount .. " errors.")
     
     -- REVERSED ORDER: Now get the structure data and send it LAST

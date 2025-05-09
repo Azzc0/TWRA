@@ -80,7 +80,7 @@ function TWRA:NavigateToSection(index, source)
         else
             self:Debug("nav", "RequestSectionData function not available but data is missing")
         end
-        -- return false -- Always return here to stop execution if compressed data is missing
+        -- return false -- We're no longer stopping, we're adding text to the frame to show the state instead.
     end
     
     -- Check if section data needs processing
@@ -358,30 +358,30 @@ logoutFrame:SetScript("OnEvent", function()
     end
 end)
 
--- -- Event handler for all game events
--- function TWRA:OnEvent(frame, event, ...)
---     self:Debug("error", "OnEvent called from TWRA.lua")
---     self:Debug("general", "Event received: " .. event)
+-- Function to handle CHAT_MSG_ADDON events
+function TWRA:OnChatMsgAddon(prefix, message, distribution, sender)
+    -- Skip messages that aren't from our addon
+    if prefix ~= "TWRA" then
+        return
+    end
     
---     if event == "ADDON_LOADED" and arg1 == "TWRA" then
---         self:Debug("general", "ADDON_LOADED fired for TWRA")
---         -- Initialize addon here
-        
---     elseif event == "PLAYER_ENTERING_WORLD" then
---         self:Debug("general", "PLAYER_ENTERING_WORLD fired")
---         -- Additional initialization
-        
---     elseif event == "CHAT_MSG_ADDON" then
---         self:Debug("sync", "CHAT_MSG_ADDON: " .. arg1 .. " from " .. arg4)
---         self:OnChatMsgAddon(arg1, arg2, arg3, arg4)
-        
---     elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
---         self:Debug("general", event .. " fired")
---         if self.OnGroupChanged then
---             self:OnGroupChanged()
---         end
---     end
--- end
+    -- Always log the message for debugging
+    self:Debug("sync", "Received " .. distribution .. " addon message from " .. sender .. ": " .. self:TruncateString(message, 50), true)
+    
+    -- Route the message to our handler if available
+    if self.HandleAddonMessage then
+        self:HandleAddonMessage(message, distribution, sender)
+    else
+        self:Debug("error", "HandleAddonMessage function not available - sync system not initialized properly")
+    end
+end
+
+-- Utility function to truncate strings with ellipsis for better debugging
+function TWRA:TruncateString(str, maxLength)
+    if not str then return "nil" end
+    if string.len(str) <= maxLength then return str end
+    return string.sub(str, 1, maxLength) .. "..."
+end
 
 -- Add this utility function to clean data at all entry points
 function TWRA:CleanAssignmentData(data, isTableFormat)

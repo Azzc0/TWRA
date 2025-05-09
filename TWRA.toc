@@ -39,3 +39,7 @@ core\ItemLink.lua
 sync\SyncHandlers.lua
 sync\ChunkManager.lua
 sync\Sync.lua
+
+# Test modules
+test\SendAllSections.lua
+test\TestWhisper.lua
