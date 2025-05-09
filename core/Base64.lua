@@ -458,17 +458,17 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
                 self:ShowMainView()
             end
             
-            -- Make sure navigation is rebuilt
-            if self.RebuildNavigation then
-                self:Debug("nav", "Rebuilding navigation after import")
-                self:RebuildNavigation()
-            end
+            -- -- Make sure navigation is rebuilt
+            -- if self.RebuildNavigation then
+            --     self:Debug("nav", "Rebuilding navigation after import")
+            --     self:RebuildNavigation()
+            -- end
             
-            -- Navigate to first section
-            if self.NavigateToSection then
-                self:Debug("nav", "Navigating to first section after import")
-                self:NavigateToSection(1)
-            end
+            -- -- Navigate to first section
+            -- if self.NavigateToSection then
+            --     self:Debug("nav", "Navigating to first section after import")
+            --     self:NavigateToSection(1)
+            -- end
             
             -- Clear import text box if it exists
             if self.importEditBox then
@@ -512,11 +512,11 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
             self:Debug("data", "Processed dynamic player information after sync import")
         end
         
-        -- Navigate to first section after sync import
-        if self.NavigateToSection then
-            self:Debug("nav", "Navigating to first section after sync import")
-            self:NavigateToSection(1)
-        end
+        -- -- Navigate to first section after sync import
+        -- if self.NavigateToSection then
+        --     self:Debug("nav", "Navigating to first section after sync import")
+        --     self:NavigateToSection(1)
+        -- end
     end
 end
 
@@ -806,17 +806,17 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                             self:ShowMainView()
                         end
                         
-                        -- IMPORTANT: Make sure navigation is rebuilt
-                        if self.RebuildNavigation then
-                            self:Debug("nav", "Rebuilding navigation after import")
-                            self:RebuildNavigation()
-                        end
+                        -- -- IMPORTANT: Make sure navigation is rebuilt
+                        -- if self.RebuildNavigation then
+                        --     self:Debug("nav", "Rebuilding navigation after import")
+                        --     self:RebuildNavigation()
+                        -- end
                         
-                        -- IMPORTANT: Navigate to first section
-                        if self.NavigateToSection then
-                            self:Debug("nav", "Navigating to first section after import")
-                            self:NavigateToSection(1)
-                        end
+                        -- -- IMPORTANT: Navigate to first section
+                        -- if self.NavigateToSection then
+                        --     self:Debug("nav", "Navigating to first section after import")
+                        --     self:NavigateToSection(1)
+                        -- end
                         
                         -- IMPORTANT: Clear import text box if it exists
                         if self.importEditBox then

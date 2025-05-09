@@ -383,6 +383,11 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
         return
     end
     
+    -- Remember the current section name before we clear data
+    local previousSectionName = nil
+    previousSectionName = TWRA_Assignments.currentSectionName or nil
+    self:Debug("error", "Precious Section name (TWRA_Assignments.currentSectionName): " .. (previousSectionName or "nil"))
+
     local currentSection = nil
     if self.navigation and self.navigation.currentIndex then
         currentSection = self.navigation.currentIndex
@@ -397,40 +402,37 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
         self:Debug("data", "Data cleared successfully")
     end
     
-    -- Check if we're dealing with new format structure (with data.data)
-    if data.data then
-        self:Debug("data", "Detected new format structure in SaveAssignments")
         
-        -- Make sure all rows have entries for all columns
-        if self.EnsureCompleteRows then
-            data = self:EnsureCompleteRows(data)
-            self:Debug("data", "Applied EnsureCompleteRows during SaveAssignments for new format")
-        end
-        
-        -- Process special rows like Note, Warning, GUID and move them to section metadata
-        self:Debug("data", "Processing special rows to move them to section metadata")
-        if self.CaptureSpecialRows then
-            data = self:CaptureSpecialRows(data)
-            self:Debug("data", "Applied CaptureSpecialRows to extract special rows as metadata")
-        end
-        
-        -- ENSURE GROUP ROWS IDENTIFICATION: Now we rely on preserved metadata
-        if self.EnsureGroupRowsIdentified then
-            -- First, we need to store the data temporarily so EnsureGroupRowsIdentified can find it
-            TWRA_Assignments = TWRA_Assignments or {}
-            TWRA_Assignments.data = data.data
-            TWRA_Assignments.timestamp = timestamp or time()
-            TWRA_Assignments.version = 2
-            TWRA_Assignments.source = sourceString
-            
-            -- Now identify all group rows in each section
-            self:EnsureGroupRowsIdentified()
-            self:Debug("data", "Ensured group rows are identified in all sections during SaveAssignments")
-            
-            -- Get the data back after group rows identification
-            data.data = TWRA_Assignments.data
-        end
+    -- Make sure all rows have entries for all columns
+    if self.EnsureCompleteRows then
+        data = self:EnsureCompleteRows(data)
+        self:Debug("data", "Applied EnsureCompleteRows during SaveAssignments for new format")
     end
+    
+    -- Process special rows like Note, Warning, GUID and move them to section metadata
+    self:Debug("data", "Processing special rows to move them to section metadata")
+    if self.CaptureSpecialRows then
+        data = self:CaptureSpecialRows(data)
+        self:Debug("data", "Applied CaptureSpecialRows to extract special rows as metadata")
+    end
+    
+    -- ENSURE GROUP ROWS IDENTIFICATION: Now we rely on preserved metadata
+    if self.EnsureGroupRowsIdentified then
+        -- First, we need to store the data temporarily so EnsureGroupRowsIdentified can find it
+        TWRA_Assignments = TWRA_Assignments or {}
+        TWRA_Assignments.data = data.data
+        TWRA_Assignments.timestamp = timestamp or time()
+        TWRA_Assignments.version = 2
+        TWRA_Assignments.source = sourceString
+        
+        -- Now identify all group rows in each section
+        self:EnsureGroupRowsIdentified()
+        self:Debug("data", "Ensured group rows are identified in all sections during SaveAssignments")
+        
+        -- Get the data back after group rows identification
+        data.data = TWRA_Assignments.data
+    end
+
     
     -- Update the saved variables
     TWRA_Assignments = TWRA_Assignments or {}
@@ -447,13 +449,13 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     TWRA_Assignments.timestamp = timestamp or time()
     TWRA_Assignments.source = sourceString
     
-    -- Set current section to 1 if it doesn't already exist
-    if not self.navigation then
-        self.navigation = {}
-    end
-    if not self.navigation.currentIndex or self.navigation.currentIndex < 1 then
-        self.navigation.currentIndex = 1
-    end
+    -- -- Set current section to 1 if it doesn't already exist
+    -- if not self.navigation then
+    --     self.navigation = {}
+    -- end
+    -- if not self.navigation.currentIndex or self.navigation.currentIndex < 1 then
+    --     self.navigation.currentIndex = 1
+    -- end
     
     -- Generate compressed data for sync if new format
     if data.data then
@@ -473,21 +475,21 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     -- First make sure our hooks run to restore all metadata
     
     -- Announce save to chat if enabled and not suppressed
-    local announceMessage = "Raid assignments " .. (sourceString or "unknown source") .. 
-                          " saved."
-    if self.db and self.db.char and not self.db.char.quietmode and not noAnnounce then
-        -- Check if player is in a party/raid before announcing
-        local inRaid = GetNumRaidMembers() > 0
-        local inParty = GetNumPartyMembers() > 0
+    -- local announceMessage = "Raid assignments " .. (sourceString or "unknown source") .. 
+    --                       " saved."
+    -- if self.db and self.db.char and not self.db.char.quietmode and not noAnnounce then
+    --     -- Check if player is in a party/raid before announcing
+    --     local inRaid = GetNumRaidMembers() > 0
+    --     local inParty = GetNumPartyMembers() > 0
         
-        if inRaid or inParty then
-            self:Debug("general", "Import detected while in party/raid - suppressing announcement")
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r " .. announceMessage)
-        end
-    else
-        self:Debug("general", "Import detected while in party/raid - suppressing announcement")
-    end
+    --     if inRaid or inParty then
+    --         self:Debug("general", "Import detected while in party/raid - suppressing announcement")
+    --     else
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r " .. announceMessage)
+    --     end
+    -- else
+    --     self:Debug("general", "Import detected while in party/raid - suppressing announcement")
+    -- end
     
     -- Trigger events for custom handlers
     self:TriggerEvent("ASSIGNMENTS_SAVED", data)
@@ -496,6 +498,26 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     if self.RebuildNavigation then
         self:Debug("nav", "Rebuilding navigation after import")
         self:RebuildNavigation()
+    end
+    
+    -- Try to find the previous section in the new navigation
+    if previousSectionName and self.navigation and self.navigation.handlers then
+        local targetSectionIndex = nil
+        for idx, name in ipairs(self.navigation.handlers) do
+            if name == previousSectionName then
+                targetSectionIndex = idx
+                self:Debug("nav", "Found previously active section in new data: " .. name .. " (index " .. idx .. ")")
+                break
+            end
+        end
+        
+        -- If we found the section, update the navigation index
+        if targetSectionIndex then
+            self.navigation.currentIndex = targetSectionIndex
+            -- Store the current section in TWRA_Assignments as well
+            TWRA_Assignments.currentSection = targetSectionIndex
+            self:Debug("nav", "Restored navigation to previous section: " .. previousSectionName)
+        end
     end
     
     -- MOVE METADATA RESTORATION HERE - if the hook exists, call it directly
@@ -521,13 +543,14 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
         self:Debug("error", "ProcessPlayerInfo function not available")
     end
     
-    -- Navigate to first section if needed
-    if self.navigation and self.navigation.currentIndex and self.navigation.currentIndex < 1 then
-        if self.NavigateToSection then
-            self:Debug("nav", "Navigating to first section after import")
-            self:NavigateToSection(1)
-        end
-    end
+    -- -- Navigate to first section if needed - but now we check if we have previously restored a section
+    -- if self.navigation and self.navigation.currentIndex and self.navigation.currentIndex < 1 then
+    --     if self.NavigateToSection then
+    --         self:Debug("nav", "Navigating to first section after import (no previous section found)")
+    --         self:NavigateToSection(1)
+    --     end
+    -- end
+    self:NavigateToSection(previousSectionName or 1)
     
     -- Return timestamp for calling functions
     return timestamp or time()
