@@ -10,6 +10,7 @@ TWRA.DEBUG_CATEGORIES = {
     sync = { name = "Sync", default = true, description = "Synchronization messages" },
     data = { name = "Data", default = false, description = "Detailed data processing messages" },
     compress = { name = "Compress", default = true, description = "Compression-related messages" },
+    chunk = { name = "Chunk", default = true, description = "Data chunking messages for sync" },
     nav = { name = "Navigation", default = true, description = "Section navigation events" },
     auto = { name = "Auto", default = true, description = "Automatic features" },
     tank = { name = "Tank", default = true, description = "Tank assignments" },
@@ -137,6 +138,7 @@ function TWRA:InitDebug()
         sync = "FF33FF",     -- Pink
         nav = "FFAA33",      -- Orange
         compress = "33FFFF", -- Cyan
+        chunk = "FF9933",    -- Dark Orange
         osd = "FFFF33",      -- Yellow
         error = "FF0000",    -- Red
         warning = "FFAA00",  -- Orange

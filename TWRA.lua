@@ -185,14 +185,6 @@ function TWRA:Initialize()
                 addon:InitializeDebug()
             end
             
-            -- Initialize Performance monitoring
-            if addon.InitializePerformance then
-                addon:Debug("general", "Initializing performance monitoring system")
-                addon:InitializePerformance()
-            else
-                addon:Debug("error", "InitializePerformance function not found")
-            end
-            
             -- Initialize Sync namespace if needed
             addon.SYNC = addon.SYNC or {}
             
@@ -346,6 +338,78 @@ function TWRA:Initialize()
                       TWRA_Assignments.currentSection)
             self:NavigateToSection(TWRA_Assignments.currentSection, "reload")
         end
+    end
+end
+
+-- Function to load saved assignments from saved variables
+function TWRA:LoadSavedAssignments()
+    self:Debug("data", "Loading saved assignments from saved variables")
+    
+    -- Ensure TWRA_Assignments exists
+    TWRA_Assignments = TWRA_Assignments or {}
+    
+    -- Check if we have saved assignments
+    if TWRA_SavedVariables and TWRA_SavedVariables.assignments and TWRA_SavedVariables.assignments.data then
+        -- Load the assignments data
+        TWRA_Assignments.data = TWRA_SavedVariables.assignments.data
+        TWRA_Assignments.version = TWRA_SavedVariables.assignments.version or 1
+        TWRA_Assignments.timestamp = TWRA_SavedVariables.assignments.timestamp or time()
+        TWRA_Assignments.currentSection = TWRA_SavedVariables.assignments.currentSection or 1
+        
+        self:Debug("data", "Loaded saved assignments with " .. 
+                  (TWRA_Assignments.data and table.getn(TWRA_Assignments.data) or 0) .. 
+                  " sections, version " .. TWRA_Assignments.version)
+        
+        -- Rebuild navigation with the loaded data
+        if self.RebuildNavigation then
+            self:RebuildNavigation()
+            self:Debug("nav", "Navigation rebuilt with saved assignments")
+        else
+            self:Debug("error", "RebuildNavigation function not found")
+        end
+        
+        -- Ensure compressed data is available 
+        if not TWRA_CompressedAssignments then
+            TWRA_CompressedAssignments = {
+                sections = {},
+                structure = nil,
+                timestamp = TWRA_Assignments.timestamp,
+                useSectionCompression = true
+            }
+        end
+        
+        -- Regenerate compressed data if it's missing or empty
+        local needsCompressing = false
+        
+        if not TWRA_CompressedAssignments.sections then
+            TWRA_CompressedAssignments.sections = {}
+            needsCompressing = true
+        else
+            -- Check if sections are empty
+            local sectionCount = 0
+            for _, _ in pairs(TWRA_CompressedAssignments.sections) do
+                sectionCount = sectionCount + 1
+            end
+            
+            needsCompressing = (sectionCount == 0)
+        end
+        
+        -- Generate compression data if needed
+        if needsCompressing then
+            self:Debug("data", "Compressed data missing or empty, regenerating")
+            if self.StoreCompressedData then
+                self:StoreCompressedData()
+            elseif self.StoreSegmentedData then
+                self:StoreSegmentedData()
+            else
+                self:Debug("error", "Cannot regenerate compressed data - required functions missing")
+            end
+        end
+        
+        return true
+    else
+        self:Debug("data", "No saved assignments found in TWRA_SavedVariables")
+        return false
     end
 end
 

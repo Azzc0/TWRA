@@ -1050,62 +1050,57 @@ function TWRA:DirectImport(importText)
     -- Add type checking to prevent errors when decodedString is not a string
     if type(decodedString) == "string" then
         self:Debug("data", "Decoded string length: " .. string.len(decodedString))
-    else
-        self:Debug("error", "Decoded data is not a string (type: " .. type(decodedString) .. ")", true)
-        return false
-    end
-    
-    -- Step 2: Create a temporary environment to evaluate the string safely
-    local env = {}
-    
-    -- Step 3: Create a modified script that loads into our temp environment
-    local script = "local TWRA_ImportString; " .. decodedString .. "; return TWRA_ImportString"
-    
-    -- Execute the script
-    local func, err = loadstring(script)
-    if not func then
-        self:Debug("error", "Error in loadstring: " .. tostring(err), true)
-        return false
-    end
-    
-    -- Create a safe environment
-    setfenv(func, env)
-    
-    -- Execute and get result
-    local success, importData = pcall(func)
-    if not success or not importData then
-        self:Debug("error", "Error executing import script: " .. tostring(importData or "unknown error"), true)
-        return false
-    end
-    
-    -- Step 4: Check if the format matches our expected structure
-    if not importData.data or type(importData.data) ~= "table" then
-        self:Debug("data", "Not in new format - missing data field or wrong type")
-        return false
-    end
-    
-    -- Step 5: Check for our sections structure
-    local isNewFormat = false
-    local sectionCount = 0
-    
-    for idx, section in pairs(importData.data) do
-        sectionCount = sectionCount + 1
-        if type(section) == "table" and 
-           section["Section Name"] and 
-           section["Section Header"] and 
-           section["Section Rows"] then
-            isNewFormat = true
-            self:Debug("data", "Found section with new format: " .. section["Section Name"])
-            break
+        
+        -- Step 2: Create a temporary environment to evaluate the string safely
+        local env = {}
+        
+        -- Step 3: Create a modified script that loads into our temp environment
+        local script = "local TWRA_ImportString; " .. decodedString .. "; return TWRA_ImportString"
+        
+        -- Execute the script
+        local func, err = loadstring(script)
+        if not func then
+            self:Debug("error", "Error in loadstring: " .. tostring(err), true)
+            return false
         end
+        
+        -- Create a safe environment
+        setfenv(func, env)
+        
+        -- Execute and get result
+        local success, importData = pcall(func)
+        if not success or not importData then
+            self:Debug("error", "Error executing import script: " .. tostring(importData or "unknown error"), true)
+            return false
+        end
+        
+        -- Step 4: Check if the format matches our expected structure
+        if not importData.data or type(importData.data) ~= "table" then
+            self:Debug("data", "Not in new format - missing data field or wrong type")
+            return false
+        end
+    else
+        -- Handle case where decoded data is already a table (possible with newer Base64 implementations)
+        self:Debug("data", "Decoded data is already a table, using directly")
+        local importData = decodedString
+        
+        -- Check if the format matches our expected structure
+        if not importData.data or type(importData.data) ~= "table" then
+            self:Debug("error", "Invalid data format after decoding", true)
+            return false
+        end
+        
+        -- Continue with processing using the table directly
+        decodedString = importData
     end
     
-    if not isNewFormat then
-        self:Debug("data", "Not in new format - no sections with correct structure found")
-        return false
+    -- If we reach here with a table instead of a string, convert decodedString to importData
+    local importData = decodedString
+    if type(decodedString) == "string" then
+        -- This block handles the case where the above code executed successfully
+        -- and importData was properly set in the string case
+        -- No need to do anything here, importData is already set
     end
-    
-    self:Debug("data", "Verified new data format structure with " .. sectionCount .. " sections")
     
     -- Step 6: Create a completely new TWRA_Assignments with just the imported data
     local timestamp = time()

@@ -2,93 +2,448 @@
 
 This document maps all functions in the TWRA addon, showing where they are defined and where they are referenced throughout the codebase.
 
-## 1. Core Files
+## 1. UI Files
 
-### 1.1 TWRA.lua
+### 1.1 ui/Frame.lua
+
+- `TWRA:IsExampleData()` - Line 5
+  - Referenced in:
+    - Example.lua:524 (in function )
+    - Example.lua:525 (in self:Debug("error", ")
+    - TWRA.lua:495 (in function )
+    - ui/Frame.lua:6 (in self:Debug("error", " )
+
+- `TWRA:CloseDropdownMenu()` - Line 12
+  - Referenced in:
+    - ui/Frame.lua:97
+    - ui/Frame.lua:132
+    - ui/Frame.lua:145
+    - ui/Frame.lua:163
+    - ui/Frame.lua:175
+
+- `TWRA:RegisterPlayerEvents()` - Line 18
+  - Referenced in:
+
+- `TWRA:CreateMainFrame()` - Line 41
+  - Referenced in:
+    - Example.lua:455
+    - core/Core.lua:283 (in if not TWRA.mainFrame and )
+    - core/Core.lua:284
+    - core/Core.lua:475
+    - core/Core.lua:486
+    - core/Core.lua:548 (in if )
+    - core/Core.lua:549
+    - ui/Minimap.lua:343 (in if not TWRA.mainFrame and )
+    - ui/Minimap.lua:344
+    - ui/Minimap.lua:369 (in if )
+    - ui/Minimap.lua:370
+    - ui/Minimap.lua:531 (in if )
+    - ui/Minimap.lua:532
+
+- `TWRA:LoadInitialContent()` - Line 493
+  - Referenced in:
+    - core/Core.lua:556 (in if )
+    - core/Core.lua:557
+    - core/Core.lua:572 (in if )
+    - core/Core.lua:573
+
+- `TWRA:ShowMainView()` - Line 538
+  - Referenced in:
+    - core/Base64.lua:443 (in if )
+    - core/Base64.lua:445
+    - core/Base64.lua:789 (in if )
+    - core/Base64.lua:791
+    - Example.lua:468
+    - core/Core.lua:504
+    - ui/Frame.lua:119
+    - ui/Minimap.lua:383 (in if )
+    - ui/Minimap.lua:384
+    - ui/Minimap.lua:544 (in if )
+    - ui/Minimap.lua:545
+    - ui/Options.lua:886 (in if )
+    - ui/Options.lua:887
+
+- `TWRA:FilterAndDisplayHandler()` - Line 634
+  - Referenced in:
+    - Example.lua:429 (in if )
+    - Example.lua:430
+    - TWRA.lua:137 (in if )
+    - TWRA.lua:138
+    - TWRA.lua:959 (in if )
+    - TWRA.lua:960
+    - core/DataProcessing.lua:380 (in self.currentView == "main" and )
+    - core/DataProcessing.lua:381
+    - core/DataProcessing.lua:1075 (in self.currentView == "main" and )
+    - core/DataProcessing.lua:1076
+    - core/DataUtility.lua:119
+    - ui/Frame.lua:532
+    - ui/Frame.lua:599
+    - ui/Frame.lua:605
+    - ui/Frame.lua:1232
+
+- `TWRA:CreateFootersNewFormat()` - Line 910
+  - Referenced in:
+    - ui/Frame.lua:900
+
+- `TWRA:ClearFooters()` - Line 1018
+  - Referenced in:
+    - TWRA.lua:920
+    - ui/Frame.lua:520
+    - ui/Frame.lua:578
+    - ui/Frame.lua:667
+    - ui/Frame.lua:912
+    - ui/Frame.lua:1454
+
+- `TWRA:CreateFooterElement()` - Line 1068
+  - Referenced in:
+    - ui/Frame.lua:991 (in local footer = )
+    - ui/Frame.lua:999 (in local footer = )
+
+- `TWRA:RefreshAssignmentTable()` - Line 1213
+  - Referenced in:
+    - core/Utils.lua:223 (in if )
+    - core/Utils.lua:225
+    - Example.lua:435 (in if )
+    - Example.lua:436
+    - ui/Frame.lua:30 (in --             if )
+    - ui/Frame.lua:32 (in --                 )
+    - sync/SyncHandlers.lua:427 (in if )
+    - sync/SyncHandlers.lua:428
+    - sync/SyncHandlers.lua:633 (in if )
+    - sync/SyncHandlers.lua:634
+    - sync/SyncHandlers.lua:651 (in if )
+    - sync/SyncHandlers.lua:652
+    - sync/SyncHandlers.lua:1029 (in if )
+    - sync/SyncHandlers.lua:1030
+
+- `TWRA:CreateRow()` - Line 1235
+  - Referenced in:
+    - ui/Frame.lua:1407 (in self.rowFrames[i] = )
+
+- `TWRA:CreateRows()` - Line 1395
+  - Referenced in:
+    - ui/Frame.lua:894
+
+- `TWRA:ClearRows()` - Line 1413
+  - Referenced in:
+    - TWRA.lua:921
+    - ui/Frame.lua:519
+    - ui/Frame.lua:577
+    - ui/Frame.lua:666
+
+- `TWRA:ApplyRowHighlights()` - Line 1459
+  - Referenced in:
+    - ui/Frame.lua:897
+
+- `TWRA:CreateHeaderCell()` - Line 1569
+  - Referenced in:
+    - ui/Frame.lua:1290 (in cell = )
+    - ui/Frame.lua:1308 (in cell = )
+    - ui/Frame.lua:1320 (in cell = )
+
+- `TWRA:CalculateColumnWidths()` - Line 1614
+  - Referenced in:
+    - ui/Frame.lua:865 (in self.dynamicColumnWidths = )
+
+### 1.2 ui/Minimap.lua
+
+- `TWRA:DestroyMinimapButton()` - Line 12
+  - Referenced in:
+
+- `TWRA:InitializeMinimapButton()` - Line 68
+  - Referenced in:
+    - ui/Minimap.lua:178
+
+- `TWRA:CreateMinimapButton()` - Line 191
+  - Referenced in:
+    - core/Core.lua:158
+    - core/Core.lua:262
+    - core/Core.lua:293 (in if not TWRA.minimapButton and )
+    - core/Core.lua:295
+    - ui/Minimap.lua:100 (in local success = )
+
+- `TWRA:CreateMinimapDropdown()` - Line 608
+  - Referenced in:
+    - ui/Minimap.lua:254
+
+### 1.3 ui/OSD.lua
+
+- `TWRA:InitOSD()` - Line 6
+  - Referenced in:
+    - TWRA.lua:308 (in if )
+    - core/Core.lua:300 (in if )
+    - core/Core.lua:302
+    - ui/OSD.lua:1446
+    - ui/OSD.lua:1461
+    - ui/Options.lua:60 (in if )
+    - ui/Options.lua:61
+
+- `TWRA:GetOSDFrame()` - Line 100
+  - Referenced in:
+    - ui/OSD.lua:1299 (in local frame = )
+    - ui/OSD.lua:1358 (in local frame = )
+    - ui/OSD.lua:1388 (in local frame = )
+
+- `TWRA:UpdateOSDSettings()` - Line 315
+  - Referenced in:
+    - ui/Options.lua:731 (in if )
+    - ui/Options.lua:732
+    - ui/Options.lua:778 (in if )
+    - ui/Options.lua:779
+    - ui/Options.lua:790 (in if )
+    - ui/Options.lua:791
+
+- `TWRA:CreateRowBaseElements()` - Line 341
+  - Referenced in:
+    - ui/OSD.lua:427
+    - ui/OSD.lua:963 (in local roleIcon, roleFontString = )
+
+- `TWRA:CreateAssignmentRow()` - Line 425
+  - Referenced in:
+    - ui/OSD.lua:897 (in local rowWidth = )
+
+- `TWRA:AddTargetDisplay()` - Line 722
+  - Referenced in:
+    - ui/OSD.lua:564 (in rowWidth = rowWidth + )
+    - ui/OSD.lua:569 (in rowWidth = rowWidth + )
+
+- `TWRA:GetIconInfo()` - Line 756
+  - Referenced in:
+    - ui/OSD.lua:576 (in local iconInfo = )
+    - ui/OSD.lua:726 (in local iconInfo = )
+
+- `TWRA:GetRoleIcon()` - Line 760
+  - Referenced in:
+    - ui/OSD.lua:346 (in local iconPath = )
+
+- `TWRA:CreateContent()` - Line 787
+  - Referenced in:
+    - ui/OSD.lua:292
+    - ui/OSD.lua:1327
+
+- `TWRA:CreateDefaultContent()` - Line 934
+  - Referenced in:
+    - ui/OSD.lua:819 (in return )
+    - ui/OSD.lua:826 (in return )
+    - ui/OSD.lua:845 (in return )
+
+- `TWRA:CreateWarnings()` - Line 988
+  - Referenced in:
+    - ui/OSD.lua:300
+    - ui/OSD.lua:1333
+
+- `TWRA:UpdateOSDContent()` - Line 1295
+  - Referenced in:
+    - core/Utils.lua:232 (in if )
+    - core/Utils.lua:239
+    - TWRA.lua:968
+    - core/DataProcessing.lua:353 (in if )
+    - core/DataProcessing.lua:354
+    - core/DataProcessing.lua:387
+    - core/DataProcessing.lua:1082
+    - core/DataUtility.lua:127
+    - ui/OSD.lua:40
+    - ui/OSD.lua:49
+    - ui/OSD.lua:73
+    - ui/OSD.lua:90
+    - ui/Options.lua:374
+    - ui/Options.lua:674 (in if self.OSD and self.OSD.isVisible and )
+    - ui/Options.lua:679
+    - ui/Options.lua:881 (in if self.OSD and self.OSD.isVisible and )
+    - ui/Options.lua:882
+
+- `TWRA:ShowOSDPermanent()` - Line 1350
+  - Referenced in:
+    - ui/Minimap.lua:262 (in if )
+    - ui/Minimap.lua:263
+    - ui/OSD.lua:1452
+    - ui/OSD.lua:1465
+
+- `TWRA:ShowOSD()` - Line 1380
+  - Referenced in:
+    - ui/Minimap.lua:264 (in elseif )
+    - ui/Minimap.lua:266
+    - ui/Minimap.lua:325 (in if )
+    - ui/Minimap.lua:326
+    - ui/Minimap.lua:428 (in if )
+    - ui/Minimap.lua:429
+    - ui/Minimap.lua:445 (in if )
+    - ui/Minimap.lua:446
+    - ui/Minimap.lua:787 (in if not miniButton.osdWasShown and )
+    - ui/Minimap.lua:788
+    - ui/OSD.lua:58
+
+- `TWRA:HideOSD()` - Line 1421
+  - Referenced in:
+    - Example.lua:511
+    - ui/OSD.lua:149
+    - ui/OSD.lua:234
+    - ui/OSD.lua:334
+    - ui/OSD.lua:1407
+    - ui/OSD.lua:1450
+    - ui/OSD.lua:1476
+
+- `TWRA:ToggleOSD()` - Line 1443
+  - Referenced in:
+    - core/Core.lua:447 (in if )
+    - core/Core.lua:448 (in local visible = )
+    - ui/OSD.lua:1478
+    - ui/Options.lua:361 (in local isVisible = )
+
+- `TWRA:TestOSDVisual()` - Line 1458
+  - Referenced in:
+    - ui/OSD.lua:1474
+
+- `TWRA:ShouldShowOSD()` - Line 1482
+  - Referenced in:
+    - ui/OSD.lua:52 (in if )
+
+- `TWRA:ResetOSDPosition()` - Line 1502
+  - Referenced in:
+    - ui/Options.lua:785 (in if )
+    - ui/Options.lua:786
+
+### 1.4 ui/Options.lua
+
+- `TWRA:InitOptions()` - Line 5
+  - Referenced in:
+    - core/Core.lua:202 (in if )
+    - core/Core.lua:204
+
+- `TWRA:UpdateSliderState()` - Line 71
+  - Referenced in:
+
+- `TWRA:CreateCheckbox()` - Line 89
+  - Referenced in:
+    - ui/Options.lua:183 (in local liveSync, liveSyncText = )
+    - ui/Options.lua:188 (in local tankSyncCheckbox, tankSyncText = )
+    - ui/Options.lua:209 (in local autoNavigate, autoNavigateText = )
+    - ui/Options.lua:295
+    - ui/Options.lua:316 (in local showOnNavOSD, showOnNavOSDText = )
+    - ui/Options.lua:321 (in local lockOSD, lockOSDText = )
+
+- `TWRA:CreateOptionsInMainFrame()` - Line 106
+  - Referenced in:
+    - TWRA.lua:908
+
+- `TWRA:RestartAutoNavigateTimer()` - Line 913
+  - Referenced in:
+
+- `TWRA:ApplyInitialSettings()` - Line 940
+  - Referenced in:
+    - ui/Options.lua:65
+
+- `TWRA:DirectImport()` - Line 1007
+  - Referenced in:
+    - ui/Options.lua:806 (in local success = )
+
+### 1.5 ui/UIUtils.lua
+
+- `TWRA:UI:ApplyClassColoring()` - Line 5
+  - Referenced in:
+    - ui/Frame.lua:1357
+    - ui/OSD.lua:500
+    - ui/OSD.lua:667
+
+- `TWRA:UI:CreateIconWithTooltip()` - Line 51
+  - Referenced in:
+    - ui/Options.lua:193
+    - ui/Options.lua:214 (in local autoNavIcon, autoNavIconFrame = )
+    - ui/Options.lua:262 (in local groupIcon, groupIconFrame = )
+    - ui/Options.lua:300 (in local notesIcon, notesIconFrame = )
+
+## 2. Core Files
+
+### 2.1 TWRA.lua
 
 - `TWRA:NavigateToSection()` - Line 12
   - Referenced in:
-    - core/Base64.lua:455 (in if )
-    - core/Base64.lua:457
-    - core/Base64.lua:502 (in if )
-    - core/Base64.lua:504
-    - core/Base64.lua:853 (in if )
-    - core/Base64.lua:855
-    - core/Base64.lua:906 (in if )
-    - core/Base64.lua:908
+    - core/Base64.lua:455 (in -- if )
+    - core/Base64.lua:457 (in --     )
+    - core/Base64.lua:502 (in -- if )
+    - core/Base64.lua:504 (in --     )
+    - core/Base64.lua:801 (in -- if )
+    - core/Base64.lua:803 (in --     )
+    - core/Base64.lua:854 (in if )
+    - core/Base64.lua:856
     - core/Compression.lua:770 (in if )
     - core/Compression.lua:771
     - Example.lua:381
     - Example.lua:506
-    - TWRA.lua:339
-    - core/Core.lua:449
-    - core/Core.lua:598
-    - core/DataUtility.lua:513 (in if )
-    - core/DataUtility.lua:515
+    - TWRA.lua:331
+    - core/Core.lua:468
+    - core/Core.lua:619
+    - core/DataUtility.lua:533 (in --     if )
+    - core/DataUtility.lua:535 (in --         )
+    - core/DataUtility.lua:538
     - ui/Frame.lua:385
     - ui/Minimap.lua:770
     - features/AutoNavigate.lua:243
     - sync/SyncHandlers.lua:167
-    - sync/SyncHandlers.lua:380 (in if )
-    - sync/SyncHandlers.lua:384
-    - sync/SyncHandlers.lua:415 (in if )
-    - sync/SyncHandlers.lua:416
+    - sync/SyncHandlers.lua:624 (in if )
+    - sync/SyncHandlers.lua:628
+    - sync/SyncHandlers.lua:659 (in if )
+    - sync/SyncHandlers.lua:660
 
 - `TWRA:Initialize()` - Line 152
   - Referenced in:
-    - TWRA.lua:827
+    - TWRA.lua:901
+    - sync/ChunkManager.lua:30
 
-- `TWRA:OnChatMsgAddon()` - Line 352
+- `TWRA:LoadSavedAssignments()` - Line 336
+  - Referenced in:
+
+- `TWRA:OnChatMsgAddon()` - Line 415
   - Referenced in:
     - sync/Sync.lua:354 (in function )
     - sync/Sync.lua:498
 
-- `TWRA:TruncateString()` - Line 369
+- `TWRA:TruncateString()` - Line 432
   - Referenced in:
-    - TWRA.lua:359
+    - TWRA.lua:422
 
-- `TWRA:CleanAssignmentData()` - Line 375
+- `TWRA:CleanAssignmentData()` - Line 438
   - Referenced in:
 
-- `TWRA:IsExampleData()` - Line 432
+- `TWRA:IsExampleData()` - Line 495
   - Referenced in:
     - Example.lua:524 (in function )
     - Example.lua:525 (in self:Debug("error", ")
     - ui/Frame.lua:5 (in function )
     - ui/Frame.lua:6 (in self:Debug("error", " )
 
-- `TWRA:AnnounceAssignments()` - Line 448
+- `TWRA:AnnounceAssignments()` - Line 511
   - Referenced in:
     - ui/Frame.lua:133
 
-- `TWRA:SendAnnouncementMessages()` - Line 633
+- `TWRA:SendAnnouncementMessages()` - Line 693
   - Referenced in:
-    - TWRA.lua:630
+    - TWRA.lua:690
 
-- `TWRA:GetAnnouncementChannels()` - Line 721
+- `TWRA:GetAnnouncementChannels()` - Line 781
   - Referenced in:
-    - TWRA.lua:640 (in local channelInfo = )
+    - TWRA.lua:700 (in local channelInfo = )
 
-- `TWRA:ShowOptionsView()` - Line 829
+- `TWRA:ShowOptionsView()` - Line 903
   - Referenced in:
-    - core/Core.lua:459
+    - core/Core.lua:478
     - ui/Frame.lua:116
     - ui/Minimap.lua:350 (in if )
     - ui/Minimap.lua:351
     - ui/Minimap.lua:357 (in if )
     - ui/Minimap.lua:358
 
-- `TWRA:OnGroupChanged()` - Line 874
+- `TWRA:OnGroupChanged()` - Line 948
   - Referenced in:
-    - core/Core.lua:748 (in function )
-    - core/Core.lua:795
-    - core/Core.lua:800
+    - core/Core.lua:769 (in function )
+    - core/Core.lua:816
+    - core/Core.lua:821
 
-### 1.2 core/Base64.lua
+### 2.2 core/Base64.lua
 
 - `TWRA:CompressAssignmentsData()` - Line 87
   - Referenced in:
-    - core/Base64.lua:764 (in local compressedData = )
+    - core/Base64.lua:712 (in local compressedData = )
 
 - `TWRA:DecompressAssignmentsData()` - Line 131
   - Referenced in:
@@ -98,7 +453,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
 
 - `TWRA:PrepareDataForSync()` - Line 179
   - Referenced in:
-    - core/Base64.lua:763 (in local syncReadyData = )
+    - core/Base64.lua:711 (in local syncReadyData = )
 
 - `TWRA:ExpandAbbreviations()` - Line 230
   - Referenced in:
@@ -119,21 +474,21 @@ This document maps all functions in the TWRA addon, showing where they are defin
 
 - `TWRA:DecodeBase64()` - Line 509
   - Referenced in:
-    - ui/Options.lua:1088 (in local decodedString = )
+    - ui/Options.lua:1034 (in local decodedString = )
 
-- `TWRA:TableToLuaString()` - Line 938
+- `TWRA:TableToLuaString()` - Line 886
   - Referenced in:
-    - core/Base64.lua:950 (in result = result .. )
-    - core/Base64.lua:968 (in result = result .. )
+    - core/Base64.lua:898 (in result = result .. )
+    - core/Base64.lua:916 (in result = result .. )
 
-- `TWRA:EncodeBase64()` - Line 985
+- `TWRA:EncodeBase64()` - Line 933
   - Referenced in:
     - core/Base64.lua:125 (in local base64String = )
     - core/Compression.lua:141 (in local encodedData = )
     - core/Compression.lua:159 (in local encodedData = )
     - core/Compression.lua:257 (in compressed = )
 
-### 1.3 core/Compression.lua
+### 2.3 core/Compression.lua
 
 - `TWRA:InitializeCompression()` - Line 5
   - Referenced in:
@@ -159,12 +514,12 @@ This document maps all functions in the TWRA addon, showing where they are defin
 - `TWRA:CompressSectionData()` - Line 169
   - Referenced in:
     - core/Compression.lua:632 (in local sectionData = )
-    - sync/Sync.lua:809 (in if )
-    - sync/Sync.lua:811 (in sectionData = )
+    - sync/Sync.lua:782 (in if )
+    - sync/Sync.lua:784 (in sectionData = )
 
 - `TWRA:DecompressStructureData()` - Line 263
   - Referenced in:
-    - sync/SyncHandlers.lua:295 (in return )
+    - sync/SyncHandlers.lua:539 (in return )
 
 - `TWRA:DecompressSectionData()` - Line 405
   - Referenced in:
@@ -179,16 +534,18 @@ This document maps all functions in the TWRA addon, showing where they are defin
 - `TWRA:StoreSegmentedData()` - Line 592
   - Referenced in:
     - core/Compression.lua:746
+    - TWRA.lua:393 (in elseif )
+    - TWRA.lua:394
     - core/DataProcessing.lua:411 (in if )
     - core/DataProcessing.lua:413 (in return )
     - core/DataUtility.lua:448 (in if )
     - core/DataUtility.lua:449
-    - ui/Options.lua:904 (in elseif )
-    - ui/Options.lua:906
-    - ui/Options.lua:1185 (in if )
-    - ui/Options.lua:1187
-    - ui/Options.lua:1213 (in if )
-    - ui/Options.lua:1214
+    - ui/Options.lua:855 (in elseif )
+    - ui/Options.lua:857
+    - ui/Options.lua:1132 (in if )
+    - ui/Options.lua:1134
+    - ui/Options.lua:1160 (in if )
+    - ui/Options.lua:1161
 
 - `TWRA:DecompressAssignmentsData()` - Line 651
   - Referenced in:
@@ -199,7 +556,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
 - `TWRA:ProcessCompressedData()` - Line 708
   - Referenced in:
 
-### 1.4 core/Core.lua
+### 2.4 core/Core.lua
 
 - `TWRA:OnLoad()` - Line 4
   - Referenced in:
@@ -213,16 +570,16 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - features/AutoNavigate.lua:123
     - sync/Sync.lua:49
 
-- `TWRA:ToggleMainFrame()` - Line 515
+- `TWRA:ToggleMainFrame()` - Line 536
   - Referenced in:
     - Example.lua:462
-    - TWRA.lua:823
-    - core/Core.lua:491
+    - TWRA.lua:897
+    - core/Core.lua:510
 
-- `TWRA:NavigateHandler()` - Line 575
+- `TWRA:NavigateHandler()` - Line 596
   - Referenced in:
-    - core/Core.lua:440
-    - core/Core.lua:444
+    - core/Core.lua:459
+    - core/Core.lua:463
     - ui/Frame.lua:164
     - ui/Frame.lua:176
     - ui/Minimap.lua:419 (in if )
@@ -230,77 +587,79 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - ui/Minimap.lua:436 (in if )
     - ui/Minimap.lua:437
 
-- `TWRA:RebuildNavigation()` - Line 601
+- `TWRA:RebuildNavigation()` - Line 622
   - Referenced in:
-    - core/Base64.lua:449 (in if )
-    - core/Base64.lua:451
+    - core/Base64.lua:449 (in -- if )
+    - core/Base64.lua:451 (in --     )
     - core/Base64.lua:490 (in if )
     - core/Base64.lua:492
-    - core/Base64.lua:847 (in if )
-    - core/Base64.lua:849
-    - core/Base64.lua:894 (in if )
-    - core/Base64.lua:896
+    - core/Base64.lua:795 (in -- if )
+    - core/Base64.lua:797 (in --     )
+    - core/Base64.lua:842 (in if )
+    - core/Base64.lua:844
     - core/Compression.lua:750 (in if )
     - core/Compression.lua:751
     - Example.lua:305 (in if )
     - Example.lua:307
+    - TWRA.lua:355 (in if )
+    - TWRA.lua:356
     - core/Core.lua:211
-    - core/Core.lua:725 (in return )
+    - core/Core.lua:746 (in return )
     - core/DataUtility.lua:483 (in if )
     - core/DataUtility.lua:485
     - ui/Frame.lua:453
-    - sync/SyncHandlers.lua:333 (in if )
-    - sync/SyncHandlers.lua:334
+    - sync/SyncHandlers.lua:577 (in if )
+    - sync/SyncHandlers.lua:578
 
-- `TWRA:SaveCurrentSection()` - Line 664
+- `TWRA:SaveCurrentSection()` - Line 685
   - Referenced in:
     - Example.lua:410
 
-- `TWRA:EnsureUIUtils()` - Line 687
+- `TWRA:EnsureUIUtils()` - Line 708
   - Referenced in:
-    - core/Core.lua:696
+    - core/Core.lua:717
 
-- `TWRA:ResetUI()` - Line 698
+- `TWRA:ResetUI()` - Line 719
   - Referenced in:
     - core/Core.lua:214
 
-- `TWRA:BuildNavigationFromNewFormat()` - Line 722
+- `TWRA:BuildNavigationFromNewFormat()` - Line 743
   - Referenced in:
 
-- `TWRA:RegisterAddonMessaging()` - Line 728
+- `TWRA:RegisterAddonMessaging()` - Line 749
   - Referenced in:
     - core/Core.lua:153
 
-- `TWRA:OnGroupChanged()` - Line 748
+- `TWRA:OnGroupChanged()` - Line 769
   - Referenced in:
-    - TWRA.lua:874 (in function )
-    - core/Core.lua:795
-    - core/Core.lua:800
+    - TWRA.lua:948 (in function )
+    - core/Core.lua:816
+    - core/Core.lua:821
 
-- `TWRA:OnRaidRosterUpdate()` - Line 793
+- `TWRA:OnRaidRosterUpdate()` - Line 814
   - Referenced in:
     - core/Core.lua:266 (in if )
     - core/Core.lua:267
 
-- `TWRA:OnPartyMembersChanged()` - Line 798
+- `TWRA:OnPartyMembersChanged()` - Line 819
   - Referenced in:
     - core/Core.lua:271 (in if )
     - core/Core.lua:272
 
-### 1.5 core/DataProcessing.lua
+### 2.5 core/DataProcessing.lua
 
 - `TWRA:EnsureCompleteRows()` - Line 3
   - Referenced in:
-    - core/Base64.lua:749 (in result = )
-    - core/DataUtility.lua:392 (in if )
-    - core/DataUtility.lua:393 (in data = )
+    - core/Base64.lua:697 (in result = )
+    - core/DataUtility.lua:393 (in if )
+    - core/DataUtility.lua:394 (in data = )
 
 - `TWRA:ProcessPlayerInfo()` - Line 56
   - Referenced in:
     - core/Base64.lua:547 (in if )
     - core/Base64.lua:548
-    - core/Base64.lua:772 (in if )
-    - core/Base64.lua:785
+    - core/Base64.lua:720 (in if )
+    - core/Base64.lua:733
     - core/Compression.lua:760 (in elseif )
     - core/Compression.lua:761
     - Example.lua:396 (in if )
@@ -308,12 +667,12 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/DataProcessing.lua:770 (in if )
     - core/DataProcessing.lua:774
     - core/DataProcessing.lua:778
-    - core/DataUtility.lua:497 (in if )
-    - core/DataUtility.lua:499
-    - ui/Options.lua:923 (in if )
-    - ui/Options.lua:926 (in pcall(function() )
-    - ui/Options.lua:1229 (in if )
-    - ui/Options.lua:1231 (in pcall(function() )
+    - core/DataUtility.lua:517 (in if )
+    - core/DataUtility.lua:519
+    - ui/Options.lua:874 (in if )
+    - ui/Options.lua:877 (in pcall(function() )
+    - ui/Options.lua:1176 (in if )
+    - ui/Options.lua:1178 (in pcall(function() )
 
 - `TWRA:ProcessStaticPlayerInfo()` - Line 73
   - Referenced in:
@@ -328,7 +687,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
   - Referenced in:
     - core/DataProcessing.lua:67
     - core/DataProcessing.lua:371
-    - core/DataProcessing.lua:1059
+    - core/DataProcessing.lua:1066
 
 - `TWRA:ProcessDynamicPlayerInfoForSection()` - Line 240
   - Referenced in:
@@ -342,80 +701,85 @@ This document maps all functions in the TWRA addon, showing where they are defin
   - Referenced in:
     - core/Base64.lua:496 (in if )
     - core/Base64.lua:497
-    - core/Base64.lua:900 (in if )
-    - core/Base64.lua:901
+    - core/Base64.lua:848 (in if )
+    - core/Base64.lua:849
     - core/Compression.lua:758 (in if )
     - core/Compression.lua:759
-    - TWRA.lua:880
+    - TWRA.lua:954
 
 - `TWRA:StoreCompressedData()` - Line 397
   - Referenced in:
     - core/Base64.lua:544
-    - core/Base64.lua:766
-    - ui/Options.lua:901 (in if )
-    - ui/Options.lua:903
-    - ui/Options.lua:1188 (in elseif )
-    - ui/Options.lua:1190
-    - ui/Options.lua:1215 (in elseif )
-    - ui/Options.lua:1216
+    - core/Base64.lua:714
+    - TWRA.lua:391 (in if )
+    - TWRA.lua:392
+    - ui/Options.lua:852 (in if )
+    - ui/Options.lua:854
+    - ui/Options.lua:1135 (in elseif )
+    - ui/Options.lua:1137
+    - ui/Options.lua:1162 (in elseif )
+    - ui/Options.lua:1163
 
 - `TWRA:ClearDataForStructureResponse()` - Line 433
   - Referenced in:
 
 - `TWRA:BuildSkeletonFromStructure()` - Line 462
   - Referenced in:
-    - sync/SyncHandlers.lua:315 (in if )
-    - sync/SyncHandlers.lua:317 (in hasBuiltSkeleton = )
+    - sync/SyncHandlers.lua:559 (in if )
+    - sync/SyncHandlers.lua:561 (in hasBuiltSkeleton = )
 
 - `TWRA:ProcessSectionData()` - Line 523
   - Referenced in:
     - TWRA.lua:86 (in if )
     - TWRA.lua:88
-    - sync/SyncHandlers.lua:377
-    - sync/SyncHandlers.lua:501
-    - sync/SyncHandlers.lua:782
+    - sync/SyncHandlers.lua:399 (in if )
+    - sync/SyncHandlers.lua:401
+    - sync/SyncHandlers.lua:424
+    - sync/SyncHandlers.lua:621
+    - sync/SyncHandlers.lua:745
+    - sync/SyncHandlers.lua:1026
 
 - `TWRA:GenerateOSDInfoForSection()` - Line 809
   - Referenced in:
     - core/DataProcessing.lua:186 (in playerInfo["OSD Assignments"] = )
     - core/DataProcessing.lua:327 (in playerInfo["OSD Group Assignments"] = )
 
-- `TWRA:GetAllGroupRowsForSection()` - Line 966
+- `TWRA:GetAllGroupRowsForSection()` - Line 973
   - Referenced in:
     - core/Compression.lua:228 (in if )
     - core/Compression.lua:229
     - core/DataProcessing.lua:259
-    - core/DataProcessing.lua:1167
-    - core/DataUtility.lua:566 (in metadata["Group Rows"] = )
-    - ui/Options.lua:875
+    - core/DataProcessing.lua:1174
+    - core/DataUtility.lua:587 (in metadata["Group Rows"] = )
+    - ui/Options.lua:826
 
-- `TWRA:UpdateGroupInfo()` - Line 1038
+- `TWRA:UpdateGroupInfo()` - Line 1045
   - Referenced in:
-    - core/DataProcessing.lua:1117
+    - core/DataProcessing.lua:1124
 
-- `TWRA:MonitorGroupChanges()` - Line 1083
+- `TWRA:MonitorGroupChanges()` - Line 1090
   - Referenced in:
-    - core/DataProcessing.lua:1150
+    - core/DataProcessing.lua:1157
 
-- `TWRA:InitializeGroupMonitoring()` - Line 1148
+- `TWRA:InitializeGroupMonitoring()` - Line 1155
   - Referenced in:
     - core/Core.lua:145 (in if )
     - core/Core.lua:147
 
-- `TWRA:EnsureGroupRowsIdentified()` - Line 1153
+- `TWRA:EnsureGroupRowsIdentified()` - Line 1160
   - Referenced in:
-    - core/DataUtility.lua:405 (in if )
-    - core/DataUtility.lua:414
+    - core/DataUtility.lua:406 (in if )
+    - core/DataUtility.lua:415
 
-- `TWRA:IsCellRelevantForPlayer()` - Line 1177
+- `TWRA:IsCellRelevantForPlayer()` - Line 1184
   - Referenced in:
     - core/DataProcessing.lua:885 (in elseif )
 
-- `TWRA:IsCellRelevantForPlayerGroup()` - Line 1208
+- `TWRA:IsCellRelevantForPlayerGroup()` - Line 1215
   - Referenced in:
     - core/DataProcessing.lua:864 (in if )
 
-### 1.6 core/DataUtility.lua
+### 2.6 core/DataUtility.lua
 
 - `TWRA:ConvertSpecialCharacters()` - Line 30
   - Referenced in:
@@ -425,13 +789,13 @@ This document maps all functions in the TWRA addon, showing where they are defin
 
 - `TWRA:FixSpecialCharacters()` - Line 53
   - Referenced in:
-    - core/Base64.lua:757 (in if )
-    - core/Base64.lua:758 (in result = )
+    - core/Base64.lua:705 (in if )
+    - core/Base64.lua:706 (in result = )
     - core/DataUtility.lua:68 (in result[k] = )
 
 - `TWRA:GetCurrentSectionData()` - Line 78
   - Referenced in:
-    - TWRA.lua:463 (in local sectionData = )
+    - TWRA.lua:526 (in local sectionData = )
     - core/DataUtility.lua:113 (in local sectionData = )
     - features/AutoTanks.lua:60 (in local sectionData = )
 
@@ -439,11 +803,11 @@ This document maps all functions in the TWRA addon, showing where they are defin
   - Referenced in:
     - TWRA.lua:140 (in elseif )
     - TWRA.lua:141
-    - TWRA.lua:888 (in elseif )
-    - TWRA.lua:889
-    - ui/Options.lua:1257 (in if )
-    - ui/Options.lua:1268
-    - ui/Options.lua:1290
+    - TWRA.lua:962 (in elseif )
+    - TWRA.lua:963
+    - ui/Options.lua:1204 (in if )
+    - ui/Options.lua:1215
+    - ui/Options.lua:1237
 
 - `TWRA:FindTankRoleColumns()` - Line 133
   - Referenced in:
@@ -456,11 +820,11 @@ This document maps all functions in the TWRA addon, showing where they are defin
 
 - `TWRA:ClearData()` - Line 209
   - Referenced in:
-    - core/Base64.lua:822 (in if )
-    - core/Base64.lua:823
+    - core/Base64.lua:770 (in if )
+    - core/Base64.lua:771
     - Example.lua:274 (in if )
     - Example.lua:275
-    - core/DataUtility.lua:381 (in if not )
+    - core/DataUtility.lua:385 (in if not )
 
 - `TWRA:DeepCopy()` - Line 352
   - Referenced in:
@@ -475,23 +839,23 @@ This document maps all functions in the TWRA addon, showing where they are defin
   - Referenced in:
     - core/Base64.lua:432 (in if )
     - core/Base64.lua:434
-    - core/Base64.lua:830 (in if )
-    - core/Base64.lua:832
+    - core/Base64.lua:778 (in if )
+    - core/Base64.lua:780
     - core/DataUtility.lua:335
 
-- `TWRA:ProcessImportedData()` - Line 523
+- `TWRA:ProcessImportedData()` - Line 544
   - Referenced in:
-    - core/Base64.lua:752 (in if )
-    - core/Base64.lua:753 (in result = )
-    - ui/Options.lua:894 (in if )
-    - ui/Options.lua:896 (in TWRA_Assignments.data = )
+    - core/Base64.lua:700 (in if )
+    - core/Base64.lua:701 (in result = )
+    - ui/Options.lua:845 (in if )
+    - ui/Options.lua:847 (in TWRA_Assignments.data = )
 
-- `TWRA:CaptureSpecialRows()` - Line 533
+- `TWRA:CaptureSpecialRows()` - Line 554
   - Referenced in:
-    - core/DataUtility.lua:399 (in if )
-    - core/DataUtility.lua:400 (in data = )
+    - core/DataUtility.lua:400 (in if )
+    - core/DataUtility.lua:401 (in data = )
 
-### 1.7 core/Debug.lua
+### 2.7 core/Debug.lua
 
 - `TWRA:InitDebug()` - Line 59
   - Referenced in:
@@ -503,7 +867,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Debug.lua:545
     - core/Debug.lua:565
     - core/Debug.lua:643
-    - TWRA.lua:319 (in if )
+    - TWRA.lua:311 (in if )
     - core/Core.lua:111 (in if )
     - core/Core.lua:112
 
@@ -511,7 +875,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
   - Referenced in:
     - core/Debug.lua:719
     - core/Core.lua:206
-    - core/Core.lua:541
+    - core/Core.lua:562
 
 - `TWRA:Debug()` - Line 200
   - Referenced in:
@@ -571,8 +935,8 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Base64.lua:425
     - core/Base64.lua:439
     - core/Base64.lua:444
-    - core/Base64.lua:450
-    - core/Base64.lua:456
+    - core/Base64.lua:450 (in --     )
+    - core/Base64.lua:456 (in --     )
     - core/Base64.lua:462
     - core/Base64.lua:469
     - core/Base64.lua:475
@@ -581,7 +945,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Base64.lua:487
     - core/Base64.lua:491
     - core/Base64.lua:498
-    - core/Base64.lua:503
+    - core/Base64.lua:503 (in --     )
     - core/Base64.lua:511
     - core/Base64.lua:523
     - core/Base64.lua:527
@@ -602,36 +966,31 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Base64.lua:684
     - core/Base64.lua:688
     - core/Base64.lua:693
-    - core/Base64.lua:697
-    - core/Base64.lua:725
-    - core/Base64.lua:729
-    - core/Base64.lua:733
-    - core/Base64.lua:741
-    - core/Base64.lua:762
-    - core/Base64.lua:768
-    - core/Base64.lua:773
-    - core/Base64.lua:786
-    - core/Base64.lua:798
-    - core/Base64.lua:810
+    - core/Base64.lua:710
+    - core/Base64.lua:716
+    - core/Base64.lua:721
+    - core/Base64.lua:734
+    - core/Base64.lua:746
+    - core/Base64.lua:758
+    - core/Base64.lua:769
+    - core/Base64.lua:785
+    - core/Base64.lua:790
+    - core/Base64.lua:796 (in --     )
+    - core/Base64.lua:802 (in --     )
+    - core/Base64.lua:808
+    - core/Base64.lua:815
     - core/Base64.lua:821
-    - core/Base64.lua:837
-    - core/Base64.lua:842
-    - core/Base64.lua:848
-    - core/Base64.lua:854
-    - core/Base64.lua:860
-    - core/Base64.lua:867
+    - core/Base64.lua:824
+    - core/Base64.lua:827
+    - core/Base64.lua:831
+    - core/Base64.lua:839
+    - core/Base64.lua:843
+    - core/Base64.lua:850
+    - core/Base64.lua:855
+    - core/Base64.lua:862
+    - core/Base64.lua:866
     - core/Base64.lua:873
-    - core/Base64.lua:876
-    - core/Base64.lua:879
-    - core/Base64.lua:883
-    - core/Base64.lua:891
-    - core/Base64.lua:895
-    - core/Base64.lua:902
-    - core/Base64.lua:907
-    - core/Base64.lua:914
-    - core/Base64.lua:918
-    - core/Base64.lua:925
-    - core/Base64.lua:932
+    - core/Base64.lua:880
     - core/Compression.lua:10
     - core/Compression.lua:24
     - core/Compression.lua:83
@@ -749,40 +1108,47 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - TWRA.lua:139
     - TWRA.lua:142
     - TWRA.lua:148
-    - TWRA.lua:320
-    - TWRA.lua:324
+    - TWRA.lua:312
+    - TWRA.lua:316
+    - TWRA.lua:329
     - TWRA.lua:337
+    - TWRA.lua:350
+    - TWRA.lua:357
     - TWRA.lua:359
-    - TWRA.lua:365
-    - TWRA.lua:376
-    - TWRA.lua:399
-    - TWRA.lua:407
-    - TWRA.lua:410
-    - TWRA.lua:424
-    - TWRA.lua:433
-    - TWRA.lua:456
-    - TWRA.lua:460
-    - TWRA.lua:465
-    - TWRA.lua:481
-    - TWRA.lua:501
-    - TWRA.lua:504
-    - TWRA.lua:606
-    - TWRA.lua:622
-    - TWRA.lua:626
-    - TWRA.lua:635
-    - TWRA.lua:643
-    - TWRA.lua:667
-    - TWRA.lua:669
-    - TWRA.lua:678
-    - TWRA.lua:684
-    - TWRA.lua:694
-    - TWRA.lua:712
-    - TWRA.lua:765
+    - TWRA.lua:390
+    - TWRA.lua:396
+    - TWRA.lua:402
+    - TWRA.lua:422
+    - TWRA.lua:428
+    - TWRA.lua:439
+    - TWRA.lua:462
+    - TWRA.lua:470
+    - TWRA.lua:473
+    - TWRA.lua:487
+    - TWRA.lua:496
+    - TWRA.lua:519
+    - TWRA.lua:523
+    - TWRA.lua:528
+    - TWRA.lua:544
+    - TWRA.lua:564
+    - TWRA.lua:567
+    - TWRA.lua:666
+    - TWRA.lua:682
+    - TWRA.lua:686
+    - TWRA.lua:695
+    - TWRA.lua:703
+    - TWRA.lua:727
+    - TWRA.lua:729
+    - TWRA.lua:738
+    - TWRA.lua:744
+    - TWRA.lua:754
     - TWRA.lua:772
-    - TWRA.lua:871
-    - TWRA.lua:875
-    - TWRA.lua:887
-    - TWRA.lua:890
+    - TWRA.lua:825
+    - TWRA.lua:832
+    - TWRA.lua:945
+    - TWRA.lua:949
+    - TWRA.lua:961
+    - TWRA.lua:964
     - core/Core.lua:9
     - core/Core.lua:34
     - core/Core.lua:56
@@ -818,46 +1184,46 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Core.lua:313
     - core/Core.lua:315
     - core/Core.lua:328
-    - core/Core.lua:430
-    - core/Core.lua:439
-    - core/Core.lua:443
-    - core/Core.lua:448
-    - core/Core.lua:460
-    - core/Core.lua:465
-    - core/Core.lua:469
-    - core/Core.lua:471
-    - core/Core.lua:477
+    - core/Core.lua:449
+    - core/Core.lua:458
+    - core/Core.lua:462
+    - core/Core.lua:467
     - core/Core.lua:479
-    - core/Core.lua:487
-    - core/Core.lua:518
-    - core/Core.lua:538
-    - core/Core.lua:547
-    - core/Core.lua:554
-    - core/Core.lua:567
-    - core/Core.lua:578
-    - core/Core.lua:602
-    - core/Core.lua:616
-    - core/Core.lua:622
-    - core/Core.lua:644
-    - core/Core.lua:647
-    - core/Core.lua:654
-    - core/Core.lua:658
-    - core/Core.lua:676
-    - core/Core.lua:693
-    - core/Core.lua:699
-    - core/Core.lua:719
-    - core/Core.lua:724
-    - core/Core.lua:732
-    - core/Core.lua:739
-    - core/Core.lua:741
+    - core/Core.lua:484
+    - core/Core.lua:488
+    - core/Core.lua:490
+    - core/Core.lua:496
+    - core/Core.lua:498
+    - core/Core.lua:506
+    - core/Core.lua:539
+    - core/Core.lua:559
+    - core/Core.lua:568
+    - core/Core.lua:575
+    - core/Core.lua:588
+    - core/Core.lua:599
+    - core/Core.lua:623
+    - core/Core.lua:637
+    - core/Core.lua:643
+    - core/Core.lua:665
+    - core/Core.lua:668
+    - core/Core.lua:675
+    - core/Core.lua:679
+    - core/Core.lua:697
+    - core/Core.lua:714
+    - core/Core.lua:720
+    - core/Core.lua:740
     - core/Core.lua:745
-    - core/Core.lua:749
+    - core/Core.lua:753
     - core/Core.lua:760
+    - core/Core.lua:762
     - core/Core.lua:766
-    - core/Core.lua:773
-    - core/Core.lua:776
-    - core/Core.lua:779
-    - core/Core.lua:784
+    - core/Core.lua:770
+    - core/Core.lua:781
+    - core/Core.lua:787
+    - core/Core.lua:794
+    - core/Core.lua:797
+    - core/Core.lua:800
+    - core/Core.lua:805
     - core/DataProcessing.lua:43
     - core/DataProcessing.lua:49
     - core/DataProcessing.lua:58
@@ -942,32 +1308,33 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/DataProcessing.lua:883
     - core/DataProcessing.lua:893
     - core/DataProcessing.lua:907
-    - core/DataProcessing.lua:953
-    - core/DataProcessing.lua:962
-    - core/DataProcessing.lua:971
-    - core/DataProcessing.lua:975
-    - core/DataProcessing.lua:981
-    - core/DataProcessing.lua:984
-    - core/DataProcessing.lua:1008
-    - core/DataProcessing.lua:1019
+    - core/DataProcessing.lua:924
+    - core/DataProcessing.lua:960
+    - core/DataProcessing.lua:969
+    - core/DataProcessing.lua:978
+    - core/DataProcessing.lua:982
+    - core/DataProcessing.lua:988
+    - core/DataProcessing.lua:991
+    - core/DataProcessing.lua:1015
     - core/DataProcessing.lua:1026
-    - core/DataProcessing.lua:1031
-    - core/DataProcessing.lua:1039
-    - core/DataProcessing.lua:1053
-    - core/DataProcessing.lua:1055
-    - core/DataProcessing.lua:1070
-    - core/DataProcessing.lua:1076
-    - core/DataProcessing.lua:1084
-    - core/DataProcessing.lua:1109
-    - core/DataProcessing.lua:1138
-    - core/DataProcessing.lua:1144
-    - core/DataProcessing.lua:1149
-    - core/DataProcessing.lua:1155
-    - core/DataProcessing.lua:1159
-    - core/DataProcessing.lua:1169
-    - core/DataProcessing.lua:1190
-    - core/DataProcessing.lua:1198
-    - core/DataProcessing.lua:1249
+    - core/DataProcessing.lua:1033
+    - core/DataProcessing.lua:1038
+    - core/DataProcessing.lua:1046
+    - core/DataProcessing.lua:1060
+    - core/DataProcessing.lua:1062
+    - core/DataProcessing.lua:1077
+    - core/DataProcessing.lua:1083
+    - core/DataProcessing.lua:1091
+    - core/DataProcessing.lua:1116
+    - core/DataProcessing.lua:1145
+    - core/DataProcessing.lua:1151
+    - core/DataProcessing.lua:1156
+    - core/DataProcessing.lua:1162
+    - core/DataProcessing.lua:1166
+    - core/DataProcessing.lua:1176
+    - core/DataProcessing.lua:1197
+    - core/DataProcessing.lua:1205
+    - core/DataProcessing.lua:1256
     - core/DataUtility.lua:81
     - core/DataUtility.lua:98
     - core/DataUtility.lua:109
@@ -984,40 +1351,47 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/DataUtility.lua:329
     - core/DataUtility.lua:348
     - core/DataUtility.lua:369
-    - core/DataUtility.lua:377
-    - core/DataUtility.lua:380
-    - core/DataUtility.lua:382
+    - core/DataUtility.lua:376
+    - core/DataUtility.lua:381
     - core/DataUtility.lua:384
-    - core/DataUtility.lua:389
-    - core/DataUtility.lua:394
-    - core/DataUtility.lua:398
-    - core/DataUtility.lua:401
-    - core/DataUtility.lua:415
+    - core/DataUtility.lua:386
+    - core/DataUtility.lua:388
+    - core/DataUtility.lua:395
+    - core/DataUtility.lua:399
+    - core/DataUtility.lua:402
+    - core/DataUtility.lua:416
     - core/DataUtility.lua:447
     - core/DataUtility.lua:450
     - core/DataUtility.lua:452
     - core/DataUtility.lua:454
     - core/DataUtility.lua:456
-    - core/DataUtility.lua:471
-    - core/DataUtility.lua:476
+    - core/DataUtility.lua:471 (in --         )
+    - core/DataUtility.lua:476 (in --     )
     - core/DataUtility.lua:484
-    - core/DataUtility.lua:490
-    - core/DataUtility.lua:496
-    - core/DataUtility.lua:503
-    - core/DataUtility.lua:505
-    - core/DataUtility.lua:508
-    - core/DataUtility.lua:514
-    - core/DataUtility.lua:535
-    - core/DataUtility.lua:539
-    - core/DataUtility.lua:548
-    - core/DataUtility.lua:567
-    - core/DataUtility.lua:570
-    - core/DataUtility.lua:595
-    - core/DataUtility.lua:613
-    - core/DataUtility.lua:631
-    - core/DataUtility.lua:657
-    - core/DataUtility.lua:660
+    - core/DataUtility.lua:494
+    - core/DataUtility.lua:504
+    - core/DataUtility.lua:510
+    - core/DataUtility.lua:516
+    - core/DataUtility.lua:523
+    - core/DataUtility.lua:525
+    - core/DataUtility.lua:528
+    - core/DataUtility.lua:534 (in --         )
+    - core/DataUtility.lua:556
+    - core/DataUtility.lua:560
+    - core/DataUtility.lua:569
+    - core/DataUtility.lua:588
+    - core/DataUtility.lua:591
+    - core/DataUtility.lua:616
+    - core/DataUtility.lua:634
+    - core/DataUtility.lua:655
     - core/DataUtility.lua:668
+    - core/DataUtility.lua:672
+    - core/DataUtility.lua:685
+    - core/DataUtility.lua:690
+    - core/DataUtility.lua:703
+    - core/DataUtility.lua:730
+    - core/DataUtility.lua:733
+    - core/DataUtility.lua:741
     - ui/UIUtils.lua:8
     - ui/UIUtils.lua:43
     - ui/Frame.lua:6
@@ -1139,124 +1513,123 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - ui/OSD.lua:80
     - ui/OSD.lua:89
     - ui/OSD.lua:96
-    - ui/OSD.lua:156
-    - ui/OSD.lua:159
-    - ui/OSD.lua:176
-    - ui/OSD.lua:182
-    - ui/OSD.lua:186
-    - ui/OSD.lua:198
-    - ui/OSD.lua:204
-    - ui/OSD.lua:209
+    - ui/OSD.lua:191
+    - ui/OSD.lua:194
     - ui/OSD.lua:211
-    - ui/OSD.lua:213
-    - ui/OSD.lua:220
+    - ui/OSD.lua:217
+    - ui/OSD.lua:221
+    - ui/OSD.lua:233
+    - ui/OSD.lua:239
     - ui/OSD.lua:244
-    - ui/OSD.lua:276
-    - ui/OSD.lua:282
-    - ui/OSD.lua:302
-    - ui/OSD.lua:342
-    - ui/OSD.lua:355
-    - ui/OSD.lua:359
-    - ui/OSD.lua:753
-    - ui/OSD.lua:783
-    - ui/OSD.lua:790
-    - ui/OSD.lua:809
-    - ui/OSD.lua:827
-    - ui/OSD.lua:852
-    - ui/OSD.lua:865
-    - ui/OSD.lua:870
-    - ui/OSD.lua:883
-    - ui/OSD.lua:888
-    - ui/OSD.lua:896
+    - ui/OSD.lua:246
+    - ui/OSD.lua:248
+    - ui/OSD.lua:255
+    - ui/OSD.lua:279
+    - ui/OSD.lua:311
+    - ui/OSD.lua:317
+    - ui/OSD.lua:337
+    - ui/OSD.lua:377
+    - ui/OSD.lua:390
+    - ui/OSD.lua:394
+    - ui/OSD.lua:788
+    - ui/OSD.lua:818
+    - ui/OSD.lua:825
+    - ui/OSD.lua:844
+    - ui/OSD.lua:862
+    - ui/OSD.lua:887
     - ui/OSD.lua:900
-    - ui/OSD.lua:949
-    - ui/OSD.lua:954
+    - ui/OSD.lua:905
+    - ui/OSD.lua:918
+    - ui/OSD.lua:923
+    - ui/OSD.lua:931
+    - ui/OSD.lua:935
+    - ui/OSD.lua:984
     - ui/OSD.lua:989
-    - ui/OSD.lua:995
-    - ui/OSD.lua:1051
-    - ui/OSD.lua:1054
-    - ui/OSD.lua:1255
-    - ui/OSD.lua:1261
-    - ui/OSD.lua:1266
-    - ui/OSD.lua:1277
-    - ui/OSD.lua:1311
-    - ui/OSD.lua:1318
-    - ui/OSD.lua:1325
-    - ui/OSD.lua:1341
-    - ui/OSD.lua:1348
-    - ui/OSD.lua:1355
-    - ui/OSD.lua:1375
-    - ui/OSD.lua:1377
-    - ui/OSD.lua:1402
-    - ui/OSD.lua:1489
-    - ui/Options.lua:68
-    - ui/Options.lua:396
-    - ui/Options.lua:586
-    - ui/Options.lua:600
-    - ui/Options.lua:615
-    - ui/Options.lua:621
-    - ui/Options.lua:626
-    - ui/Options.lua:720
-    - ui/Options.lua:751
-    - ui/Options.lua:777
-    - ui/Options.lua:848
-    - ui/Options.lua:852
-    - ui/Options.lua:865
-    - ui/Options.lua:884
-    - ui/Options.lua:889
-    - ui/Options.lua:895
-    - ui/Options.lua:902
-    - ui/Options.lua:905
-    - ui/Options.lua:919
-    - ui/Options.lua:924
-    - ui/Options.lua:940
-    - ui/Options.lua:956
+    - ui/OSD.lua:1024
+    - ui/OSD.lua:1030
+    - ui/OSD.lua:1086
+    - ui/OSD.lua:1089
+    - ui/OSD.lua:1290
+    - ui/OSD.lua:1296
+    - ui/OSD.lua:1301
+    - ui/OSD.lua:1312
+    - ui/OSD.lua:1346
+    - ui/OSD.lua:1353
+    - ui/OSD.lua:1360
+    - ui/OSD.lua:1376
+    - ui/OSD.lua:1383
+    - ui/OSD.lua:1390
+    - ui/OSD.lua:1410
+    - ui/OSD.lua:1412
+    - ui/OSD.lua:1437
+    - ui/OSD.lua:1524
+    - ui/Options.lua:67
+    - ui/Options.lua:381
+    - ui/Options.lua:563
+    - ui/Options.lua:577
+    - ui/Options.lua:592
+    - ui/Options.lua:598
+    - ui/Options.lua:603
+    - ui/Options.lua:671
+    - ui/Options.lua:702
+    - ui/Options.lua:728
+    - ui/Options.lua:799
+    - ui/Options.lua:803
+    - ui/Options.lua:816
+    - ui/Options.lua:835
+    - ui/Options.lua:840
+    - ui/Options.lua:846
+    - ui/Options.lua:853
+    - ui/Options.lua:856
+    - ui/Options.lua:870
+    - ui/Options.lua:875
+    - ui/Options.lua:891
+    - ui/Options.lua:907
+    - ui/Options.lua:932
+    - ui/Options.lua:936
+    - ui/Options.lua:941
+    - ui/Options.lua:946
+    - ui/Options.lua:955
+    - ui/Options.lua:963
+    - ui/Options.lua:965
+    - ui/Options.lua:968
+    - ui/Options.lua:976
     - ui/Options.lua:982
-    - ui/Options.lua:986
-    - ui/Options.lua:991
-    - ui/Options.lua:996
-    - ui/Options.lua:1005
-    - ui/Options.lua:1013
-    - ui/Options.lua:1015
-    - ui/Options.lua:1018
-    - ui/Options.lua:1026
-    - ui/Options.lua:1032
-    - ui/Options.lua:1034
+    - ui/Options.lua:984
+    - ui/Options.lua:987
+    - ui/Options.lua:992
+    - ui/Options.lua:998
+    - ui/Options.lua:1000
+    - ui/Options.lua:1003
+    - ui/Options.lua:1008
+    - ui/Options.lua:1021
+    - ui/Options.lua:1031
     - ui/Options.lua:1037
-    - ui/Options.lua:1042
-    - ui/Options.lua:1052
-    - ui/Options.lua:1054
-    - ui/Options.lua:1057
-    - ui/Options.lua:1062
-    - ui/Options.lua:1075
-    - ui/Options.lua:1085
-    - ui/Options.lua:1091
-    - ui/Options.lua:1096
+    - ui/Options.lua:1044
+    - ui/Options.lua:1055
+    - ui/Options.lua:1065
+    - ui/Options.lua:1071
+    - ui/Options.lua:1076
+    - ui/Options.lua:1081
     - ui/Options.lua:1107
-    - ui/Options.lua:1117
-    - ui/Options.lua:1123
-    - ui/Options.lua:1138
-    - ui/Options.lua:1144
-    - ui/Options.lua:1148
-    - ui/Options.lua:1160
-    - ui/Options.lua:1178
-    - ui/Options.lua:1181
-    - ui/Options.lua:1186
-    - ui/Options.lua:1189
-    - ui/Options.lua:1199
-    - ui/Options.lua:1203
-    - ui/Options.lua:1224
-    - ui/Options.lua:1230
-    - ui/Options.lua:1238
+    - ui/Options.lua:1125
+    - ui/Options.lua:1128
+    - ui/Options.lua:1133
+    - ui/Options.lua:1136
+    - ui/Options.lua:1146
+    - ui/Options.lua:1150
+    - ui/Options.lua:1171
+    - ui/Options.lua:1177
+    - ui/Options.lua:1185
+    - ui/Options.lua:1193
+    - ui/Options.lua:1201
+    - ui/Options.lua:1205
+    - ui/Options.lua:1221
+    - ui/Options.lua:1227
+    - ui/Options.lua:1235
+    - ui/Options.lua:1241
     - ui/Options.lua:1246
-    - ui/Options.lua:1254
-    - ui/Options.lua:1258
-    - ui/Options.lua:1274
-    - ui/Options.lua:1280
-    - ui/Options.lua:1288
-    - ui/Options.lua:1294
-    - ui/Options.lua:1299
-    - ui/Options.lua:1302
+    - ui/Options.lua:1249
     - features/AutoTanks.lua:14
     - features/AutoTanks.lua:21
     - features/AutoTanks.lua:24
@@ -1335,6 +1708,9 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - features/AutoNavigate.lua:480
     - features/AutoNavigate.lua:483
     - features/AutoNavigate.lua:487
+    - features/AutoNavigate.lua:493
+    - features/AutoNavigate.lua:500
+    - features/AutoNavigate.lua:511
     - core/ItemLink.lua:10
     - core/ItemLink.lua:27
     - core/ItemLink.lua:107
@@ -1353,108 +1729,132 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - sync/SyncHandlers.lua:187
     - sync/SyncHandlers.lua:191
     - sync/SyncHandlers.lua:198
-    - sync/SyncHandlers.lua:219
-    - sync/SyncHandlers.lua:224
-    - sync/SyncHandlers.lua:234
-    - sync/SyncHandlers.lua:238
-    - sync/SyncHandlers.lua:245
-    - sync/SyncHandlers.lua:262
+    - sync/SyncHandlers.lua:213
+    - sync/SyncHandlers.lua:223
+    - sync/SyncHandlers.lua:227
+    - sync/SyncHandlers.lua:255
     - sync/SyncHandlers.lua:271
-    - sync/SyncHandlers.lua:299
-    - sync/SyncHandlers.lua:306
-    - sync/SyncHandlers.lua:316
+    - sync/SyncHandlers.lua:281
+    - sync/SyncHandlers.lua:286
+    - sync/SyncHandlers.lua:303
     - sync/SyncHandlers.lua:319
-    - sync/SyncHandlers.lua:321
-    - sync/SyncHandlers.lua:324
-    - sync/SyncHandlers.lua:332
-    - sync/SyncHandlers.lua:335
-    - sync/SyncHandlers.lua:337
-    - sync/SyncHandlers.lua:341
-    - sync/SyncHandlers.lua:352
-    - sync/SyncHandlers.lua:360
+    - sync/SyncHandlers.lua:328
+    - sync/SyncHandlers.lua:333
+    - sync/SyncHandlers.lua:343
+    - sync/SyncHandlers.lua:346
+    - sync/SyncHandlers.lua:356
     - sync/SyncHandlers.lua:367
-    - sync/SyncHandlers.lua:369
     - sync/SyncHandlers.lua:374
-    - sync/SyncHandlers.lua:383
-    - sync/SyncHandlers.lua:386
-    - sync/SyncHandlers.lua:392
-    - sync/SyncHandlers.lua:399
-    - sync/SyncHandlers.lua:401
-    - sync/SyncHandlers.lua:409
-    - sync/SyncHandlers.lua:411
-    - sync/SyncHandlers.lua:417
-    - sync/SyncHandlers.lua:434
-    - sync/SyncHandlers.lua:437
-    - sync/SyncHandlers.lua:440
-    - sync/SyncHandlers.lua:448
-    - sync/SyncHandlers.lua:458
-    - sync/SyncHandlers.lua:465
-    - sync/SyncHandlers.lua:469
+    - sync/SyncHandlers.lua:380
+    - sync/SyncHandlers.lua:388
+    - sync/SyncHandlers.lua:400
+    - sync/SyncHandlers.lua:418
+    - sync/SyncHandlers.lua:436
+    - sync/SyncHandlers.lua:441
+    - sync/SyncHandlers.lua:446
+    - sync/SyncHandlers.lua:456
+    - sync/SyncHandlers.lua:464
     - sync/SyncHandlers.lua:478
-    - sync/SyncHandlers.lua:481
-    - sync/SyncHandlers.lua:483
-    - sync/SyncHandlers.lua:495
-    - sync/SyncHandlers.lua:508
-    - sync/SyncHandlers.lua:512
-    - sync/SyncHandlers.lua:518
-    - sync/SyncHandlers.lua:527
-    - sync/SyncHandlers.lua:546
-    - sync/SyncHandlers.lua:556
-    - sync/SyncHandlers.lua:572
-    - sync/SyncHandlers.lua:580
-    - sync/SyncHandlers.lua:584
-    - sync/SyncHandlers.lua:607
-    - sync/SyncHandlers.lua:617
-    - sync/SyncHandlers.lua:619
-    - sync/SyncHandlers.lua:626
+    - sync/SyncHandlers.lua:482
+    - sync/SyncHandlers.lua:489
+    - sync/SyncHandlers.lua:506
+    - sync/SyncHandlers.lua:515
+    - sync/SyncHandlers.lua:543
+    - sync/SyncHandlers.lua:550
+    - sync/SyncHandlers.lua:560
+    - sync/SyncHandlers.lua:563
+    - sync/SyncHandlers.lua:565
+    - sync/SyncHandlers.lua:568
+    - sync/SyncHandlers.lua:576
+    - sync/SyncHandlers.lua:579
+    - sync/SyncHandlers.lua:581
+    - sync/SyncHandlers.lua:585
+    - sync/SyncHandlers.lua:596
+    - sync/SyncHandlers.lua:604
+    - sync/SyncHandlers.lua:611
+    - sync/SyncHandlers.lua:613
+    - sync/SyncHandlers.lua:618
+    - sync/SyncHandlers.lua:627
     - sync/SyncHandlers.lua:630
-    - sync/SyncHandlers.lua:637
-    - sync/SyncHandlers.lua:646
-    - sync/SyncHandlers.lua:654
-    - sync/SyncHandlers.lua:685
+    - sync/SyncHandlers.lua:636
+    - sync/SyncHandlers.lua:643
+    - sync/SyncHandlers.lua:645
+    - sync/SyncHandlers.lua:653
+    - sync/SyncHandlers.lua:655
+    - sync/SyncHandlers.lua:661
+    - sync/SyncHandlers.lua:678
+    - sync/SyncHandlers.lua:681
+    - sync/SyncHandlers.lua:684
     - sync/SyncHandlers.lua:692
-    - sync/SyncHandlers.lua:703
-    - sync/SyncHandlers.lua:708
-    - sync/SyncHandlers.lua:716
-    - sync/SyncHandlers.lua:728
-    - sync/SyncHandlers.lua:732
-    - sync/SyncHandlers.lua:741
+    - sync/SyncHandlers.lua:702
+    - sync/SyncHandlers.lua:709
+    - sync/SyncHandlers.lua:713
+    - sync/SyncHandlers.lua:722
+    - sync/SyncHandlers.lua:725
+    - sync/SyncHandlers.lua:727
+    - sync/SyncHandlers.lua:739
+    - sync/SyncHandlers.lua:752
+    - sync/SyncHandlers.lua:756
     - sync/SyncHandlers.lua:762
-    - sync/SyncHandlers.lua:776
-    - sync/SyncHandlers.lua:788
-    - sync/SyncHandlers.lua:795
-    - sync/SyncHandlers.lua:797
-    - sync/SyncHandlers.lua:804
-    - sync/SyncHandlers.lua:810
-    - sync/SyncHandlers.lua:827
-    - sync/SyncHandlers.lua:847
-    - sync/SyncHandlers.lua:859
-    - sync/SyncHandlers.lua:872
-    - sync/SyncHandlers.lua:888
-    - sync/SyncHandlers.lua:894
-    - sync/SyncHandlers.lua:919
-    - sync/SyncHandlers.lua:930
-    - sync/SyncHandlers.lua:937
-    - sync/SyncHandlers.lua:943
-    - sync/SyncHandlers.lua:954
-    - sync/SyncHandlers.lua:974
-    - sync/SyncHandlers.lua:981
-    - sync/SyncHandlers.lua:989
-    - sync/SyncHandlers.lua:991
-    - sync/SyncHandlers.lua:996
+    - sync/SyncHandlers.lua:771
+    - sync/SyncHandlers.lua:790
+    - sync/SyncHandlers.lua:800
+    - sync/SyncHandlers.lua:816
+    - sync/SyncHandlers.lua:824
+    - sync/SyncHandlers.lua:828
+    - sync/SyncHandlers.lua:851
+    - sync/SyncHandlers.lua:861
+    - sync/SyncHandlers.lua:863
+    - sync/SyncHandlers.lua:870
+    - sync/SyncHandlers.lua:874
+    - sync/SyncHandlers.lua:881
+    - sync/SyncHandlers.lua:890
+    - sync/SyncHandlers.lua:898
+    - sync/SyncHandlers.lua:929
+    - sync/SyncHandlers.lua:936
+    - sync/SyncHandlers.lua:947
+    - sync/SyncHandlers.lua:952
+    - sync/SyncHandlers.lua:960
+    - sync/SyncHandlers.lua:972
+    - sync/SyncHandlers.lua:976
+    - sync/SyncHandlers.lua:985
     - sync/SyncHandlers.lua:1006
-    - sync/SyncHandlers.lua:1011
-    - sync/SyncHandlers.lua:1017
-    - sync/SyncHandlers.lua:1022
-    - sync/SyncHandlers.lua:1043
+    - sync/SyncHandlers.lua:1020
+    - sync/SyncHandlers.lua:1032
+    - sync/SyncHandlers.lua:1039
+    - sync/SyncHandlers.lua:1041
     - sync/SyncHandlers.lua:1048
-    - sync/SyncHandlers.lua:1056
+    - sync/SyncHandlers.lua:1054
+    - sync/SyncHandlers.lua:1071
+    - sync/SyncHandlers.lua:1091
+    - sync/SyncHandlers.lua:1103
+    - sync/SyncHandlers.lua:1116
+    - sync/SyncHandlers.lua:1132
+    - sync/SyncHandlers.lua:1138
+    - sync/SyncHandlers.lua:1163
+    - sync/SyncHandlers.lua:1174
+    - sync/SyncHandlers.lua:1181
+    - sync/SyncHandlers.lua:1187
+    - sync/SyncHandlers.lua:1198
+    - sync/SyncHandlers.lua:1218
+    - sync/SyncHandlers.lua:1225
+    - sync/SyncHandlers.lua:1233
+    - sync/SyncHandlers.lua:1235
+    - sync/SyncHandlers.lua:1240
+    - sync/SyncHandlers.lua:1250
+    - sync/SyncHandlers.lua:1255
+    - sync/SyncHandlers.lua:1261
+    - sync/SyncHandlers.lua:1266
+    - sync/SyncHandlers.lua:1287
+    - sync/SyncHandlers.lua:1292
+    - sync/SyncHandlers.lua:1300
     - sync/ChunkManager.lua:16
     - sync/ChunkManager.lua:23
-    - sync/ChunkManager.lua:32
-    - sync/ChunkManager.lua:40
-    - sync/ChunkManager.lua:60
-    - sync/ChunkManager.lua:70
+    - sync/ChunkManager.lua:29
+    - sync/ChunkManager.lua:38
+    - sync/ChunkManager.lua:46
+    - sync/ChunkManager.lua:66
+    - sync/ChunkManager.lua:76
     - sync/Sync.lua:29
     - sync/Sync.lua:41
     - sync/Sync.lua:57
@@ -1495,74 +1895,71 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - sync/Sync.lua:474
     - sync/Sync.lua:486
     - sync/Sync.lua:491
-    - sync/Sync.lua:504
-    - sync/Sync.lua:510
-    - sync/Sync.lua:523
-    - sync/Sync.lua:532
-    - sync/Sync.lua:541
-    - sync/Sync.lua:547
+    - sync/Sync.lua:505
+    - sync/Sync.lua:514
+    - sync/Sync.lua:520
+    - sync/Sync.lua:533
+    - sync/Sync.lua:542
+    - sync/Sync.lua:548
     - sync/Sync.lua:560
-    - sync/Sync.lua:569
-    - sync/Sync.lua:575
-    - sync/Sync.lua:587
-    - sync/Sync.lua:598
-    - sync/Sync.lua:612
-    - sync/Sync.lua:616
-    - sync/Sync.lua:619
-    - sync/Sync.lua:637
-    - sync/Sync.lua:651
-    - sync/Sync.lua:660
-    - sync/Sync.lua:661
-    - sync/Sync.lua:665
-    - sync/Sync.lua:675
-    - sync/Sync.lua:681
-    - sync/Sync.lua:689
+    - sync/Sync.lua:571
+    - sync/Sync.lua:585
+    - sync/Sync.lua:589
+    - sync/Sync.lua:592
+    - sync/Sync.lua:610
+    - sync/Sync.lua:624
+    - sync/Sync.lua:633
+    - sync/Sync.lua:634
+    - sync/Sync.lua:638
+    - sync/Sync.lua:648
+    - sync/Sync.lua:654
+    - sync/Sync.lua:662
+    - sync/Sync.lua:666
+    - sync/Sync.lua:674
+    - sync/Sync.lua:678
+    - sync/Sync.lua:685
+    - sync/Sync.lua:687
     - sync/Sync.lua:693
-    - sync/Sync.lua:701
-    - sync/Sync.lua:705
-    - sync/Sync.lua:712
-    - sync/Sync.lua:714
-    - sync/Sync.lua:720
-    - sync/Sync.lua:734
-    - sync/Sync.lua:738
-    - sync/Sync.lua:751
+    - sync/Sync.lua:707
+    - sync/Sync.lua:711
+    - sync/Sync.lua:724
+    - sync/Sync.lua:737
+    - sync/Sync.lua:743
+    - sync/Sync.lua:748
+    - sync/Sync.lua:754
+    - sync/Sync.lua:760
     - sync/Sync.lua:764
-    - sync/Sync.lua:770
-    - sync/Sync.lua:775
-    - sync/Sync.lua:781
-    - sync/Sync.lua:787
+    - sync/Sync.lua:783
     - sync/Sync.lua:791
-    - sync/Sync.lua:810
-    - sync/Sync.lua:818
-    - sync/Sync.lua:823
+    - sync/Sync.lua:796
+    - sync/Sync.lua:809
+    - sync/Sync.lua:815
+    - sync/Sync.lua:820
+    - sync/Sync.lua:826
+    - sync/Sync.lua:832
     - sync/Sync.lua:836
     - sync/Sync.lua:842
-    - sync/Sync.lua:847
-    - sync/Sync.lua:853
-    - sync/Sync.lua:859
-    - sync/Sync.lua:863
-    - sync/Sync.lua:869
-    - sync/Sync.lua:887
-    - sync/Sync.lua:905
-    - sync/Sync.lua:909
-    - sync/Sync.lua:920
-    - sync/Sync.lua:959
-    - sync/Sync.lua:983
+    - sync/Sync.lua:860
+    - sync/Sync.lua:878
+    - sync/Sync.lua:882
+    - sync/Sync.lua:893
+    - sync/Sync.lua:932
+    - sync/Sync.lua:956
+    - sync/Sync.lua:974
+    - sync/Sync.lua:982
+    - sync/Sync.lua:991
+    - sync/Sync.lua:996
     - sync/Sync.lua:1001
-    - sync/Sync.lua:1009
-    - sync/Sync.lua:1018
+    - sync/Sync.lua:1008
+    - sync/Sync.lua:1010
     - sync/Sync.lua:1023
-    - sync/Sync.lua:1028
-    - sync/Sync.lua:1035
-    - sync/Sync.lua:1037
-    - sync/Sync.lua:1050
-    - sync/Sync.lua:1058
-    - sync/Sync.lua:1108
-    - sync/Sync.lua:1113
-    - sync/Sync.lua:1124
-    - sync/Sync.lua:1129
-    - sync/Sync.lua:1145
-    - sync/Sync.lua:1164
+    - sync/Sync.lua:1031
+    - sync/Sync.lua:1081
+    - sync/Sync.lua:1086
+    - sync/Sync.lua:1097
+    - sync/Sync.lua:1102
+    - sync/Sync.lua:1118
+    - sync/Sync.lua:1137
 
 - `TWRA:ProcessEarlyErrors()` - Line 285
   - Referenced in:
@@ -1575,7 +1972,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Debug.lua:240
     - core/Debug.lua:704
     - core/Debug.lua:706
-    - TWRA.lua:798
+    - TWRA.lua:858
 
 - `TWRA:ToggleDebugCategory()` - Line 402
   - Referenced in:
@@ -1587,13 +1984,13 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Debug.lua:829
     - core/Debug.lua:831
     - core/Debug.lua:833
-    - TWRA.lua:803
+    - TWRA.lua:863
 
 - `TWRA:ListDebugCategories()` - Line 442
   - Referenced in:
     - core/Debug.lua:755
-    - TWRA.lua:795
-    - TWRA.lua:806
+    - TWRA.lua:855
+    - TWRA.lua:866
 
 - `TWRA:EnableFullDebug()` - Line 462
   - Referenced in:
@@ -1624,7 +2021,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Core.lua:364 (in if )
     - core/Core.lua:365
 
-### 1.8 core/Events.lua
+### 2.8 core/Events.lua
 
 - `TWRA:RegisterEvent()` - Line 12
   - Referenced in:
@@ -1641,7 +2038,7 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - ui/OSD.lua:64
     - ui/OSD.lua:79
     - features/AutoTanks.lua:11
-    - sync/Sync.lua:671
+    - sync/Sync.lua:644
 
 - `TWRA:TriggerEvent()` - Line 40
   - Referenced in:
@@ -1653,87 +2050,87 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - ui/Frame.lua:903 (in if )
     - ui/Frame.lua:904
 
-### 1.9 core/ItemLink.lua
+### 2.9 core/ItemLink.lua
 
 - `TWRA:Items:GetLinkByName()` - Line 5
   - Referenced in:
 
 - `TWRA:Items:ProcessText()` - Line 21
   - Referenced in:
-    - TWRA.lua:685 (in processedText = )
+    - TWRA.lua:745 (in processedText = )
     - ui/Frame.lua:1101 (in processedText = )
     - ui/Frame.lua:1162 (in announcementText = )
-    - ui/OSD.lua:1053 (in processedText = )
-    - ui/OSD.lua:1107 (in announcementText = )
-    - ui/OSD.lua:1162 (in processedText = )
-    - ui/OSD.lua:1212 (in announcementText = )
+    - ui/OSD.lua:1088 (in processedText = )
+    - ui/OSD.lua:1142 (in announcementText = )
+    - ui/OSD.lua:1197 (in processedText = )
+    - ui/OSD.lua:1247 (in announcementText = )
 
 - `TWRA:Items:ProcessConsumables()` - Line 61
   - Referenced in:
-    - TWRA.lua:689 (in processedText = )
+    - TWRA.lua:749 (in processedText = )
 
 - `TWRA:Items:EnhancedProcessText()` - Line 96
   - Referenced in:
     - ui/Frame.lua:1159 (in announcementText = )
-    - ui/OSD.lua:1050 (in processedText = )
-    - ui/OSD.lua:1105 (in announcementText = )
-    - ui/OSD.lua:1160 (in processedText = )
-    - ui/OSD.lua:1210 (in announcementText = )
+    - ui/OSD.lua:1085 (in processedText = )
+    - ui/OSD.lua:1140 (in announcementText = )
+    - ui/OSD.lua:1195 (in processedText = )
+    - ui/OSD.lua:1245 (in announcementText = )
 
-### 1.10 core/Utils.lua
+### 2.10 core/Utils.lua
 
 - `TWRA:ScheduleTimer()` - Line 4
   - Referenced in:
     - core/Debug.lua:653 (in if )
     - core/Debug.lua:654
     - core/Base64.lua:471
-    - core/Base64.lua:869
-    - TWRA.lua:710
-    - core/Core.lua:763
-    - core/DataProcessing.lua:1128
-    - core/DataProcessing.lua:1132
+    - core/Base64.lua:817
+    - TWRA.lua:770
+    - core/Core.lua:784
+    - core/DataProcessing.lua:1135
+    - core/DataProcessing.lua:1139
     - ui/Frame.lua:1192
     - ui/Minimap.lua:158
-    - ui/OSD.lua:195 (in TWRA.OSD.autoHideTimer = )
-    - ui/OSD.lua:1127
-    - ui/OSD.lua:1220
-    - ui/OSD.lua:1371 (in self.OSD.autoHideTimer = )
-    - ui/Options.lua:1271
-    - ui/Options.lua:1285
-    - ui/Options.lua:1291
+    - ui/OSD.lua:230 (in TWRA.OSD.autoHideTimer = )
+    - ui/OSD.lua:1162
+    - ui/OSD.lua:1255
+    - ui/OSD.lua:1406 (in self.OSD.autoHideTimer = )
+    - ui/Options.lua:1218
+    - ui/Options.lua:1232
+    - ui/Options.lua:1238
     - features/AutoNavigate.lua:114
     - features/AutoNavigate.lua:129
     - features/AutoNavigate.lua:141
-    - sync/SyncHandlers.lua:405
-    - sync/SyncHandlers.lua:571 (in self.SYNC.missingSectionsTimeout = )
-    - sync/SyncHandlers.lua:695
-    - sync/SyncHandlers.lua:839
-    - sync/SyncHandlers.lua:971 (in timer = )
-    - sync/SyncHandlers.lua:995
-    - sync/SyncHandlers.lua:1004
-    - sync/SyncHandlers.lua:1047
-    - sync/ChunkManager.lua:53
+    - sync/SyncHandlers.lua:649
+    - sync/SyncHandlers.lua:815 (in self.SYNC.missingSectionsTimeout = )
+    - sync/SyncHandlers.lua:939
+    - sync/SyncHandlers.lua:1083
+    - sync/SyncHandlers.lua:1215 (in timer = )
+    - sync/SyncHandlers.lua:1239
+    - sync/SyncHandlers.lua:1248
+    - sync/SyncHandlers.lua:1291
+    - sync/ChunkManager.lua:59
     - sync/Sync.lua:40
     - sync/Sync.lua:55
     - sync/Sync.lua:313 (in self.SYNC.bulkSyncRequestTimeout = )
     - sync/Sync.lua:489
-    - sync/Sync.lua:609
-    - sync/Sync.lua:1048
-    - sync/Sync.lua:1157
+    - sync/Sync.lua:582
+    - sync/Sync.lua:1021
+    - sync/Sync.lua:1130
 
 - `TWRA:CancelTimer()` - Line 35
   - Referenced in:
-    - ui/OSD.lua:170
-    - ui/OSD.lua:1334
-    - ui/OSD.lua:1364
-    - ui/OSD.lua:1389
-    - ui/Options.lua:975
-    - sync/SyncHandlers.lua:452
-    - sync/SyncHandlers.lua:563
-    - sync/SyncHandlers.lua:720
-    - sync/SyncHandlers.lua:958
-    - sync/SyncHandlers.lua:1028
-    - sync/SyncHandlers.lua:1060
+    - ui/OSD.lua:205
+    - ui/OSD.lua:1369
+    - ui/OSD.lua:1399
+    - ui/OSD.lua:1424
+    - ui/Options.lua:925
+    - sync/SyncHandlers.lua:696
+    - sync/SyncHandlers.lua:807
+    - sync/SyncHandlers.lua:964
+    - sync/SyncHandlers.lua:1202
+    - sync/SyncHandlers.lua:1272
+    - sync/SyncHandlers.lua:1304
     - sync/Sync.lua:310
 
 - `TWRA:SplitString()` - Line 41
@@ -1745,12 +2142,12 @@ This document maps all functions in the TWRA addon, showing where they are defin
 
 - `TWRA:UpdatePlayerTable()` - Line 104
   - Referenced in:
-    - TWRA.lua:879
+    - TWRA.lua:953
     - core/Core.lua:63 (in return )
     - core/Core.lua:307 (in if )
     - core/Core.lua:309
-    - core/Core.lua:788 (in if )
-    - core/Core.lua:789
+    - core/Core.lua:809 (in if )
+    - core/Core.lua:810
 
 - `TWRA:GetTableSize()` - Line 249
   - Referenced in:
@@ -1758,284 +2155,6 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - core/Core.lua:312 (in local playerCount = )
     - features/AutoNavigate.lua:469
     - sync/SyncHandlers.lua:27
-
-## 2. Sync Files
-
-### 2.1 sync/ChunkManager.lua
-
-- `TWRA:chunkManager:Initialize()` - Line 6
-  - Referenced in:
-
-- `TWRA:chunkManager:SendChunkedMessage()` - Line 21
-  - Referenced in:
-    - sync/Sync.lua:544
-    - sync/Sync.lua:572
-    - sync/Sync.lua:773 (in return )
-    - sync/Sync.lua:845 (in return )
-    - sync/Sync.lua:978 (in success = )
-    - sync/Sync.lua:1021 (in local success = )
-
-### 2.2 sync/Sync.lua
-
-- `TWRA:RegisterSyncEvents()` - Line 28
-  - Referenced in:
-
-- `TWRA:CheckAndActivateLiveSync()` - Line 77
-  - Referenced in:
-
-- `TWRA:ActivateLiveSync()` - Line 90
-  - Referenced in:
-    - ui/Options.lua:1011 (in if )
-    - ui/Options.lua:1012
-    - sync/Sync.lua:83
-    - sync/Sync.lua:463
-
-- `TWRA:DeactivateLiveSync()` - Line 126
-  - Referenced in:
-    - ui/Options.lua:1020
-    - ui/Options.lua:1021
-
-- `TWRA:SendAddonMessage()` - Line 147
-  - Referenced in:
-    - sync/SyncHandlers.lua:614 (in local success = )
-    - sync/SyncHandlers.lua:691
-    - sync/SyncHandlers.lua:953
-    - sync/ChunkManager.lua:39
-    - sync/ChunkManager.lua:66
-    - sync/Sync.lua:263
-    - sync/Sync.lua:305 (in local success = )
-    - sync/Sync.lua:351 (in return )
-    - sync/Sync.lua:522
-    - sync/Sync.lua:552 (in return )
-    - sync/Sync.lua:580 (in return )
-    - sync/Sync.lua:654
-    - sync/Sync.lua:988 (in success = )
-    - sync/Sync.lua:1033 (in local success = )
-    - sync/Sync.lua:1159
-
-- `TWRA:CreateSectionMessage()` - Line 172
-  - Referenced in:
-    - sync/Sync.lua:350 (in local message = )
-
-- `TWRA:CreateBulkSectionMessage()` - Line 176
-  - Referenced in:
-    - sync/Sync.lua:930 (in local message = )
-
-- `TWRA:CreateBulkStructureMessage()` - Line 180
-  - Referenced in:
-    - sync/Sync.lua:1014 (in local structureMessage = )
-
-- `TWRA:CreateVersionMessage()` - Line 184
-  - Referenced in:
-
-- `TWRA:CreateMissingSectionsRequestMessage()` - Line 188
-  - Referenced in:
-    - sync/SyncHandlers.lua:551 (in local message = )
-    - sync/SyncHandlers.lua:613 (in local message = )
-
-- `TWRA:CreateMissingSectionsAckMessage()` - Line 193
-  - Referenced in:
-    - sync/SyncHandlers.lua:690 (in local ackMessage = )
-
-- `TWRA:CreateMissingSectionResponseMessage()` - Line 197
-  - Referenced in:
-    - sync/SyncHandlers.lua:841 (in local message = )
-
-- `TWRA:CreateBulkSyncRequestMessage()` - Line 201
-  - Referenced in:
-    - sync/Sync.lua:302 (in local message = )
-
-- `TWRA:CreateBulkSyncAckMessage()` - Line 206
-  - Referenced in:
-    - sync/SyncHandlers.lua:952 (in local ackMessage = )
-
-- `TWRA:CompareTimestamps()` - Line 215
-  - Referenced in:
-    - sync/SyncHandlers.lua:162 (in local comparisonResult = )
-    - sync/SyncHandlers.lua:258 (in local timestampDiff = )
-
-- `TWRA:RequestStructureSync()` - Line 232
-  - Referenced in:
-
-- `TWRA:RequestBulkSync()` - Line 272
-  - Referenced in:
-    - core/Core.lua:770 (in if )
-    - core/Core.lua:771
-
-- `TWRA:BroadcastSectionChange()` - Line 330
-  - Referenced in:
-    - sync/Sync.lua:708 (in local success = )
-
-- `TWRA:OnChatMsgAddon()` - Line 354
-  - Referenced in:
-    - TWRA.lua:352 (in function )
-    - sync/Sync.lua:498
-
-- `TWRA:ToggleMessageMonitoring()` - Line 388
-  - Referenced in:
-    - core/Debug.lua:815 (in if )
-    - core/Debug.lua:816
-    - sync/Sync.lua:483
-
-- `TWRA:ShowSyncStatus()` - Line 399
-  - Referenced in:
-    - core/Debug.lua:770 (in if )
-    - core/Debug.lua:771
-
-- `TWRA:InitializeSync()` - Line 430
-  - Referenced in:
-    - TWRA.lua:323 (in if )
-    - TWRA.lua:325
-    - sync/Sync.lua:42
-    - sync/Sync.lua:58
-
-- `TWRA:CHAT_MSG_ADDON()` - Line 497
-  - Referenced in:
-
-- `TWRA:RequestSectionSync()` - Line 501
-  - Referenced in:
-    - TWRA.lua:74 (in if )
-    - TWRA.lua:76
-
-- `TWRA:SendStructureResponse()` - Line 528
-  - Referenced in:
-
-- `TWRA:SendSectionResponse()` - Line 556
-  - Referenced in:
-    - sync/Sync.lua:615 (in if )
-    - sync/Sync.lua:617
-
-- `TWRA:QueueSectionResponse()` - Line 584
-  - Referenced in:
-
-- `TWRA:AnnounceDataImport()` - Line 634
-  - Referenced in:
-
-- `TWRA:RegisterSectionChangeHandler()` - Line 659
-  - Referenced in:
-    - sync/Sync.lua:74
-    - sync/Sync.lua:435 (in if )
-    - sync/Sync.lua:437
-    - sync/Sync.lua:442
-    - sync/Sync.lua:492
-
-- `TWRA:GetCompressedStructure()` - Line 724
-  - Referenced in:
-    - sync/Sync.lua:530 (in local structureData = )
-    - sync/Sync.lua:749 (in local structureData = )
-    - sync/Sync.lua:1007 (in local structureData = )
-    - sync/Sync.lua:1111 (in local structureData = )
-
-- `TWRA:SendStructureData()` - Line 733
-  - Referenced in:
-
-- `TWRA:SendSectionData()` - Line 786
-  - Referenced in:
-
-- `TWRA:SendAllSections()` - Line 858
-  - Referenced in:
-    - core/Base64.lua:468 (in if )
-    - core/Base64.lua:472
-    - core/Base64.lua:866 (in if )
-    - core/Base64.lua:870
-    - ui/Frame.lua:98
-    - ui/Options.lua:1282 (in if )
-    - ui/Options.lua:1296
-    - sync/SyncHandlers.lua:982 (in local success = )
-
-- `TWRA:SerializeData()` - Line 1064
-  - Referenced in:
-
-- `TWRA:DeserializeData()` - Line 1086
-  - Referenced in:
-
-- `TWRA:SendStructureDataInChunks()` - Line 1107
-  - Referenced in:
-
-- `TWRA:SendSectionDataInChunks()` - Line 1123
-  - Referenced in:
-
-- `TWRA:SendDataInChunks()` - Line 1139
-  - Referenced in:
-    - sync/Sync.lua:1118
-    - sync/Sync.lua:1134
-
-### 2.3 sync/SyncHandlers.lua
-
-- `TWRA:InitializeHandlerMap()` - Line 12
-  - Referenced in:
-
-- `TWRA:HandleAddonMessage()` - Line 30
-  - Referenced in:
-    - TWRA.lua:362 (in if )
-    - TWRA.lua:363
-    - core/Core.lua:257
-    - sync/Sync.lua:380 (in if )
-    - sync/Sync.lua:382
-
-- `TWRA:ExtractDataPortion()` - Line 106
-  - Referenced in:
-    - sync/SyncHandlers.lua:63
-    - sync/SyncHandlers.lua:68
-    - sync/SyncHandlers.lua:88
-
-- `TWRA:HandleSectionCommand()` - Line 129
-  - Referenced in:
-    - sync/SyncHandlers.lua:57 (in if )
-    - sync/SyncHandlers.lua:58
-    - sync/Sync.lua:418
-
-- `TWRA:HandleBulkSectionCommand()` - Line 186
-  - Referenced in:
-    - sync/SyncHandlers.lua:62 (in if )
-    - sync/SyncHandlers.lua:63
-
-- `TWRA:HandleBulkStructureCommand()` - Line 233
-  - Referenced in:
-    - sync/SyncHandlers.lua:67 (in if )
-    - sync/SyncHandlers.lua:68
-
-- `TWRA:HandleStructureResponseCommand()` - Line 447
-  - Referenced in:
-    - sync/Sync.lua:421
-
-- `TWRA:RequestMissingSectionsWhisper()` - Line 507
-  - Referenced in:
-    - sync/SyncHandlers.lua:441
-
-- `TWRA:RequestMissingSectionsGroup()` - Line 579
-  - Referenced in:
-    - sync/SyncHandlers.lua:573
-
-- `TWRA:HandleMissingSectionsRequestCommand()` - Line 625
-  - Referenced in:
-    - sync/SyncHandlers.lua:77 (in if )
-    - sync/SyncHandlers.lua:78
-
-- `TWRA:HandleMissingSectionsAckCommand()` - Line 702
-  - Referenced in:
-    - sync/SyncHandlers.lua:82 (in if )
-    - sync/SyncHandlers.lua:83
-
-- `TWRA:HandleMissingSectionResponseCommand()` - Line 727
-  - Referenced in:
-    - sync/SyncHandlers.lua:87 (in if )
-    - sync/SyncHandlers.lua:88
-
-- `TWRA:SendMissingSections()` - Line 803
-  - Referenced in:
-    - sync/SyncHandlers.lua:647 (in return )
-    - sync/SyncHandlers.lua:696
-
-- `TWRA:HandleBulkSyncRequestCommand()` - Line 858
-  - Referenced in:
-    - sync/SyncHandlers.lua:92 (in if )
-    - sync/SyncHandlers.lua:93
-
-- `TWRA:HandleBulkSyncAckCommand()` - Line 1016
-  - Referenced in:
-    - sync/SyncHandlers.lua:97 (in if )
-    - sync/SyncHandlers.lua:98
 
 ## 3. Feature Files
 
@@ -2045,19 +2164,20 @@ This document maps all functions in the TWRA addon, showing where they are defin
   - Referenced in:
     - features/AutoNavigate.lua:48 (in if not )
     - features/AutoNavigate.lua:159 (in local hasSupport = )
+    - features/AutoNavigate.lua:492 (in if not )
 
 - `TWRA:CheckSkullMarkedMob()` - Line 36
   - Referenced in:
-    - TWRA.lua:304 (in if )
-    - TWRA.lua:306
+    - TWRA.lua:296 (in if )
+    - TWRA.lua:298
 
 - `TWRA:RegisterAutoNavigateEvents()` - Line 102
   - Referenced in:
-    - features/AutoNavigate.lua:490
+    - features/AutoNavigate.lua:526
 
 - `TWRA:InitializeAutoNavigate()` - Line 150
   - Referenced in:
-    - TWRA.lua:311 (in if )
+    - TWRA.lua:303 (in if )
     - features/AutoNavigate.lua:116
     - features/AutoNavigate.lua:133
     - features/AutoNavigate.lua:145
@@ -2082,19 +2202,30 @@ This document maps all functions in the TWRA addon, showing where they are defin
 
 - `TWRA:ListAllGuids()` - Line 421
   - Referenced in:
+    - TWRA.lua:890 (in if )
+    - TWRA.lua:891
+    - core/Core.lua:383 (in if )
+    - core/Core.lua:384
+
+- `TWRA:GetCurrentTargetGuid()` - Line 490
+  - Referenced in:
+    - TWRA.lua:883 (in if )
+    - TWRA.lua:884
+    - core/Core.lua:375 (in if )
+    - core/Core.lua:376
 
 ### 3.2 features/AutoTanks.lua
 
 - `TWRA:InitializeTankSync()` - Line 2
   - Referenced in:
-    - ui/Options.lua:603 (in if isChecked and )
-    - ui/Options.lua:604
+    - ui/Options.lua:580 (in if isChecked and )
+    - ui/Options.lua:581
     - sync/Sync.lua:466 (in if self.SYNC.tankSync and )
     - sync/Sync.lua:468
 
 - `TWRA:IsORA2Available()` - Line 29
   - Referenced in:
-    - ui/Options.lua:1031 (in if )
+    - ui/Options.lua:981 (in if )
     - features/AutoTanks.lua:20 (in if )
     - features/AutoTanks.lua:52 (in if not )
 
@@ -2104,374 +2235,296 @@ This document maps all functions in the TWRA addon, showing where they are defin
     - features/AutoTanks.lua:15
     - features/AutoTanks.lua:22
 
-## 4. UI Files
+## 4. Sync Files
 
-### 4.1 ui/Frame.lua
+### 4.1 sync/ChunkManager.lua
 
-- `TWRA:IsExampleData()` - Line 5
-  - Referenced in:
-    - Example.lua:524 (in function )
-    - Example.lua:525 (in self:Debug("error", ")
-    - TWRA.lua:432 (in function )
-    - ui/Frame.lua:6 (in self:Debug("error", " )
-
-- `TWRA:CloseDropdownMenu()` - Line 12
-  - Referenced in:
-    - ui/Frame.lua:97
-    - ui/Frame.lua:132
-    - ui/Frame.lua:145
-    - ui/Frame.lua:163
-    - ui/Frame.lua:175
-
-- `TWRA:RegisterPlayerEvents()` - Line 18
+- `TWRA:chunkManager:Initialize()` - Line 6
   - Referenced in:
 
-- `TWRA:CreateMainFrame()` - Line 41
+- `TWRA:chunkManager:SendChunkedMessage()` - Line 21
   - Referenced in:
-    - Example.lua:455
-    - core/Core.lua:283 (in if not TWRA.mainFrame and )
-    - core/Core.lua:284
-    - core/Core.lua:456
-    - core/Core.lua:467
-    - core/Core.lua:527 (in if )
-    - core/Core.lua:528
-    - ui/Minimap.lua:343 (in if not TWRA.mainFrame and )
-    - ui/Minimap.lua:344
-    - ui/Minimap.lua:369 (in if )
-    - ui/Minimap.lua:370
-    - ui/Minimap.lua:531 (in if )
-    - ui/Minimap.lua:532
+    - sync/Sync.lua:517
+    - sync/Sync.lua:545
+    - sync/Sync.lua:746 (in return )
+    - sync/Sync.lua:818 (in return )
+    - sync/Sync.lua:951 (in success = )
+    - sync/Sync.lua:994 (in local success = )
 
-- `TWRA:LoadInitialContent()` - Line 493
-  - Referenced in:
-    - core/Core.lua:535 (in if )
-    - core/Core.lua:536
-    - core/Core.lua:551 (in if )
-    - core/Core.lua:552
+### 4.2 sync/Sync.lua
 
-- `TWRA:ShowMainView()` - Line 538
-  - Referenced in:
-    - core/Base64.lua:443 (in if )
-    - core/Base64.lua:445
-    - core/Base64.lua:841 (in if )
-    - core/Base64.lua:843
-    - Example.lua:468
-    - core/Core.lua:485
-    - ui/Frame.lua:119
-    - ui/Minimap.lua:383 (in if )
-    - ui/Minimap.lua:384
-    - ui/Minimap.lua:544 (in if )
-    - ui/Minimap.lua:545
-    - ui/Options.lua:935 (in if )
-    - ui/Options.lua:936
-
-- `TWRA:FilterAndDisplayHandler()` - Line 634
-  - Referenced in:
-    - Example.lua:429 (in if )
-    - Example.lua:430
-    - TWRA.lua:137 (in if )
-    - TWRA.lua:138
-    - TWRA.lua:885 (in if )
-    - TWRA.lua:886
-    - core/DataProcessing.lua:380 (in self.currentView == "main" and )
-    - core/DataProcessing.lua:381
-    - core/DataProcessing.lua:1068 (in self.currentView == "main" and )
-    - core/DataProcessing.lua:1069
-    - core/DataUtility.lua:119
-    - ui/Frame.lua:532
-    - ui/Frame.lua:599
-    - ui/Frame.lua:605
-    - ui/Frame.lua:1232
-
-- `TWRA:CreateFootersNewFormat()` - Line 910
-  - Referenced in:
-    - ui/Frame.lua:900
-
-- `TWRA:ClearFooters()` - Line 1018
-  - Referenced in:
-    - TWRA.lua:846
-    - ui/Frame.lua:520
-    - ui/Frame.lua:578
-    - ui/Frame.lua:667
-    - ui/Frame.lua:912
-    - ui/Frame.lua:1454
-
-- `TWRA:CreateFooterElement()` - Line 1068
-  - Referenced in:
-    - ui/Frame.lua:991 (in local footer = )
-    - ui/Frame.lua:999 (in local footer = )
-
-- `TWRA:RefreshAssignmentTable()` - Line 1213
-  - Referenced in:
-    - core/Utils.lua:223 (in if )
-    - core/Utils.lua:225
-    - Example.lua:435 (in if )
-    - Example.lua:436
-    - ui/Frame.lua:30 (in --             if )
-    - ui/Frame.lua:32 (in --                 )
-    - sync/SyncHandlers.lua:389 (in if )
-    - sync/SyncHandlers.lua:390
-    - sync/SyncHandlers.lua:407 (in if )
-    - sync/SyncHandlers.lua:408
-    - sync/SyncHandlers.lua:785 (in if )
-    - sync/SyncHandlers.lua:786
-
-- `TWRA:CreateRow()` - Line 1235
-  - Referenced in:
-    - ui/Frame.lua:1407 (in self.rowFrames[i] = )
-
-- `TWRA:CreateRows()` - Line 1395
-  - Referenced in:
-    - ui/Frame.lua:894
-
-- `TWRA:ClearRows()` - Line 1413
-  - Referenced in:
-    - TWRA.lua:847
-    - ui/Frame.lua:519
-    - ui/Frame.lua:577
-    - ui/Frame.lua:666
-
-- `TWRA:ApplyRowHighlights()` - Line 1459
-  - Referenced in:
-    - ui/Frame.lua:897
-
-- `TWRA:CreateHeaderCell()` - Line 1569
-  - Referenced in:
-    - ui/Frame.lua:1290 (in cell = )
-    - ui/Frame.lua:1308 (in cell = )
-    - ui/Frame.lua:1320 (in cell = )
-
-- `TWRA:CalculateColumnWidths()` - Line 1614
-  - Referenced in:
-    - ui/Frame.lua:865 (in self.dynamicColumnWidths = )
-
-### 4.2 ui/Minimap.lua
-
-- `TWRA:DestroyMinimapButton()` - Line 12
+- `TWRA:RegisterSyncEvents()` - Line 28
   - Referenced in:
 
-- `TWRA:InitializeMinimapButton()` - Line 68
+- `TWRA:CheckAndActivateLiveSync()` - Line 77
   - Referenced in:
-    - ui/Minimap.lua:178
 
-- `TWRA:CreateMinimapButton()` - Line 191
+- `TWRA:ActivateLiveSync()` - Line 90
   - Referenced in:
-    - core/Core.lua:158
-    - core/Core.lua:262
-    - core/Core.lua:293 (in if not TWRA.minimapButton and )
-    - core/Core.lua:295
-    - ui/Minimap.lua:100 (in local success = )
+    - ui/Options.lua:961 (in if )
+    - ui/Options.lua:962
+    - sync/Sync.lua:83
+    - sync/Sync.lua:463
 
-- `TWRA:CreateMinimapDropdown()` - Line 608
+- `TWRA:DeactivateLiveSync()` - Line 126
   - Referenced in:
-    - ui/Minimap.lua:254
+    - ui/Options.lua:970
+    - ui/Options.lua:971
 
-### 4.3 ui/OSD.lua
-
-- `TWRA:InitOSD()` - Line 6
+- `TWRA:SendAddonMessage()` - Line 147
   - Referenced in:
-    - TWRA.lua:316 (in if )
-    - core/Core.lua:300 (in if )
-    - core/Core.lua:302
-    - ui/OSD.lua:1411
-    - ui/OSD.lua:1426
-    - ui/Options.lua:61 (in if )
-    - ui/Options.lua:62
+    - sync/SyncHandlers.lua:858 (in local success = )
+    - sync/SyncHandlers.lua:935
+    - sync/SyncHandlers.lua:1197
+    - sync/ChunkManager.lua:45
+    - sync/ChunkManager.lua:72
+    - sync/Sync.lua:263
+    - sync/Sync.lua:305 (in local success = )
+    - sync/Sync.lua:351 (in return )
+    - sync/Sync.lua:525 (in return )
+    - sync/Sync.lua:553 (in return )
+    - sync/Sync.lua:627
+    - sync/Sync.lua:961 (in success = )
+    - sync/Sync.lua:1006 (in local success = )
+    - sync/Sync.lua:1132
 
-- `TWRA:GetOSDFrame()` - Line 100
+- `TWRA:CreateSectionMessage()` - Line 172
   - Referenced in:
-    - ui/OSD.lua:1264 (in local frame = )
-    - ui/OSD.lua:1323 (in local frame = )
-    - ui/OSD.lua:1353 (in local frame = )
+    - sync/Sync.lua:350 (in local message = )
 
-- `TWRA:UpdateOSDSettings()` - Line 280
+- `TWRA:CreateBulkSectionMessage()` - Line 176
   - Referenced in:
-    - ui/Options.lua:780 (in if )
-    - ui/Options.lua:781
-    - ui/Options.lua:827 (in if )
-    - ui/Options.lua:828
-    - ui/Options.lua:839 (in if )
-    - ui/Options.lua:840
+    - sync/Sync.lua:903 (in local message = )
 
-- `TWRA:CreateRowBaseElements()` - Line 306
+- `TWRA:CreateBulkStructureMessage()` - Line 180
   - Referenced in:
-    - ui/OSD.lua:392
-    - ui/OSD.lua:928 (in local roleIcon, roleFontString = )
+    - sync/Sync.lua:987 (in local structureMessage = )
 
-- `TWRA:CreateAssignmentRow()` - Line 390
+- `TWRA:CreateVersionMessage()` - Line 184
   - Referenced in:
-    - ui/OSD.lua:862 (in local rowWidth = )
 
-- `TWRA:AddTargetDisplay()` - Line 687
+- `TWRA:CreateMissingSectionsRequestMessage()` - Line 188
   - Referenced in:
-    - ui/OSD.lua:529 (in rowWidth = rowWidth + )
-    - ui/OSD.lua:534 (in rowWidth = rowWidth + )
+    - sync/SyncHandlers.lua:795 (in local message = )
+    - sync/SyncHandlers.lua:857 (in local message = )
 
-- `TWRA:GetIconInfo()` - Line 721
+- `TWRA:CreateMissingSectionsAckMessage()` - Line 193
   - Referenced in:
-    - ui/OSD.lua:541 (in local iconInfo = )
-    - ui/OSD.lua:691 (in local iconInfo = )
+    - sync/SyncHandlers.lua:934 (in local ackMessage = )
 
-- `TWRA:GetRoleIcon()` - Line 725
+- `TWRA:CreateMissingSectionResponseMessage()` - Line 197
   - Referenced in:
-    - ui/OSD.lua:311 (in local iconPath = )
+    - sync/SyncHandlers.lua:1085 (in local message = )
 
-- `TWRA:CreateContent()` - Line 752
+- `TWRA:CreateBulkSyncRequestMessage()` - Line 201
   - Referenced in:
-    - ui/OSD.lua:257
-    - ui/OSD.lua:1292
+    - sync/Sync.lua:302 (in local message = )
 
-- `TWRA:CreateDefaultContent()` - Line 899
+- `TWRA:CreateBulkSyncAckMessage()` - Line 206
   - Referenced in:
-    - ui/OSD.lua:784 (in return )
-    - ui/OSD.lua:791 (in return )
-    - ui/OSD.lua:810 (in return )
+    - sync/SyncHandlers.lua:1196 (in local ackMessage = )
 
-- `TWRA:CreateWarnings()` - Line 953
+- `TWRA:CompareTimestamps()` - Line 215
   - Referenced in:
-    - ui/OSD.lua:265
-    - ui/OSD.lua:1298
+    - sync/SyncHandlers.lua:162 (in local comparisonResult = )
+    - sync/SyncHandlers.lua:502 (in local timestampDiff = )
 
-- `TWRA:UpdateOSDContent()` - Line 1260
+- `TWRA:RequestStructureSync()` - Line 232
   - Referenced in:
-    - core/Utils.lua:232 (in if )
-    - core/Utils.lua:239
-    - TWRA.lua:894
-    - core/DataProcessing.lua:353 (in if )
-    - core/DataProcessing.lua:354
-    - core/DataProcessing.lua:387
-    - core/DataProcessing.lua:1075
-    - core/DataUtility.lua:127
-    - ui/OSD.lua:40
-    - ui/OSD.lua:49
-    - ui/OSD.lua:73
-    - ui/OSD.lua:90
-    - ui/Options.lua:389
-    - ui/Options.lua:723 (in if self.OSD and self.OSD.isVisible and )
-    - ui/Options.lua:728
-    - ui/Options.lua:930 (in if self.OSD and self.OSD.isVisible and )
-    - ui/Options.lua:931
 
-- `TWRA:ShowOSDPermanent()` - Line 1315
+- `TWRA:RequestBulkSync()` - Line 272
   - Referenced in:
-    - ui/Minimap.lua:262 (in if )
-    - ui/Minimap.lua:263
-    - ui/OSD.lua:1417
-    - ui/OSD.lua:1430
+    - TWRA.lua:74 (in if )
+    - TWRA.lua:76
+    - core/Core.lua:791 (in if )
+    - core/Core.lua:792
 
-- `TWRA:ShowOSD()` - Line 1345
+- `TWRA:BroadcastSectionChange()` - Line 330
   - Referenced in:
-    - ui/Minimap.lua:264 (in elseif )
-    - ui/Minimap.lua:266
-    - ui/Minimap.lua:325 (in if )
-    - ui/Minimap.lua:326
-    - ui/Minimap.lua:428 (in if )
-    - ui/Minimap.lua:429
-    - ui/Minimap.lua:445 (in if )
-    - ui/Minimap.lua:446
-    - ui/Minimap.lua:787 (in if not miniButton.osdWasShown and )
-    - ui/Minimap.lua:788
-    - ui/OSD.lua:58
+    - sync/Sync.lua:681 (in local success = )
 
-- `TWRA:HideOSD()` - Line 1386
+- `TWRA:OnChatMsgAddon()` - Line 354
   - Referenced in:
-    - Example.lua:511
-    - ui/OSD.lua:199
-    - ui/OSD.lua:299
-    - ui/OSD.lua:1372
-    - ui/OSD.lua:1415
-    - ui/OSD.lua:1441
+    - TWRA.lua:415 (in function )
+    - sync/Sync.lua:498
 
-- `TWRA:ToggleOSD()` - Line 1408
+- `TWRA:ToggleMessageMonitoring()` - Line 388
   - Referenced in:
-    - core/Core.lua:428 (in if )
-    - core/Core.lua:429 (in local visible = )
-    - ui/OSD.lua:1443
-    - ui/Options.lua:376 (in local isVisible = )
+    - core/Debug.lua:815 (in if )
+    - core/Debug.lua:816
+    - sync/Sync.lua:483
 
-- `TWRA:TestOSDVisual()` - Line 1423
+- `TWRA:ShowSyncStatus()` - Line 399
   - Referenced in:
-    - ui/OSD.lua:1439
+    - core/Debug.lua:770 (in if )
+    - core/Debug.lua:771
 
-- `TWRA:ShouldShowOSD()` - Line 1447
+- `TWRA:InitializeSync()` - Line 430
   - Referenced in:
-    - ui/OSD.lua:52 (in if )
+    - TWRA.lua:315 (in if )
+    - TWRA.lua:317
+    - sync/Sync.lua:42
+    - sync/Sync.lua:58
 
-- `TWRA:ResetOSDPosition()` - Line 1467
+- `TWRA:CHAT_MSG_ADDON()` - Line 497
   - Referenced in:
-    - ui/Options.lua:834 (in if )
-    - ui/Options.lua:835
 
-### 4.4 ui/Options.lua
-
-- `TWRA:InitOptions()` - Line 5
+- `TWRA:SendStructureResponse()` - Line 501
   - Referenced in:
-    - core/Core.lua:202 (in if )
-    - core/Core.lua:204
 
-- `TWRA:UpdateSliderState()` - Line 72
+- `TWRA:SendSectionResponse()` - Line 529
   - Referenced in:
-    - ui/Options.lua:631
-    - ui/Options.lua:638
-    - ui/Options.lua:646
+    - sync/Sync.lua:588 (in if )
+    - sync/Sync.lua:590
 
-- `TWRA:CreateCheckbox()` - Line 90
+- `TWRA:QueueSectionResponse()` - Line 557
   - Referenced in:
-    - ui/Options.lua:184 (in local liveSync, liveSyncText = )
-    - ui/Options.lua:189 (in local tankSyncCheckbox, tankSyncText = )
-    - ui/Options.lua:210 (in local autoNavigate, autoNavigateText = )
-    - ui/Options.lua:310
-    - ui/Options.lua:331 (in local showOnNavOSD, showOnNavOSDText = )
-    - ui/Options.lua:336 (in local lockOSD, lockOSDText = )
 
-- `TWRA:CreateOptionsInMainFrame()` - Line 107
+- `TWRA:AnnounceDataImport()` - Line 607
   - Referenced in:
-    - TWRA.lua:834
 
-- `TWRA:RestartAutoNavigateTimer()` - Line 962
+- `TWRA:RegisterSectionChangeHandler()` - Line 632
   - Referenced in:
-    - ui/Options.lua:663
-    - ui/Options.lua:664
+    - sync/Sync.lua:74
+    - sync/Sync.lua:435 (in if )
+    - sync/Sync.lua:437
+    - sync/Sync.lua:442
+    - sync/Sync.lua:492
 
-- `TWRA:ApplyInitialSettings()` - Line 990
+- `TWRA:GetCompressedStructure()` - Line 697
   - Referenced in:
-    - ui/Options.lua:66
+    - sync/Sync.lua:503 (in local structureData = )
+    - sync/Sync.lua:722 (in local structureData = )
+    - sync/Sync.lua:980 (in local structureData = )
+    - sync/Sync.lua:1084 (in local structureData = )
 
-- `TWRA:DirectImport()` - Line 1061
+- `TWRA:SendStructureData()` - Line 706
   - Referenced in:
-    - ui/Options.lua:855 (in local success = )
 
-### 4.5 ui/UIUtils.lua
-
-- `TWRA:UI:ApplyClassColoring()` - Line 5
+- `TWRA:SendSectionData()` - Line 759
   - Referenced in:
-    - ui/Frame.lua:1357
-    - ui/OSD.lua:465
-    - ui/OSD.lua:632
 
-- `TWRA:UI:CreateIconWithTooltip()` - Line 51
+- `TWRA:SendAllSections()` - Line 831
   - Referenced in:
-    - ui/Options.lua:194
-    - ui/Options.lua:215 (in local autoNavIcon, autoNavIconFrame = )
-    - ui/Options.lua:277 (in local groupIcon, groupIconFrame = )
-    - ui/Options.lua:315 (in local notesIcon, notesIconFrame = )
+    - core/Base64.lua:468 (in if )
+    - core/Base64.lua:472
+    - core/Base64.lua:814 (in if )
+    - core/Base64.lua:818
+    - ui/Frame.lua:98
+    - ui/Options.lua:1229 (in if )
+    - ui/Options.lua:1243
+    - sync/SyncHandlers.lua:1226 (in local success = )
+
+- `TWRA:SerializeData()` - Line 1037
+  - Referenced in:
+
+- `TWRA:DeserializeData()` - Line 1059
+  - Referenced in:
+
+- `TWRA:SendStructureDataInChunks()` - Line 1080
+  - Referenced in:
+
+- `TWRA:SendSectionDataInChunks()` - Line 1096
+  - Referenced in:
+
+- `TWRA:SendDataInChunks()` - Line 1112
+  - Referenced in:
+    - sync/Sync.lua:1091
+    - sync/Sync.lua:1107
+
+### 4.3 sync/SyncHandlers.lua
+
+- `TWRA:InitializeHandlerMap()` - Line 12
+  - Referenced in:
+
+- `TWRA:HandleAddonMessage()` - Line 30
+  - Referenced in:
+    - TWRA.lua:425 (in if )
+    - TWRA.lua:426
+    - core/Core.lua:257
+    - sync/Sync.lua:380 (in if )
+    - sync/Sync.lua:382
+
+- `TWRA:ExtractDataPortion()` - Line 106
+  - Referenced in:
+    - sync/SyncHandlers.lua:63
+    - sync/SyncHandlers.lua:68
+    - sync/SyncHandlers.lua:88
+
+- `TWRA:HandleSectionCommand()` - Line 129
+  - Referenced in:
+    - sync/SyncHandlers.lua:57 (in if )
+    - sync/SyncHandlers.lua:58
+    - sync/Sync.lua:418
+
+- `TWRA:HandleBulkSectionCommand()` - Line 186
+  - Referenced in:
+    - sync/SyncHandlers.lua:62 (in if )
+    - sync/SyncHandlers.lua:63
+
+- `TWRA:HandleBulkStructureCommand()` - Line 477
+  - Referenced in:
+    - sync/SyncHandlers.lua:67 (in if )
+    - sync/SyncHandlers.lua:68
+
+- `TWRA:HandleStructureResponseCommand()` - Line 691
+  - Referenced in:
+    - sync/Sync.lua:421
+
+- `TWRA:RequestMissingSectionsWhisper()` - Line 751
+  - Referenced in:
+    - sync/SyncHandlers.lua:685
+
+- `TWRA:RequestMissingSectionsGroup()` - Line 823
+  - Referenced in:
+    - sync/SyncHandlers.lua:817
+
+- `TWRA:HandleMissingSectionsRequestCommand()` - Line 869
+  - Referenced in:
+    - sync/SyncHandlers.lua:77 (in if )
+    - sync/SyncHandlers.lua:78
+
+- `TWRA:HandleMissingSectionsAckCommand()` - Line 946
+  - Referenced in:
+    - sync/SyncHandlers.lua:82 (in if )
+    - sync/SyncHandlers.lua:83
+
+- `TWRA:HandleMissingSectionResponseCommand()` - Line 971
+  - Referenced in:
+    - sync/SyncHandlers.lua:87 (in if )
+    - sync/SyncHandlers.lua:88
+
+- `TWRA:SendMissingSections()` - Line 1047
+  - Referenced in:
+    - sync/SyncHandlers.lua:891 (in return )
+    - sync/SyncHandlers.lua:940
+
+- `TWRA:HandleBulkSyncRequestCommand()` - Line 1102
+  - Referenced in:
+    - sync/SyncHandlers.lua:92 (in if )
+    - sync/SyncHandlers.lua:93
+
+- `TWRA:HandleBulkSyncAckCommand()` - Line 1260
+  - Referenced in:
+    - sync/SyncHandlers.lua:97 (in if )
+    - sync/SyncHandlers.lua:98
 
 ## 5. Duplicate Functions
-
-- `TWRA:OnChatMsgAddon()` is defined in multiple locations:
-  - TWRA.lua:352
-  - sync/Sync.lua:354
-
-- `TWRA:OnGroupChanged()` is defined in multiple locations:
-  - TWRA.lua:874
-  - core/Core.lua:748
 
 - `TWRA:DecompressAssignmentsData()` is defined in multiple locations:
   - core/Base64.lua:131
   - core/Compression.lua:651
 
+- `TWRA:OnGroupChanged()` is defined in multiple locations:
+  - TWRA.lua:948
+  - core/Core.lua:769
+
 - `TWRA:IsExampleData()` is defined in multiple locations:
   - Example.lua:524
-  - TWRA.lua:432
+  - TWRA.lua:495
   - ui/Frame.lua:5
+
+- `TWRA:OnChatMsgAddon()` is defined in multiple locations:
+  - TWRA.lua:415
+  - sync/Sync.lua:354
 
