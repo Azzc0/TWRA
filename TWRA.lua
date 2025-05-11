@@ -222,7 +222,7 @@ function TWRA:Initialize()
                 end
                 
                 -- Debug the LiveSync status
-                addon:Debug("error", "After registering section handler - LiveSync status: " .. tostring(addon.SYNC.liveSync))
+                addon:Debug("sync", "After registering section handler - LiveSync status: " .. tostring(addon.SYNC.liveSync))
             else
                 addon:Debug("error", "RegisterSectionChangeHandler function not found!")
             end
@@ -234,7 +234,7 @@ function TWRA:Initialize()
                 
                 -- Double-check LiveSync status after initialization
                 if addon.SYNC then
-                    addon:Debug("error", "After InitializeSync - LiveSync status: " .. tostring(addon.SYNC.liveSync))
+                    addon:Debug("sync", "After InitializeSync - LiveSync status: " .. tostring(addon.SYNC.liveSync))
                 end
             else
                 addon:Debug("error", "InitializeSync function not found - sync functionality will not work!")
@@ -414,8 +414,26 @@ function TWRA:LoadSavedAssignments()
         
         return true
     else
-        self:Debug("data", "No saved assignments found in TWRA_SavedVariables")
-        return false
+        -- No saved assignments found, load example data instead to avoid empty TWRA_Assignments
+        self:Debug("data", "No saved assignments found - loading example data to prevent empty TWRA_Assignments")
+        
+        if self.LoadExampleData then
+            self:LoadExampleData()
+            self:Debug("data", "Example data loaded successfully to prevent OSD issues")
+            return true
+        else
+            self:Debug("error", "LoadExampleData function not available")
+            -- Create minimal assignments structure to prevent nil errors
+            TWRA_Assignments = {
+                data = TWRA_Assignments.data or {},
+                version = 2,
+                timestamp = time(),
+                currentSection = 1,
+                currentSectionName = "Welcome",
+                isExample = true
+            }
+            return false
+        end
     end
 end
 
