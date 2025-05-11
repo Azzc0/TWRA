@@ -38,3 +38,6 @@ core\ItemLink.lua
 sync\SyncHandlers.lua
 sync\ChunkManager.lua
 sync\Sync.lua
+
+# Test modules
+tests\Chunk.lua

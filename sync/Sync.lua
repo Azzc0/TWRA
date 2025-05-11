@@ -505,12 +505,6 @@ function TWRA:InitializeSync()
     -- Mark as initialized to prevent duplicate initialization
     self.SYNC.initialized = true
     
-    -- Register the syncmon slash command
-    SLASH_SYNCMON1 = "/syncmon"
-    SlashCmdList["SYNCMON"] = function(msg)
-        TWRA:ToggleMessageMonitoring()
-    end
-    
     self:Debug("sync", "Sync initialization complete")
     
     -- As a safety measure, also register a backup timer to check registration
@@ -664,7 +658,6 @@ end
 
 -- Function to handle section changes for sync
 function TWRA:RegisterSectionChangeHandler()
-    self:Debug("error", "RegisterSectionChangeHandler called from sync/Sync.lua")
     self:Debug("sync", "Registering section change handler (only registers once)")
     
     -- Check if we've already registered to avoid duplicate handlers
@@ -928,90 +921,89 @@ function TWRA:SendAllSections()
     self.SYNC.bulkSectionCount = sectionCount
     self.SYNC.bulkSectionsSent = 0
     
-    -- OPTIMIZATION: Pre-generate all messages and pre-determine which need chunking
-    self:Debug("sync", "Pre-generating all section messages")
-    local preparedMessages = {}
-    local usesChunking = {}
+    -- Determine channel for sending
+    local channel = GetNumRaidMembers() > 0 and "RAID" or 
+                   (GetNumPartyMembers() > 0 and "PARTY" or nil)
     
-    -- First prepare all section messages
-    for i, sectionIndex in ipairs(sectionIndices) do
-        local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
-        
-        if sectionData and sectionData ~= "" then
-            -- Create bulk section message
-            local message = self:CreateBulkSectionMessage(timestamp, sectionIndex, sectionData)
-            
-            -- Pre-determine if it needs chunking and save this info
-            local messageLength = string.len(message)
-            if messageLength > 2000 then
-                usesChunking[i] = true
-                -- For chunked messages, store the prefix and data separately
-                preparedMessages[i] = {
-                    prefix = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":",
-                    data = sectionData,
-                    sectionIndex = sectionIndex
-                }
-            else
-                -- For normal messages, just store the complete message
-                preparedMessages[i] = {
-                    message = message,
-                    sectionIndex = sectionIndex
-                }
-            end
-        else
-            -- Mark empty sections
-            preparedMessages[i] = {
-                isEmpty = true,
-                sectionIndex = sectionIndex
-            }
-        end
-    end
+    -- Track transfer IDs for chunked sections
+    self.SYNC.chunkedSectionTransfers = self.SYNC.chunkedSectionTransfers or {}
     
-    -- REVERSED ORDER: Send sections first WITHOUT delay
+    -- REVERSED ORDER: Send sections first
     self:Debug("sync", "REVERSED ORDER: Sending all sections first")
     
     local sentCount = 0
     local emptyCount = 0
     local errorCount = 0
+    local chunkedCount = 0
     
-    -- Send all sections in a single batch
-    for i, prepared in ipairs(preparedMessages) do
-        local sectionIndex = prepared.sectionIndex
+    -- Send each section, potentially using chunking
+    for _, sectionIndex in ipairs(sectionIndices) do
+        local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
         
         -- Skip empty sections
-        if prepared.isEmpty then
+        if not sectionData or sectionData == "" then
             emptyCount = emptyCount + 1
+            self:Debug("sync", "Skipping empty section " .. sectionIndex)
         else
-            local success = false
+            -- Create the regular message to check size
+            local normalMessage = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
             
-            -- Handle chunked messages differently
-            if usesChunking[i] then
+            -- Determine if chunking is needed
+            if string.len(normalMessage) > 2000 then
+                -- Section needs chunking
+                chunkedCount = chunkedCount + 1
+                self:Debug("sync", "Section " .. sectionIndex .. " is large (" .. string.len(normalMessage) .. " bytes), using ChunkManager")
+                
+                -- Create prefix for this section's chunks
+                local chunkPrefix = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":"
+                
+                -- Use ChunkManager to send the section data
                 if self.chunkManager then
-                    success = self.chunkManager:SendChunkedMessage(prepared.data, prepared.prefix)
-                    if not success then
+                    -- Send the content via ChunkManager and get transfer ID
+                    local transferId = self.chunkManager:ChunkContent(sectionData, channel, nil, nil)
+                    
+                    if transferId then
+                        -- Store the transfer ID for this section
+                        self.SYNC.chunkedSectionTransfers[sectionIndex] = transferId
+                        
+                        -- Create and send a special message indicating that this section is chunked
+                        local chunkRefMessage = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":CHUNK:" .. transferId
+                        local success = self:SendAddonMessage(chunkRefMessage, channel)
+                        
+                        if success then
+                            sentCount = sentCount + 1
+                            self:Debug("sync", "Sent chunked section reference for section " .. sectionIndex .. " with transfer ID " .. transferId)
+                        else
+                            errorCount = errorCount + 1
+                            self:Debug("error", "Failed to send chunked section reference for section " .. sectionIndex)
+                        end
+                    else
                         errorCount = errorCount + 1
+                        self:Debug("error", "Failed to create chunked transfer for section " .. sectionIndex)
                     end
                 else
-                    self:Debug("error", "Chunk manager not available for large bulk section data")
                     errorCount = errorCount + 1
+                    self:Debug("error", "Chunk manager not available for large section data")
                 end
             else
-                -- Send regular messages directly
-                success = self:SendAddonMessage(prepared.message)
-                if not success then
+                -- Send normal (non-chunked) message
+                local success = self:SendAddonMessage(normalMessage, channel)
+                
+                if success then
+                    sentCount = sentCount + 1
+                    self:Debug("sync", "Sent regular section " .. sectionIndex .. " (" .. string.len(normalMessage) .. " bytes)")
+                else
                     errorCount = errorCount + 1
+                    self:Debug("error", "Failed to send section " .. sectionIndex)
                 end
-            end
-            
-            if success then
-                sentCount = sentCount + 1
             end
         end
     end
     
     -- Report section sending results
     self:Debug("sync", "Completed sending sections. Successfully sent " .. 
-             sentCount .. " out of " .. sectionCount .. " sections. " .. 
+             sentCount .. " out of " .. sectionCount .. " sections (" .. 
+             chunkedCount .. " chunked). " .. 
              emptyCount .. " empty sections skipped. " .. 
              errorCount .. " errors.")
     
@@ -1022,7 +1014,7 @@ function TWRA:SendAllSections()
         return false
     end
     
-    -- Create the bulk structure message - using the BULK_STRUCTURE command
+    -- Create the bulk structure message
     local structureMessage = self:CreateBulkStructureMessage(timestamp, structureData)
     
     -- Check if structure message needs chunking
@@ -1030,7 +1022,7 @@ function TWRA:SendAllSections()
         self:Debug("sync", "Structure data too large, using chunk manager for final structure message")
         if self.chunkManager then
             local prefix = self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":"
-            local success = self.chunkManager:SendChunkedMessage(structureData, prefix)
+            local success = self.chunkManager:ChunkContent(structureData, channel, nil, prefix)
             if success then
                 self:Debug("sync", "Successfully sent final structure message via chunk manager")
             else
@@ -1042,7 +1034,7 @@ function TWRA:SendAllSections()
         end
     else
         -- Send the structure message directly
-        local success = self:SendAddonMessage(structureMessage)
+        local success = self:SendAddonMessage(structureMessage, channel)
         if success then
             self:Debug("sync", "Successfully sent final structure message")
         else
@@ -1055,6 +1047,7 @@ function TWRA:SendAllSections()
     self.SYNC.sendingBulkSections = nil
     self.SYNC.bulkSectionCount = nil
     self.SYNC.bulkSectionsSent = 0
+    self.SYNC.chunkedSectionTransfers = {}
     
     -- Schedule clearing the lastSendAllSectionsTime after a cooldown period
     self:ScheduleTimer(function()
@@ -1062,12 +1055,8 @@ function TWRA:SendAllSections()
         self:Debug("sync", "Cleared send cooldown, ready for next sync if needed")
     end, 15) -- 15 second cooldown before allowing another send
     
-    -- Clear the temporary message cache to free memory
-    preparedMessages = nil
-    usesChunking = nil
-    
     -- Final user notification
-    TWRA:Debug("sync", "Bulk sync complete with reversed order (sections first, structure last)!")
+    self:Debug("sync", "Bulk sync complete with reversed order (sections first, structure last)!")
     
     collectgarbage(0) -- Fixed: In Lua 5.0, collectgarbage takes a number, not a string
     return true
@@ -1185,5 +1174,550 @@ function TWRA:SendDataInChunks(data, dataType, requestId, target)
         end, (i - 1) * 0.1) -- 0.1 second delay between chunks
     end
     
+    return true
+end
+
+-- Test function for isolated chunk testing
+-- This allows us to test the chunking system without a full sync process
+function TWRA:TestChunkedSectionProcessing()
+    self:Debug("sync", "----- CHUNK TEST: Starting isolated chunked section test -----")
+    
+    -- Make sure our data structures exist
+    TWRA_Assignments = TWRA_Assignments or {}
+    TWRA_Assignments.data = TWRA_Assignments.data or {}
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    TWRA_CompressedAssignments.sections = TWRA_CompressedAssignments.sections or {}
+    TWRA_CompressedAssignments.sections.missing = TWRA_CompressedAssignments.sections.missing or {}
+    
+    -- Create a test section
+    local testSectionIndex = 999
+    local testSectionName = "Chunked Test Section"
+    
+    -- Create skeleton entry in TWRA_Assignments
+    TWRA_Assignments.data[testSectionIndex] = {
+        ["Section Name"] = testSectionName,
+        ["NeedsProcessing"] = true
+    }
+    
+    -- Setup the SYNC context if it doesn't exist
+    self.SYNC = self.SYNC or {}
+    self.SYNC.pendingChunkedSections = self.SYNC.pendingChunkedSections or {}
+    
+    -- Simulate a pending chunked section
+    self.SYNC.pendingChunkedSections[testSectionIndex] = {
+        transferId = "TEST_TRANSFER_ID",
+        timestamp = time(),
+        chunks = {},
+        totalChunks = 5,
+        receivedChunks = 0
+    }
+    
+    -- Set an empty placeholder in sections
+    TWRA_CompressedAssignments.sections[testSectionIndex] = ""
+    
+    -- Test ProcessSectionData to ensure it handles chunked sections correctly
+    self:Debug("sync", "CHUNK TEST: Testing ProcessSectionData on pending chunked section")
+    
+    -- Process the test section
+    if self.ProcessSectionData then
+        self:ProcessSectionData(testSectionIndex)
+        
+        -- Verify the section is NOT added to missing sections
+        local isMissing = TWRA_CompressedAssignments.sections.missing[testSectionIndex]
+        self:Debug("sync", "CHUNK TEST: Section marked as missing: " .. (isMissing and "YES (FAIL)" or "NO (PASS)"))
+        
+        -- Verify it's still marked as needing processing
+        local needsProcessing = TWRA_Assignments.data[testSectionIndex] and 
+                               TWRA_Assignments.data[testSectionIndex]["NeedsProcessing"]
+        self:Debug("sync", "CHUNK TEST: Section needs processing: " .. (needsProcessing and "YES (PASS)" or "NO (FAIL)"))
+    else
+        self:Debug("error", "CHUNK TEST: ProcessSectionData function not available")
+    end
+    
+    -- Now simulate completed chunk assembly
+    self:Debug("sync", "CHUNK TEST: Simulating completed chunk assembly")
+    
+    -- Create sample section data
+    local sampleData = {
+        ["Section Header"] = {"Icon", "Target", "Tank", "Healer"},
+        ["Section Rows"] = {
+            {"Skull", "Test Target", "Tank1", "Healer1"},
+            {"Cross", "Test Target 2", "Tank2", "Healer2"}
+        }
+    }
+    
+    -- Convert to string (simulating assembled chunk data)
+    local dataString = "THIS_IS_TEST_ASSEMBLED_CHUNK_DATA"
+    
+    -- Store the assembled data
+    TWRA_CompressedAssignments.sections[testSectionIndex] = dataString
+    
+    -- Remove from pending chunked sections
+    self.SYNC.pendingChunkedSections[testSectionIndex] = nil
+    
+    -- Process again now that chunks are "assembled"
+    self:Debug("sync", "CHUNK TEST: Testing ProcessSectionData with assembled chunks")
+    
+    -- Mock the DecompressSectionData function to return our sample data
+    local originalDecompress = self.DecompressSectionData
+    self.DecompressSectionData = function(self, data)
+        if data == dataString then
+            return sampleData
+        else
+            return originalDecompress(self, data)
+        end
+    end
+    
+    -- Process the section again
+    if self.ProcessSectionData then
+        self:ProcessSectionData(testSectionIndex)
+        
+        -- Verify the section is NOT in missing sections
+        local isMissing = TWRA_CompressedAssignments.sections.missing[testSectionIndex]
+        self:Debug("sync", "CHUNK TEST: Section marked as missing after assembly: " .. (isMissing and "YES (FAIL)" or "NO (PASS)"))
+        
+        -- Verify it's no longer marked as needing processing
+        local needsProcessing = TWRA_Assignments.data[testSectionIndex] and 
+                               TWRA_Assignments.data[testSectionIndex]["NeedsProcessing"]
+        self:Debug("sync", "CHUNK TEST: Section still needs processing: " .. (needsProcessing and "YES (FAIL)" or "NO (PASS)"))
+    end
+    
+    -- Restore original function
+    self.DecompressSectionData = originalDecompress
+    
+    -- Clean up after test
+    TWRA_Assignments.data[testSectionIndex] = nil
+    TWRA_CompressedAssignments.sections[testSectionIndex] = nil
+    if TWRA_CompressedAssignments.sections.missing then
+        TWRA_CompressedAssignments.sections.missing[testSectionIndex] = nil
+    end
+    
+    self:Debug("sync", "----- CHUNK TEST: Completed isolated chunked section test -----")
+    
+    return true
+end
+
+-- Test function for cross-client chunked section processing
+-- This simulates two clients exchanging chunked data
+function TWRA:TestCrossClientChunkProcessing()
+    self:Debug("sync", "----- CROSS-CLIENT CHUNK TEST: Starting test -----")
+    
+    -- Set up test variables
+    local testSectionIndex = 999
+    local testSectionName = "Cross-Client Chunked Test Section"
+    local testTimestamp = time()
+    local testTransferId = "TEST_" .. testTimestamp .. "_" .. testSectionIndex
+    
+    -- Make sure our data structures exist
+    TWRA_Assignments = TWRA_Assignments or {}
+    TWRA_Assignments.data = TWRA_Assignments.data or {}
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    TWRA_CompressedAssignments.sections = TWRA_CompressedAssignments.sections or {}
+    TWRA_CompressedAssignments.sections.missing = TWRA_CompressedAssignments.sections.missing or {}
+    
+    -- Ensure SYNC context exists
+    self.SYNC = self.SYNC or {}
+    self.SYNC.pendingChunkedSections = self.SYNC.pendingChunkedSections or {}
+    
+    -- Ensure ChunkManager exists
+    if not self.chunkManager then
+        self:Debug("error", "CROSS-CLIENT TEST: ChunkManager not available, test cannot continue")
+        return false
+    end
+    
+    -- Reset chunk manager state for clean test
+    self.chunkManager.receivingChunks = {}
+    self.chunkManager.processedTransfers = {}
+    
+    -- =============================================
+    -- PHASE 1: SIMULATE CLIENT A (SENDER)
+    -- =============================================
+    self:Debug("sync", "CROSS-CLIENT TEST: PHASE 1 - Simulating Client A (Sender)")
+    
+    -- Create sample section data
+    local sampleData = {
+        ["Section Header"] = {"Icon", "Target", "Tank", "Healer"},
+        ["Section Rows"] = {
+            {"Skull", "Test Target", "Tank1", "Healer1"},
+            {"Cross", "Test Target 2", "Tank2", "Healer2"},
+            {"Note", "This is a test note"}
+        },
+        ["Section Name"] = testSectionName
+    }
+    
+    -- Convert to string (simulating compression result)
+    local sampleDataString = "SIMULATED_COMPRESSED_SECTION_DATA_FOR_TESTING"
+    
+    -- Create a reference to the chunked section (what would be sent via addon message)
+    local chunkRefMessage = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. testTimestamp .. ":" .. testSectionIndex .. ":CHUNK:" .. testTransferId
+    self:Debug("sync", "CROSS-CLIENT TEST: Client A sending chunk reference message: " .. chunkRefMessage)
+    
+    -- Split the data into chunks (simulating what ChunkManager would do)
+    local chunkSize = 50  -- Small size for testing
+    local totalLength = string.len(sampleDataString)
+    local totalChunks = math.ceil(totalLength / chunkSize)
+    local chunks = {}
+    
+    for i = 1, totalChunks do
+        local startPos = ((i - 1) * chunkSize) + 1
+        local endPos = math.min(startPos + chunkSize - 1, totalLength)
+        chunks[i] = string.sub(sampleDataString, startPos, endPos)
+    end
+    
+    self:Debug("sync", "CROSS-CLIENT TEST: Client A prepared " .. totalChunks .. " chunks for transfer")
+    
+    -- Create chunk header message
+    local chunkHeaderMessage = "CH:" .. totalLength .. ":" .. testTransferId .. ":" .. totalChunks
+    self:Debug("sync", "CROSS-CLIENT TEST: Client A sending chunk header: " .. chunkHeaderMessage)
+    
+    -- =============================================
+    -- PHASE 2: SIMULATE CLIENT B (RECEIVER)
+    -- =============================================
+    self:Debug("sync", "CROSS-CLIENT TEST: PHASE 2 - Simulating Client B (Receiver)")
+    
+    -- Create skeleton entry in TWRA_Assignments
+    TWRA_Assignments.data[testSectionIndex] = {
+        ["Section Name"] = testSectionName,
+        ["NeedsProcessing"] = true
+    }
+    
+    -- First, simulate Client B receiving the chunk reference message
+    -- This is handled by the HandleBulkSectionCommand function, which would register the transfer ID
+    -- We'll simulate this by directly adding to pendingChunkedSections
+    self.SYNC.pendingChunkedSections[testSectionIndex] = {
+        transferId = testTransferId,
+        timestamp = testTimestamp,
+        chunks = {},
+        totalChunks = totalChunks,
+        receivedChunks = 0
+    }
+    
+    -- Set an empty placeholder in sections
+    TWRA_CompressedAssignments.sections[testSectionIndex] = ""
+    
+    self:Debug("sync", "CROSS-CLIENT TEST: Client B registered pending chunked section with transferId: " .. testTransferId)
+    
+    -- Test ProcessSectionData to ensure it doesn't mark chunked section as missing
+    self:Debug("sync", "CROSS-CLIENT TEST: Testing ProcessSectionData on pending chunked section")
+    
+    if self.ProcessSectionData then
+        self:ProcessSectionData(testSectionIndex)
+        
+        -- Verify section is NOT added to missing sections because it's a pending chunked section
+        local isMissing = TWRA_CompressedAssignments.sections.missing[testSectionIndex]
+        self:Debug("sync", "CROSS-CLIENT TEST: Section marked as missing: " .. (isMissing and "YES (FAIL)" or "NO (PASS)"))
+        
+        -- Verify it's still marked as needing processing
+        local needsProcessing = TWRA_Assignments.data[testSectionIndex] and 
+                               TWRA_Assignments.data[testSectionIndex]["NeedsProcessing"]
+        self:Debug("sync", "CROSS-CLIENT TEST: Section needs processing: " .. (needsProcessing and "YES (PASS)" or "NO (FAIL)"))
+    else
+        self:Debug("error", "CROSS-CLIENT TEST: ProcessSectionData function not available")
+    end
+    
+    -- Simulate Client B receiving the chunk header
+    self:Debug("sync", "CROSS-CLIENT TEST: Client B receiving chunk header")
+    local success = self.chunkManager:HandleChunkHeader(totalLength, testTransferId, totalChunks, "ClientA")
+    self:Debug("sync", "CROSS-CLIENT TEST: Chunk header processing " .. (success and "SUCCEEDED" or "FAILED"))
+    
+    -- Verify that the transfer is properly registered in ChunkManager
+    local isRegistered = self.chunkManager.receivingChunks[testTransferId] ~= nil
+    self:Debug("sync", "CROSS-CLIENT TEST: Transfer registered in ChunkManager: " .. (isRegistered and "YES (PASS)" or "NO (FAIL)"))
+    
+    -- Now simulate Client B receiving each chunk
+    self:Debug("sync", "CROSS-CLIENT TEST: Client B receiving chunks")
+    for i = 1, totalChunks do
+        -- Simulate Client B receiving chunk data
+        local chunkMessage = "CD:" .. testTransferId .. ":" .. i .. ":" .. chunks[i]
+        self:Debug("sync", "CROSS-CLIENT TEST: Receiving chunk " .. i .. "/" .. totalChunks)
+        
+        local chunkSuccess = self.chunkManager:HandleChunkData(testTransferId, i, chunks[i])
+        self:Debug("sync", "CROSS-CLIENT TEST: Chunk " .. i .. " processing " .. (chunkSuccess and "SUCCEEDED" or "FAILED"))
+    end
+    
+    -- Check if ChunkManager shows that all chunks are received
+    local allReceived = self.chunkManager.receivingChunks[testTransferId] and 
+                        self.chunkManager.receivingChunks[testTransferId].received == totalChunks
+    self:Debug("sync", "CROSS-CLIENT TEST: All chunks received: " .. (allReceived and "YES (PASS)" or "NO (FAIL)"))
+    
+    -- =============================================
+    -- PHASE 3: SIMULATE FINALIZING THE TRANSFER
+    -- =============================================
+    self:Debug("sync", "CROSS-CLIENT TEST: PHASE 3 - Finalizing transfer")
+    
+    -- Normally, the ChunkManager would assemble and finalize the content
+    -- Let's place the assembled content in the right place
+    TWRA_CompressedAssignments.sections[testSectionIndex] = sampleDataString
+    
+    -- Remove from pending chunked sections
+    self.SYNC.pendingChunkedSections[testSectionIndex] = nil
+    
+    -- Process the section now that chunks are "assembled"
+    self:Debug("sync", "CROSS-CLIENT TEST: Testing ProcessSectionData with assembled chunks")
+    
+    -- Mock the DecompressSectionData function to return our sample data
+    local originalDecompress = self.DecompressSectionData
+    self.DecompressSectionData = function(self, data)
+        if data == sampleDataString then
+            return sampleData
+        else
+            return originalDecompress(self, data)
+        end
+    end
+    
+    -- Process the section again
+    if self.ProcessSectionData then
+        self:ProcessSectionData(testSectionIndex)
+        
+        -- Verify section is NOT in missing sections
+        local isMissing = TWRA_CompressedAssignments.sections.missing[testSectionIndex]
+        self:Debug("sync", "CROSS-CLIENT TEST: Section marked as missing after assembly: " .. (isMissing and "YES (FAIL)" or "NO (PASS)"))
+        
+        -- Verify it's no longer marked as needing processing
+        local needsProcessing = TWRA_Assignments.data[testSectionIndex] and 
+                               TWRA_Assignments.data[testSectionIndex]["NeedsProcessing"]
+        self:Debug("sync", "CROSS-CLIENT TEST: Section still needs processing: " .. (needsProcessing and "YES (FAIL)" or "NO (PASS)"))
+    end
+    
+    -- Restore original function
+    self.DecompressSectionData = originalDecompress
+    
+    -- Clean up after test
+    TWRA_Assignments.data[testSectionIndex] = nil
+    TWRA_CompressedAssignments.sections[testSectionIndex] = nil
+    if TWRA_CompressedAssignments.sections.missing then
+        TWRA_CompressedAssignments.sections.missing[testSectionIndex] = nil
+    end
+    
+    self:Debug("sync", "----- CROSS-CLIENT CHUNK TEST: Completed cross-client test -----")
+    
+    return true
+end
+
+-- Test function for basic chunk sending and receiving between clients
+-- This is a simple test that just sends a known string using chunks
+function TWRA:TestChunkSync()
+    self:Debug("sync", "----- CHUNK SYNC TEST: Starting sender test -----")
+    self:Debug("chunk", "----- CHUNK SYNC TEST: Starting sender test -----")
+    
+    -- The test message we want to send
+    local testMessage = "My pinapple is strawberry flavoured and tastes like chocolate"
+    local testId = "TEST_CHUNK_" .. tostring(math.floor(GetTime()))
+    
+    -- Make sure ChunkManager exists
+    if not self.chunkManager then
+        self:Debug("error", "CHUNK SYNC TEST: ChunkManager not available, test cannot continue")
+        self:Debug("chunk", "CHUNK SYNC TEST: ChunkManager not available, test cannot continue")
+        return false
+    end
+    
+    -- Reset chunk manager state for clean test
+    self.chunkManager.testData = self.chunkManager.testData or {}
+    self.chunkManager.testData.sentMessage = testMessage
+    self.chunkManager.testData.transferId = testId
+    
+    -- Force an aggressive chunk size for testing
+    local originalMaxChunkSize = self.chunkManager.maxChunkSize
+    self.chunkManager.maxChunkSize = 10  -- Force exactly 10 bytes for testing
+    
+    -- Calculate chunks
+    local totalLength = string.len(testMessage)
+    local chunkSize = self.chunkManager.maxChunkSize
+    local totalChunks = math.ceil(totalLength / chunkSize)
+    
+    self:Debug("sync", "CHUNK SYNC TEST: Prepared message: '" .. testMessage .. "'")
+    self:Debug("chunk", "CHUNK SYNC TEST: Prepared message: '" .. testMessage .. "'")
+    self:Debug("chunk", "CHUNK SYNC TEST: Transfer ID: " .. testId)
+    self:Debug("chunk", "CHUNK SYNC TEST: Total length: " .. totalLength .. " bytes")
+    self:Debug("chunk", "CHUNK SYNC TEST: Chunk size: " .. chunkSize .. " bytes")
+    self:Debug("chunk", "CHUNK SYNC TEST: Total chunks: " .. totalChunks)
+    
+    -- First send the chunk header to set up the transfer
+    local channel = GetNumRaidMembers() > 0 and "RAID" or 
+                   (GetNumPartyMembers() > 0 and "PARTY" or "GUILD")
+    
+    -- Create the chunk header using the standard CHUNKED prefix format
+    local headerMessage = "CHUNKED:" .. totalLength .. ":" .. testId .. ":" .. totalChunks
+    
+    -- Output debug info about the channel and message
+    self:Debug("chunk", "CHUNK SYNC TEST: Using channel: " .. channel)
+    self:Debug("chunk", "CHUNK SYNC TEST: Header message format: " .. headerMessage)
+    self:Debug("chunk", "CHUNK SYNC TEST: Full addon prefix: " .. self.SYNC.PREFIX)
+    
+    -- Send the chunk header
+    if self.SendAddonMessage then
+        self:Debug("chunk", "CHUNK SYNC TEST: Using TWRA:SendAddonMessage to send header")
+        self:SendAddonMessage(headerMessage, channel)
+        self:Debug("sync", "CHUNK SYNC TEST: Sent chunk header: " .. headerMessage)
+        self:Debug("chunk", "CHUNK SYNC TEST: Sent chunk header: " .. headerMessage)
+    else
+        self:Debug("chunk", "CHUNK SYNC TEST: Using raw SendAddonMessage to send header")
+        SendAddonMessage(self.SYNC.PREFIX, headerMessage, channel)
+        self:Debug("sync", "CHUNK SYNC TEST: Sent chunk header (raw): " .. headerMessage)
+        self:Debug("chunk", "CHUNK SYNC TEST: Sent chunk header (raw): " .. self.SYNC.PREFIX .. " :: " .. headerMessage)
+    end
+    
+    -- Store chunks in the test data for verification
+    self.chunkManager.testData.chunks = {}
+    
+    -- Now send each chunk with short delay between them
+    for i = 1, totalChunks do
+        local startPos = ((i - 1) * chunkSize) + 1
+        local endPos = math.min(startPos + chunkSize - 1, totalLength)
+        local chunkData = string.sub(testMessage, startPos, endPos)
+        
+        -- Store the chunk for verification
+        self.chunkManager.testData.chunks[i] = chunkData
+        
+        -- Create the chunk data message using the standard CHUNK prefix format
+        local chunkMessage = "CHUNK:" .. testId .. ":" .. i .. ":" .. chunkData
+        
+        -- Schedule sending this chunk
+        self:ScheduleTimer(function()
+            self:Debug("chunk", "CHUNK SYNC TEST: About to send chunk " .. i .. "/" .. totalChunks)
+            
+            if self.SendAddonMessage then
+                self:Debug("chunk", "CHUNK SYNC TEST: Using TWRA:SendAddonMessage to send chunk")
+                self:SendAddonMessage(chunkMessage, channel)
+            else
+                self:Debug("chunk", "CHUNK SYNC TEST: Using raw SendAddonMessage to send chunk")
+                SendAddonMessage(self.SYNC.PREFIX, chunkMessage, channel)
+            end
+            
+            self:Debug("sync", "CHUNK SYNC TEST: Sent chunk " .. i .. "/" .. totalChunks .. 
+                      ": '" .. chunkData .. "'")
+            self:Debug("chunk", "CHUNK SYNC TEST: Sent chunk " .. i .. "/" .. totalChunks .. 
+                      ": '" .. chunkData .. "' with message: " .. chunkMessage)
+            
+            -- If this is the last chunk, log completion
+            if i == totalChunks then
+                self:Debug("sync", "CHUNK SYNC TEST: Completed sending all " .. totalChunks .. " chunks")
+                self:Debug("chunk", "CHUNK SYNC TEST: Completed sending all " .. totalChunks .. " chunks")
+                self:Debug("chunk", "CHUNK SYNC TEST: Receiving client should now run /run TWRA:TestChunkCompletion()")
+                
+                -- Restore original chunk size
+                self.chunkManager.maxChunkSize = originalMaxChunkSize
+            end
+        end, (i - 1) * 0.1) -- 0.1 second delay between chunks
+    end
+    
+    self:Debug("sync", "----- CHUNK SYNC TEST: Sender test setup complete -----")
+    self:Debug("chunk", "----- CHUNK SYNC TEST: Sender test setup complete -----")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r Started chunk transfer test: Sending " .. 
+                                 totalChunks .. " chunks with size of " .. chunkSize .. " bytes each. The other client should see them and can then run |cFFFFFF00/run TWRA:TestChunkCompletion()|r")
+    
+    return true
+end
+
+-- Test function to verify received chunks are correctly processed
+function TWRA:TestChunkCompletion()
+    self:Debug("sync", "----- CHUNK SYNC TEST: Starting receiver verification -----")
+    
+    -- Make sure ChunkManager exists
+    if not self.chunkManager then
+        self:Debug("error", "CHUNK SYNC TEST: ChunkManager not available, test cannot continue")
+        return false
+    end
+    
+    -- Find chunks that start with TEST_CHUNK prefix
+    local foundTransferId = nil
+    local receivedChunks = nil
+    
+    for transferId, info in pairs(self.chunkManager.receivingChunks or {}) do
+        if string.find(transferId, "TEST_CHUNK_") then
+            foundTransferId = transferId
+            receivedChunks = info
+            self:Debug("sync", "CHUNK SYNC TEST: Found test transfer: " .. transferId)
+            break
+        end
+    end
+    
+    if not foundTransferId or not receivedChunks then
+        self:Debug("error", "CHUNK SYNC TEST: No test chunk transfer found. Make sure the sender has run TestChunkSync first.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r No test chunk transfer found. Did the sender run |cFFFFFF00/run TWRA:TestChunkSync()|r?")
+        return false
+    end
+    
+    self:Debug("sync", "CHUNK SYNC TEST: Found test transfer ID: " .. foundTransferId)
+    self:Debug("sync", "CHUNK SYNC TEST: Expected chunks: " .. (receivedChunks.expected or "unknown"))
+    self:Debug("sync", "CHUNK SYNC TEST: Received chunks: " .. (receivedChunks.received or "unknown"))
+    
+    -- Check if we received all chunks
+    local isComplete = (receivedChunks.expected > 0 and receivedChunks.received == receivedChunks.expected)
+    self:Debug("sync", "CHUNK SYNC TEST: Transfer complete: " .. (isComplete and "YES (PASS)" or "NO (FAIL)"))
+    
+    if isComplete then
+        -- Assemble the chunks and check the message
+        local assembledMessage = ""
+        for i = 1, receivedChunks.received do
+            if receivedChunks.chunks[i] then
+                assembledMessage = assembledMessage .. receivedChunks.chunks[i]
+            else
+                self:Debug("error", "CHUNK SYNC TEST: Missing chunk " .. i)
+            end
+        end
+        
+        self:Debug("sync", "CHUNK SYNC TEST: Assembled message: '" .. assembledMessage .. "'")
+        
+        -- Verify the expected message
+        local expectedMessage = "My pinapple is strawberry flavoured and tastes like chocolate"
+        local messageMatches = (assembledMessage == expectedMessage)
+        
+        self:Debug("sync", "CHUNK SYNC TEST: Message matches expected: " .. (messageMatches and "YES (PASS)" or "NO (FAIL)"))
+        self:Debug("sync", "CHUNK SYNC TEST: Expected: '" .. expectedMessage .. "'")
+        self:Debug("sync", "CHUNK SYNC TEST: Received: '" .. assembledMessage .. "'")
+        
+        -- Final result
+        if messageMatches then
+            self:Debug("sync", "CHUNK SYNC TEST: OVERALL RESULT: PASS - Chunking system working correctly!")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r |cFF00FF00SUCCESS!|r Received and assembled the correct message: '" .. assembledMessage .. "'")
+        else
+            self:Debug("sync", "CHUNK SYNC TEST: OVERALL RESULT: FAIL - Assembled message does not match expected")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r |cFFFF0000FAILED!|r Assembled message does not match expected")
+        end
+    else
+        self:Debug("sync", "CHUNK SYNC TEST: OVERALL RESULT: FAIL - Did not receive all expected chunks")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r |cFFFF0000FAILED!|r Did not receive all expected chunks. Received " .. 
+                                     (receivedChunks.received or "0") .. "/" .. (receivedChunks.expected or "?"))
+    end
+    
+    self:Debug("sync", "----- CHUNK SYNC TEST: Receiver verification complete -----")
+    
+    return isComplete and messageMatches
+end
+
+-- Enhance the chunk manager to finalize the test chunks properly
+function TWRA:EnhanceChunkManagerForTests()
+    if not self.chunkManager then
+        self:Debug("error", "Cannot enhance chunk manager - not available")
+        return false
+    end
+    
+    -- Store the original HandleChunkData function
+    local originalHandleChunkData = self.chunkManager.HandleChunkData
+    
+    -- Override the HandleChunkData function to better handle our test chunks
+    self.chunkManager.HandleChunkData = function(self, transferId, chunkIndex, chunkData)
+        -- Call the original function first
+        local result = originalHandleChunkData(self, transferId, chunkIndex, chunkData)
+        
+        -- Special handling for test chunks
+        if string.find(transferId, "TEST_CHUNK_") then
+            -- Check if we've received all chunks
+            local transfer = self.receivingChunks[transferId]
+            if transfer and transfer.expected > 0 and transfer.received == transfer.expected then
+                -- Log that all chunks have been received
+                TWRA:Debug("sync", "All test chunks received for transfer: " .. transferId)
+                TWRA:Debug("sync", "You can now run /run TWRA:TestChunkCompletion() to verify")
+                
+                -- Add a message to the chat frame to make it obvious
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r Received all chunks! Run |cFFFFFF00/run TWRA:TestChunkCompletion()|r to verify")
+            end
+        end
+        
+        return result
+    end
+    
+    self:Debug("sync", "Enhanced ChunkManager for testing")
     return true
 end

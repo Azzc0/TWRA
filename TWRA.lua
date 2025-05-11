@@ -990,3 +990,169 @@ function TWRA:OnGroupChanged()
     end
     TWRA:UpdateOSDContent(TWRA_Assignments.currentSectionName, TWRA_Assignments.currentSection)
 end
+
+-- Function to enhance the chunk manager for testing
+function TWRA:EnhanceChunkManagerForTests()
+    self:Debug("sync", "Enhancing chunk manager for tests")
+    self:Debug("chunk", "Enhancing chunk manager for tests - enabling detailed chunk category debugging")
+    
+    -- Ensure debug channels are enabled
+    self.debugCategories = self.debugCategories or {}
+    self.debugCategories["chunk"] = true
+    
+    -- Enhance chunk manager with additional debug output
+    if self.chunkManager then
+        -- Enhanced version of ProcessChunks with additional debug output
+        local originalProcessChunks = self.chunkManager.ProcessChunks
+        self.chunkManager.ProcessChunks = function(chunkSelf, transferId)
+            self:Debug("chunk", "ProcessChunks called for transfer ID: " .. tostring(transferId))
+            
+            -- Extra validation for test transfers
+            if transferId and string.find(tostring(transferId), "TEST_CHUNK_") then
+                self:Debug("chunk", "Processing test chunk transfer: " .. tostring(transferId))
+                
+                -- Debug the chunks we have
+                if chunkSelf.receivingChunks and chunkSelf.receivingChunks[transferId] then
+                    local transfer = chunkSelf.receivingChunks[transferId]
+                    self:Debug("chunk", "Test transfer details:")
+                    self:Debug("chunk", "  Expected chunks: " .. (transfer.expected or "unknown"))
+                    self:Debug("chunk", "  Received chunks: " .. (transfer.received or "unknown"))
+                    self:Debug("chunk", "  Data length: " .. (transfer.dataLength or "unknown"))
+                    
+                    -- List all chunks
+                    for i = 1, transfer.expected do
+                        if transfer.chunks and transfer.chunks[i] then
+                            self:Debug("chunk", "  Chunk " .. i .. " present: " .. string.sub(transfer.chunks[i], 1, 10) .. "...")
+                        else
+                            self:Debug("chunk", "  Chunk " .. i .. " MISSING")
+                        end
+                    end
+                else
+                    self:Debug("chunk", "Test transfer not found in receivingChunks table")
+                end
+            end
+            
+            -- Call the original function
+            local result = originalProcessChunks(chunkSelf, transferId)
+            
+            -- Debug the result for test transfers
+            if transferId and string.find(tostring(transferId), "TEST_CHUNK_") then
+                self:Debug("chunk", "Test chunk processing result: " .. (result and "SUCCESS" or "FAILURE"))
+                if result then
+                    self:Debug("chunk", "Assembled data length: " .. string.len(result))
+                    self:Debug("chunk", "Assembled data: " .. result)
+                else
+                    self:Debug("chunk", "Failed to assemble test chunks")
+                end
+            end
+            
+            return result
+        end
+        
+        -- Enhanced version of HandleChunkData with additional debug
+        local originalHandleChunkData = self.chunkManager.HandleChunkData
+        self.chunkManager.HandleChunkData = function(chunkSelf, transferId, chunkNum, chunkData)
+            -- Extra debug for test transfers
+            if transferId and string.find(tostring(transferId), "TEST_CHUNK_") then
+                self:Debug("chunk", "HandleChunkData for test transfer: " .. tostring(transferId) .. ", chunk #" .. tostring(chunkNum))
+                self:Debug("chunk", "Chunk data length: " .. string.len(chunkData))
+                self:Debug("chunk", "Chunk data preview: " .. string.sub(chunkData, 1, 20) .. "...")
+            end
+            
+            -- Call the original function
+            return originalHandleChunkData(chunkSelf, transferId, chunkNum, chunkData)
+        end
+        
+        self:Debug("sync", "Chunk manager enhanced with additional test debugging")
+        self:Debug("chunk", "Chunk manager enhanced with additional test debugging")
+    else
+        self:Debug("error", "Cannot enhance chunk manager - not available")
+        self:Debug("chunk", "Cannot enhance chunk manager - not available")
+    end
+end
+
+-- Enhanced test function for chunk synchronization
+function TWRA:TestChunkSync()
+    self:Debug("sync", "----- CHUNK SYNC TEST: Starting sender test -----")
+    self:Debug("chunk", "----- CHUNK SYNC TEST: Starting sender test -----")
+    
+    -- Check if we're in a group
+    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        self:Debug("error", "CHUNK SYNC TEST: Not in a group, test requires at least one other group member")
+        self:Debug("chunk", "CHUNK SYNC TEST: Not in a group, test requires at least one other group member")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r |cFFFF0000FAILED!|r Not in a group. Join a party or raid to test sync.")
+        return false
+    end
+    
+    -- Make sure ChunkManager exists
+    if not self.chunkManager then
+        self:Debug("error", "CHUNK SYNC TEST: ChunkManager not available, test cannot continue")
+        self:Debug("chunk", "CHUNK SYNC TEST: ChunkManager not available, test cannot continue")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r |cFFFF0000FAILED!|r ChunkManager not available")
+        return false
+    end
+    
+    -- Create a unique test ID
+    local testTransferId = "TEST_CHUNK_" .. time()
+    self:Debug("sync", "CHUNK SYNC TEST: Created test transfer ID: " .. testTransferId)
+    self:Debug("chunk", "CHUNK SYNC TEST: Created test transfer ID: " .. testTransferId)
+    
+    -- Create test message that will be split into chunks
+    local testMessage = "My pinapple is strawberry flavoured and tastes like chocolate"
+    self:Debug("sync", "CHUNK SYNC TEST: Test message: '" .. testMessage .. "'")
+    self:Debug("chunk", "CHUNK SYNC TEST: Test message: '" .. testMessage .. "' (length: " .. string.len(testMessage) .. " bytes)")
+    
+    -- For testing, use a very small chunk size to force multiple chunks
+    local originalMaxChunkSize = self.chunkManager.maxChunkSize
+    self.chunkManager.maxChunkSize = 10
+    self:Debug("sync", "CHUNK SYNC TEST: Setting test chunk size to 10 bytes (normal is " .. originalMaxChunkSize .. ")")
+    self:Debug("chunk", "CHUNK SYNC TEST: Setting test chunk size to 10 bytes (normal is " .. originalMaxChunkSize .. ")")
+    
+    -- Determine which channel to use
+    local channel = GetNumRaidMembers() > 0 and "RAID" or "PARTY"
+    self:Debug("sync", "CHUNK SYNC TEST: Using " .. channel .. " channel for test")
+    self:Debug("chunk", "CHUNK SYNC TEST: Using " .. channel .. " channel for test")
+    
+    -- Force enable chunk debugging
+    self.debugCategories = self.debugCategories or {}
+    self.debugCategories["chunk"] = true
+    
+    -- Calculate expected chunks
+    local expectedChunks = math.ceil(string.len(testMessage) / self.chunkManager.maxChunkSize)
+    self:Debug("sync", "CHUNK SYNC TEST: Expecting " .. expectedChunks .. " chunks")
+    self:Debug("chunk", "CHUNK SYNC TEST: Expecting " .. expectedChunks .. " chunks with " .. self.chunkManager.maxChunkSize .. " bytes per chunk")
+    
+    -- Send the test data
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r Sending test message in " .. expectedChunks .. " chunks via " .. channel)
+    self:Debug("sync", "CHUNK SYNC TEST: Starting chunk transmission")
+    self:Debug("chunk", "CHUNK SYNC TEST: Starting chunk transmission with transfer ID: " .. testTransferId)
+    
+    -- Before sending, ensure we have an addon prefix registered
+    if not self.SYNC or not self.SYNC.PREFIX then
+        self.SYNC = self.SYNC or {}
+        self.SYNC.PREFIX = "TWRA"
+        self:Debug("chunk", "CHUNK SYNC TEST: Using default PREFIX 'TWRA' for addon messages")
+    end
+    
+    -- Send as chunks with our test ID
+    local success = self.chunkManager:ChunkContent(testMessage, channel, nil, nil)
+    
+    -- Restore original chunk size
+    self.chunkManager.maxChunkSize = originalMaxChunkSize
+    
+    -- Check the result
+    if success then
+        self:Debug("sync", "CHUNK SYNC TEST: Successfully sent test message")
+        self:Debug("chunk", "CHUNK SYNC TEST: Successfully sent test message with transfer ID: " .. (success or "unknown"))
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r |cFF00FF00Success!|r Test message sent in chunks. Ask other raid members to run |cFFFFFF00/run TWRA:TestChunkCompletion()|r")
+    else
+        self:Debug("sync", "CHUNK SYNC TEST: Failed to send test message")
+        self:Debug("chunk", "CHUNK SYNC TEST: Failed to send test message - ChunkContent returned false or nil")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FFFF[TWRA Chunk Test]|r |cFFFF0000FAILED!|r Could not send test message")
+    end
+    
+    self:Debug("sync", "----- CHUNK SYNC TEST: Sender test complete -----")
+    self:Debug("chunk", "----- CHUNK SYNC TEST: Sender test complete -----")
+    
+    return success
+end

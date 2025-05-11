@@ -584,197 +584,217 @@ function TWRA:ProcessSectionData(sectionIndex)
                 end
                 errorCount = errorCount + 1
             else
-                -- Get the compressed section data
-                local sectionData = TWRA_CompressedAssignments.sections[idx]
-                if not sectionData or sectionData == "" then
-                    self:Debug("error", "Empty compressed data for section " .. idx)
-                    -- FIXED: Explicitly mark as needing processing for empty data
-                    if TWRA_Assignments.data[idx] then
-                        TWRA_Assignments.data[idx]["NeedsProcessing"] = true
-                        self:Debug("data", "Marked section " .. idx .. " as needing processing (empty data)")
-                        
-                        -- Add to missing sections tracking
-                        TWRA_CompressedAssignments.sections.missing[idx] = true
-                        self:Debug("data", "Added section " .. idx .. " to missing sections tracking (empty data)")
-                    end
+                -- Get the section name for reference
+                local sectionName = TWRA_Assignments.data[idx]["Section Name"]
+                if not sectionName then
+                    self:Debug("error", "Section name not found for index " .. idx)
                     errorCount = errorCount + 1
                 else
-                    -- Get the section name for reference
-                    local sectionName = TWRA_Assignments.data[idx]["Section Name"]
-                    if not sectionName then
-                        self:Debug("error", "Section name not found for index " .. idx)
-                        errorCount = errorCount + 1
-                    else
-                        self:Debug("data", "Processing section: " .. sectionName .. " (index: " .. idx .. ")")
-                        
-                        -- IMPORTANT: Always mark as needing processing before attempting decompression
-                        -- This ensures that if decompression fails, we won't have a false "processed" state
-                        TWRA_Assignments.data[idx]["NeedsProcessing"] = true
-                        
-                        -- Decompress the section data
-                        local decompressedData = nil
-                        
-                        -- Use pcall to catch any decompression errors
-                        local success, result = pcall(function()
-                            if self.DecompressSectionData then
-                                return self:DecompressSectionData(sectionData)
-                            else
-                                self:Debug("error", "DecompressSectionData function not available")
-                                return nil
+                    -- Check if this is a pending chunked section
+                    local isPendingChunkedSection = false
+                    if self.SYNC and self.SYNC.pendingChunkedSections then
+                        for sectionIndex, info in pairs(self.SYNC.pendingChunkedSections) do
+                            if sectionIndex == idx then
+                                self:Debug("data", "Section " .. idx .. " (" .. sectionName .. ") is a pending chunked section")
+                                isPendingChunkedSection = true
+                                
+                                -- Mark it as needing processing but don't add to missing sections
+                                TWRA_Assignments.data[idx]["NeedsProcessing"] = true
+                                
+                                -- We don't add it to missing sections here since it's expected to be filled by chunk processing
+                                break
                             end
-                        end)
-                        
-                        if success and result then
-                            decompressedData = result
-                            self:Debug("data", "Successfully decompressed section data for " .. sectionName)
-                            
-                            -- Remove from missing sections tracking if it was there
-                            if TWRA_CompressedAssignments.sections.missing[idx] then
-                                TWRA_CompressedAssignments.sections.missing[idx] = nil
-                                self:Debug("data", "Removed section " .. idx .. " from missing sections tracking")
+                        end
+                    end
+                    
+                    -- Only process if it's not a pending chunked section
+                    if not isPendingChunkedSection then
+                        -- Get the compressed section data
+                        local sectionData = TWRA_CompressedAssignments.sections[idx]
+                        if not sectionData or sectionData == "" then
+                            self:Debug("error", "Empty compressed data for section " .. idx)
+                            -- FIXED: Explicitly mark as needing processing for empty data
+                            if TWRA_Assignments.data[idx] then
+                                TWRA_Assignments.data[idx]["NeedsProcessing"] = true
+                                self:Debug("data", "Marked section " .. idx .. " as needing processing (empty data)")
+                                
+                                -- Add to missing sections tracking
+                                TWRA_CompressedAssignments.sections.missing[idx] = true
+                                self:Debug("data", "Added section " .. idx .. " to missing sections tracking (empty data)")
                             end
+                            errorCount = errorCount + 1
                         else
-                            self:Debug("error", "Failed to decompress section data: " .. tostring(result))
+                            self:Debug("data", "Processing section: " .. sectionName .. " (index: " .. idx .. ")")
                             
-                            -- Try to provide more diagnostic information
-                            if sectionData:sub(1, 1) == "?" then
-                                self:Debug("error", "Section data starts with '?' - may be incorrectly formatted Base64")
-                            end
-                            
-                            -- FIXED: Ensure section is marked as needing processing
+                            -- IMPORTANT: Always mark as needing processing before attempting decompression
+                            -- This ensures that if decompression fails, we won't have a false "processed" state
                             TWRA_Assignments.data[idx]["NeedsProcessing"] = true
                             
-                            -- Add to missing sections tracking
-                            TWRA_CompressedAssignments.sections.missing[idx] = true
-                            self:Debug("data", "Added section " .. idx .. " to missing sections tracking (decompression failed)")
+                            -- Decompress the section data
+                            local decompressedData = nil
                             
-                            errorCount = errorCount + 1
-                        end
-                        
-                        -- Continue only if decompression was successful
-                        if decompressedData and type(decompressedData) == "table" then
-                            -- Validate required section fields
-                            local isValid = true
-                            
-                            if not decompressedData["Section Header"] then
-                                self:Debug("error", "Decompressed data missing Section Header for " .. sectionName)
-                                isValid = false
-                                -- Continue anyway and try to create it
-                                decompressedData["Section Header"] = decompressedData["Section Header"] or {"Icon", "Target"}
-                            end
-                            
-                            if not decompressedData["Section Rows"] then
-                                self:Debug("error", "Decompressed data missing Section Rows for " .. sectionName)
-                                isValid = false
-                                -- Continue anyway and create empty rows
-                                decompressedData["Section Rows"] = decompressedData["Section Rows"] or {}
-                            end
-                            
-                            -- ENHANCED VALIDATION: Check if section rows have proper content
-                            local rowsHaveContent = false
-                            local totalRows = 0
-                            local validRows = 0
-                            
-                            if decompressedData["Section Rows"] and type(decompressedData["Section Rows"]) == "table" then
-                                totalRows = table.getn(decompressedData["Section Rows"])
-                                
-                                -- Go through each row and validate it has proper content
-                                for i, row in ipairs(decompressedData["Section Rows"]) do
-                                    if type(row) == "table" and table.getn(row) >= 2 then  -- At minimum should have Icon and Target
-                                        -- For normal rows, check that at least icon or target has content
-                                        if (row[1] and row[1] ~= "") or (row[2] and row[2] ~= "") then
-                                            validRows = validRows + 1
-                                        end
-                                        
-                                        -- For special rows (Note, Warning, GUID), they're always valid if they have at least 2 columns
-                                        if row[1] == "Note" or row[1] == "Warning" or row[1] == "GUID" then
-                                            validRows = validRows + 1
-                                        end
-                                    end
+                            -- Use pcall to catch any decompression errors
+                            local success, result = pcall(function()
+                                if self.DecompressSectionData then
+                                    return self:DecompressSectionData(sectionData)
+                                else
+                                    self:Debug("error", "DecompressSectionData function not available")
+                                    return nil
                                 end
+                            end)
+                            
+                            if success and result then
+                                decompressedData = result
+                                self:Debug("data", "Successfully decompressed section data for " .. sectionName)
                                 
-                                -- We consider the section to have content if at least one row is valid
-                                rowsHaveContent = (validRows > 0)
-                                
-                                self:Debug("data", "Section validation: " .. validRows .. " valid rows out of " .. totalRows .. " total rows")
-                            end
-                            
-                            -- Preserve critical fields from existing section data
-                            local preservedNeedsProcessing = TWRA_Assignments.data[idx]["NeedsProcessing"]
-                            local preservedSectionName = TWRA_Assignments.data[idx]["Section Name"]
-                            
-                            -- Also preserve any existing metadata before overwriting the section
-                            local preservedMetadata = nil
-                            if TWRA_Assignments.data[idx]["Section Metadata"] then
-                                preservedMetadata = self:DeepCopy(TWRA_Assignments.data[idx]["Section Metadata"])
-                                self:Debug("data", "Preserved existing metadata for section " .. sectionName)
-                            end
-                            
-                            -- Replace the entire section with decompressed data
-                            TWRA_Assignments.data[idx] = decompressedData
-                            
-                            -- Restore the section name to ensure consistency
-                            TWRA_Assignments.data[idx]["Section Name"] = preservedSectionName
-                            
-                            -- Ensure Section Metadata exists
-                            TWRA_Assignments.data[idx]["Section Metadata"] = TWRA_Assignments.data[idx]["Section Metadata"] or {}
-                            
-                            -- Restore or merge preserved metadata
-                            if preservedMetadata then
-                                -- Don't completely overwrite - merge instead
-                                for key, value in pairs(preservedMetadata) do
-                                    -- Only restore if the key doesn't already exist in the new metadata
-                                    if not TWRA_Assignments.data[idx]["Section Metadata"][key] then
-                                        TWRA_Assignments.data[idx]["Section Metadata"][key] = value
-                                        self:Debug("data", "Restored metadata key: " .. key .. " for section " .. sectionName)
-                                    end
-                                end
-                            end
-                                
-                            -- IMPROVED VALIDATION: Only mark as processed if all critical data was properly decompressed
-                            -- and we have at least one valid row with actual content
-                            if isValid and rowsHaveContent then
-                                self:Debug("data", "Section " .. sectionName .. " processed successfully with " .. 
-                                        validRows .. " valid rows, marking as complete")
-                                TWRA_Assignments.data[idx]["NeedsProcessing"] = false
-                                processedCount = processedCount + 1
-                                
-                                -- Remove from missing sections if it was there
+                                -- Remove from missing sections tracking if it was there
                                 if TWRA_CompressedAssignments.sections.missing[idx] then
                                     TWRA_CompressedAssignments.sections.missing[idx] = nil
-                                    self:Debug("data", "Removed section " .. idx .. " from missing sections tracking (valid content)")
+                                    self:Debug("data", "Removed section " .. idx .. " from missing sections tracking")
                                 end
                             else
-                                -- Better logging for why processing is needed
-                                if not isValid then
-                                    self:Debug("error", "Section " .. sectionName .. " missing required fields, keeping NeedsProcessing flag true")
-                                elseif not rowsHaveContent then
-                                    self:Debug("error", "Section " .. sectionName .. " has no valid rows with content, keeping NeedsProcessing flag true")
-                                else
-                                    self:Debug("error", "Section " .. sectionName .. " incomplete for unknown reason, keeping NeedsProcessing flag true")
+                                self:Debug("error", "Failed to decompress section data: " .. tostring(result))
+                                
+                                -- Try to provide more diagnostic information
+                                if sectionData:sub(1, 1) == "?" then
+                                    self:Debug("error", "Section data starts with '?' - may be incorrectly formatted Base64")
                                 end
                                 
+                                -- FIXED: Ensure section is marked as needing processing
                                 TWRA_Assignments.data[idx]["NeedsProcessing"] = true
                                 
                                 -- Add to missing sections tracking
                                 TWRA_CompressedAssignments.sections.missing[idx] = true
-                                self:Debug("data", "Added section " .. idx .. " to missing sections tracking (invalid content)")
+                                self:Debug("data", "Added section " .. idx .. " to missing sections tracking (decompression failed)")
                                 
                                 errorCount = errorCount + 1
                             end
-                        else
-                            -- Failed to decompress or result is not a table
-                            if not decompressedData then
-                                self:Debug("error", "Decompression returned nil for section index " .. idx)
-                            elseif type(decompressedData) ~= "table" then
-                                self:Debug("error", "Decompressed data is not a table but " .. type(decompressedData))
+                            
+                            -- Continue only if decompression was successful
+                            if decompressedData and type(decompressedData) == "table" then
+                                -- Validate required section fields
+                                local isValid = true
+                                
+                                if not decompressedData["Section Header"] then
+                                    self:Debug("error", "Decompressed data missing Section Header for " .. sectionName)
+                                    isValid = false
+                                    -- Continue anyway and try to create it
+                                    decompressedData["Section Header"] = decompressedData["Section Header"] or {"Icon", "Target"}
+                                end
+                                
+                                if not decompressedData["Section Rows"] then
+                                    self:Debug("error", "Decompressed data missing Section Rows for " .. sectionName)
+                                    isValid = false
+                                    -- Continue anyway and create empty rows
+                                    decompressedData["Section Rows"] = decompressedData["Section Rows"] or {}
+                                end
+                                
+                                -- Check if rows actually have any content
+                                local rowsHaveContent = false
+                                local validRows = 0
+                                local totalRows = 0
+                                
+                                if decompressedData["Section Rows"] then
+                                    totalRows = table.getn(decompressedData["Section Rows"])
+                                    
+                                    for _, row in ipairs(decompressedData["Section Rows"]) do
+                                        -- Verify row is a table
+                                        if type(row) == "table" then
+                                            -- For standard data rows, check if they have essential items (icon and target at minimum)
+                                            if row[1] and row[1] ~= "" and row[2] and row[2] ~= "" then
+                                                validRows = validRows + 1
+                                            end
+                                            
+                                            -- Also count special rows (Notes/Warnings/GUIDs) as valid
+                                            if row[1] == "Note" or row[1] == "Warning" or row[1] == "GUID" then
+                                                validRows = validRows + 1
+                                            end
+                                        end
+                                    end
+                                    
+                                    -- We consider the section to have content if at least one row is valid
+                                    rowsHaveContent = (validRows > 0)
+                                    
+                                    self:Debug("data", "Section validation: " .. validRows .. " valid rows out of " .. totalRows .. " total rows")
+                                end
+                                
+                                -- Preserve critical fields from existing section data
+                                local preservedNeedsProcessing = TWRA_Assignments.data[idx]["NeedsProcessing"]
+                                local preservedSectionName = TWRA_Assignments.data[idx]["Section Name"]
+                                
+                                -- Also preserve any existing metadata before overwriting the section
+                                local preservedMetadata = nil
+                                if TWRA_Assignments.data[idx]["Section Metadata"] then
+                                    preservedMetadata = self:DeepCopy(TWRA_Assignments.data[idx]["Section Metadata"])
+                                    self:Debug("data", "Preserved existing metadata for section " .. sectionName)
+                                end
+                                
+                                -- Replace the entire section with decompressed data
+                                TWRA_Assignments.data[idx] = decompressedData
+                                
+                                -- Restore the section name to ensure consistency
+                                TWRA_Assignments.data[idx]["Section Name"] = preservedSectionName
+                                
+                                -- Ensure Section Metadata exists
+                                TWRA_Assignments.data[idx]["Section Metadata"] = TWRA_Assignments.data[idx]["Section Metadata"] or {}
+                                
+                                -- Restore or merge preserved metadata
+                                if preservedMetadata then
+                                    -- Don't completely overwrite - merge instead
+                                    for key, value in pairs(preservedMetadata) do
+                                        -- Only restore if the key doesn't already exist in the new metadata
+                                        if not TWRA_Assignments.data[idx]["Section Metadata"][key] then
+                                            TWRA_Assignments.data[idx]["Section Metadata"][key] = value
+                                            self:Debug("data", "Restored metadata key: " .. key .. " for section " .. sectionName)
+                                        end
+                                    end
+                                end
+                                    
+                                -- IMPROVED VALIDATION: Only mark as processed if all critical data was properly decompressed
+                                -- and we have at least one valid row with actual content
+                                if isValid and rowsHaveContent then
+                                    self:Debug("data", "Section " .. sectionName .. " processed successfully with " .. 
+                                            validRows .. " valid rows, marking as complete")
+                                    TWRA_Assignments.data[idx]["NeedsProcessing"] = false
+                                    processedCount = processedCount + 1
+                                    
+                                    -- Remove from missing sections if it was there
+                                    if TWRA_CompressedAssignments.sections.missing[idx] then
+                                        TWRA_CompressedAssignments.sections.missing[idx] = nil
+                                        self:Debug("data", "Removed section " .. idx .. " from missing sections tracking (valid content)")
+                                    end
+                                else
+                                    -- Better logging for why processing is needed
+                                    if not isValid then
+                                        self:Debug("error", "Section " .. sectionName .. " missing required fields, keeping NeedsProcessing flag true")
+                                    elseif not rowsHaveContent then
+                                        self:Debug("error", "Section " .. sectionName .. " has no valid rows with content, keeping NeedsProcessing flag true")
+                                    else
+                                        self:Debug("error", "Section " .. sectionName .. " incomplete for unknown reason, keeping NeedsProcessing flag true")
+                                    end
+                                    
+                                    TWRA_Assignments.data[idx]["NeedsProcessing"] = true
+                                    
+                                    -- Add to missing sections tracking
+                                    TWRA_CompressedAssignments.sections.missing[idx] = true
+                                    self:Debug("data", "Added section " .. idx .. " to missing sections tracking (invalid content)")
+                                    
+                                    errorCount = errorCount + 1
+                                end
+                            else
+                                -- Failed to decompress or result is not a table
+                                if not decompressedData then
+                                    self:Debug("error", "Decompression returned nil for section index " .. idx)
+                                elseif type(decompressedData) ~= "table" then
+                                    self:Debug("error", "Decompressed data is not a table but " .. type(decompressedData))
+                                end
+                                
+                                -- Add to missing sections tracking
+                                TWRA_CompressedAssignments.sections.missing[idx] = true
+                                self:Debug("data", "Added section " .. idx .. " to missing sections tracking (invalid decompressed data)")
+                                
+                                errorCount = errorCount + 1
                             end
-                            
-                            -- Add to missing sections tracking
-                            TWRA_CompressedAssignments.sections.missing[idx] = true
-                            self:Debug("data", "Added section " .. idx .. " to missing sections tracking (invalid decompressed data)")
-                            
-                            errorCount = errorCount + 1
                         end
                     end
                 end
