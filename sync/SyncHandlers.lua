@@ -728,52 +728,47 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
         self:Debug("error", "RebuildNavigation function not available")
     end
     
+    -- Store the current section index we might want to navigate to
+    local targetSectionIndex = nil
+    
+    -- Check if we have a pending section from a previous request
+    if self.SYNC and self.SYNC.pendingSection then
+        targetSectionIndex = self.SYNC.pendingSection
+        self:Debug("sync", "Found pending section: " .. targetSectionIndex)
+    else
+        -- Default to current section or first section
+        targetSectionIndex = TWRA_Assignments and TWRA_Assignments.currentSection or 1
+    end
+    
+    -- Validate that the target section exists in the decoded structure
+    local targetSectionExists = false
+    if targetSectionIndex and type(targetSectionIndex) == "number" then
+        if decodedStructure and decodedStructure[targetSectionIndex] then
+            targetSectionExists = true
+            self:Debug("sync", "Target section " .. targetSectionIndex .. " exists in structure")
+        else
+            self:Debug("sync", "Target section " .. targetSectionIndex .. " not found in structure, defaulting to first section")
+            targetSectionIndex = 1
+        end
+    end
+    
     if hasSections then
         self:Debug("sync", "Sections available after receiving bulk structure")
         
-        -- Get the current section name or index
-        local currentSection = TWRA_Assignments and TWRA_Assignments.currentSectionName or 1
-        
-        -- ADDED: Verify that the current section name exists in decodedStructure
-        local sectionExists = false
-        if type(currentSection) == "string" then
-            -- When currentSection is a section name (string), verify it exists in decodedStructure
-            for index, sectionName in pairs(decodedStructure) do
-                if type(index) == "number" and type(sectionName) == "string" and sectionName == currentSection then
-                    self:Debug("sync", "Verified section name '" .. currentSection .. "' exists in structure")
-                    currentSection = index -- Convert section name to index for navigation
-                    sectionExists = true
-                    break
-                end
-            end
-            
-            if not sectionExists then
-                self:Debug("sync", "Section name '" .. currentSection .. "' not found in structure, defaulting to section 1")
-                currentSection = 1
-            end
-        elseif type(currentSection) == "number" then
-            -- When currentSection is an index, verify it exists
-            if decodedStructure[currentSection] then
-                sectionExists = true
-                self:Debug("sync", "Verified section index " .. currentSection .. " exists in structure")
-            else
-                self:Debug("sync", "Section index " .. currentSection .. " not found in structure, defaulting to section 1")
-                currentSection = 1
-            end
-        else
-            -- Invalid currentSection type, default to first section
-            self:Debug("sync", "Invalid currentSection type, defaulting to section 1")
-            currentSection = 1
-        end
-
+        -- Process all available section data
         self:ProcessSectionData()
         
-        -- Navigate to the selected section after processing all data
-        if self.NavigateToSection then
-            -- CRITICAL FIX: Use "fromSync" context instead of "bulkSync" to prevent broadcast
-            -- "bulkSync" wasn't being recognized in the broadcast prevention logic
-            self:Debug("sync", "Navigating to section " .. currentSection .. " with 'fromSync' context to prevent broadcasting")
-            self:NavigateToSection(currentSection, "fromSync")
+        -- Navigate to the target section after processing all data
+        if self.NavigateToSection and targetSectionIndex then
+            -- Use "fromSync" context to prevent broadcast
+            self:Debug("sync", "Navigating to target section " .. targetSectionIndex .. " with 'fromSync' context to prevent broadcasting")
+            self:NavigateToSection(targetSectionIndex, "fromSync")
+            
+            -- Clear the pending section as we've now navigated to it
+            if self.SYNC then
+                self.SYNC.pendingSection = nil
+                self:Debug("sync", "Cleared pendingSection after navigation")
+            end
         else
             self:Debug("error", "NavigateToSection function not available")
         end
@@ -803,10 +798,16 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
                 self:Debug("error", "RefreshAssignmentTable function not available")
             end
             
-            -- Navigate to the first section as a fallback
-            if self.NavigateToSection then
-                self:NavigateToSection(1, "bulkSyncNoData")
-                self:Debug("sync", "Navigated to first section (no section data)")
+            -- Navigate to the target section even if we have no section data
+            if self.NavigateToSection and targetSectionIndex then
+                self:NavigateToSection(targetSectionIndex, "bulkSyncNoData")
+                self:Debug("sync", "Navigated to target section " .. targetSectionIndex .. " (no section data)")
+                
+                -- Clear the pending section as we've now navigated to it
+                if self.SYNC then
+                    self.SYNC.pendingSection = nil
+                    self:Debug("sync", "Cleared pendingSection after navigation (no data case)")
+                end
             end
         end, 0.3)
     end
