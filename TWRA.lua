@@ -996,3 +996,47 @@ function TWRA:OnGroupChanged()
     end
     TWRA:UpdateOSDContent(TWRA_Assignments.currentSectionName, TWRA_Assignments.currentSection)
 end
+
+-- Update the encounterButton visibility in DisplayCurrentSection
+function TWRA:DisplayCurrentSection()
+    -- Get current section information
+    local currentIndex = self.navigation.currentIndex or 1
+    local currentSection = self.navigation.handlers[currentIndex] or "Unknown"
+    
+    self:Debug("nav", "DisplayCurrentSection called for index " .. currentIndex .. " (" .. currentSection .. ")")
+    
+    -- Update encounter button visibility based on whether the section has images
+    -- Using our new function to check if section has encounter map images
+    if self.encounterButton then
+        if self:SectionHasEncounterMapImage(currentSection) then
+            self.encounterButton:Show()
+            self:Debug("nav", "Encounter map button shown for section: " .. currentSection)
+        else
+            self.encounterButton:Hide()
+            self:Debug("nav", "Encounter map button hidden for section: " .. currentSection)
+        end
+    end
+    
+    -- Update header text
+    if self.navigation.handlerText then
+        self.navigation.handlerText:SetText(currentSection)
+    end
+    
+    -- Display the updated content
+    self:FilterAndDisplayHandler(currentSection)
+    
+    -- Save current section information into saved variables
+    if TWRA_Assignments then
+        TWRA_Assignments.currentSection = currentIndex
+        TWRA_Assignments.currentSectionName = currentSection
+    end
+    
+    -- Signal section change event for other modules
+    if self.TriggerEvent then
+        self:Debug("events", "Triggering SECTION_CHANGED event")
+        self:TriggerEvent("SECTION_CHANGED", currentIndex, currentSection)
+    end
+    
+    -- Return success
+    return true
+end

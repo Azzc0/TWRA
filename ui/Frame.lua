@@ -948,6 +948,20 @@ function TWRA:FilterAndDisplayHandler(currentHandler)
     -- Create footers for this section (notes and warnings)
     self:CreateFootersNewFormat(currentHandler, sectionData)
     
+    -- After displaying content, update encounter button visibility
+    if self.encounterButton then
+        -- Check if section has encounter map image before showing button
+        if self.SectionHasEncounterMapImage and self:SectionHasEncounterMapImage(currentHandler) then
+            self.encounterButton:Show()
+            self.mapTexture:Show()
+            self:Debug("ui", "Showing encounter button for section: " .. currentHandler)
+        else
+            self.encounterButton:Hide()
+            self.mapTexture:Hide()
+            self:Debug("ui", "Hiding encounter button for section: " .. currentHandler)
+        end
+    end
+
     -- Trigger an event when display is complete
     if self.TriggerEvent then
         self:TriggerEvent("SECTION_DISPLAYED", currentHandler, sectionData)

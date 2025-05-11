@@ -52,6 +52,19 @@ function TWRA:InitOSD()
             -- This ensures that data is current whenever the OSD is displayed
             self:UpdateOSDContent(sectionName, currentIndex, totalSections)
             
+            -- Update the encounter button visibility based on whether the section has images
+            if self.OSDFrame and self.OSDFrame.encounterButton then
+                if self.SectionHasEncounterMapImage and self:SectionHasEncounterMapImage(sectionName) then
+                    self.OSDFrame.encounterButton:Show()
+                    self.OSDFrame.encounterImage:Show()
+                    self:Debug("osd", "Showing encounter button for section: " .. sectionName)
+                else
+                    self.OSDFrame.encounterButton:Hide()
+                    self.OSDFrame.encounterImage:Hide()
+                    self:Debug("osd", "Hiding encounter button for section: " .. sectionName)
+                end
+            end
+            
             -- Only show the OSD if conditions are met
             if self.ShouldShowOSD and self:ShouldShowOSD() then
                 -- If OSD is already visible in permanent mode, don't change its state
@@ -288,16 +301,29 @@ function TWRA:GetOSDFrame()
     -- Add encounterButton functionality
     local encounterButton = CreateFrame("Button", nil, headerContainer)
     encounterButton:SetAllPoints(encounterImage)
+    
+    -- Check if current section has encounter map image before showing button
+    if self.SectionHasEncounterMapImage and self:SectionHasEncounterMapImage() then
+        encounterButton:Show()
+        encounterImage:Show()
+    else
+        encounterButton:Hide()
+        encounterImage:Hide()
+    end
+    
     encounterButton:SetScript("OnEnter", function()
-        -- Show tooltip
-        GameTooltip:SetOwner(encounterButton, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Encounter Map")
-        GameTooltip:AddLine("Click to toggle map display", 0.8, 0.8, 0.8)
-        GameTooltip:Show()
-                
-        -- Show map temporarily on hover - use the EncounterMap module
-        if TWRA.ShowEncounterMapTemp then
-            TWRA:ShowEncounterMapTemp()
+        -- Only process if the button is visible
+        if encounterButton:IsVisible() then
+            -- Show tooltip
+            GameTooltip:SetOwner(encounterButton, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Encounter Map")
+            GameTooltip:AddLine("Click to toggle map display", 0.8, 0.8, 0.8)
+            GameTooltip:Show()
+                    
+            -- Show map temporarily if not already in permanent mode
+            if self.ShowEncounterMapTemp and not self.encounterMapPermanent then
+                self:ShowEncounterMapTemp()
+            end
         end
     end)
     
@@ -305,8 +331,8 @@ function TWRA:GetOSDFrame()
         GameTooltip:Hide()
         
         -- Hide map if not in permanent mode
-        if TWRA.HideEncounterMap and not TWRA.encounterMapPermanent then
-            TWRA:HideEncounterMap()
+        if self.HideEncounterMap and self.encounterMapInitialized and not self.encounterMapPermanent then
+            self:HideEncounterMap()
         end
     end)
     
@@ -1440,6 +1466,12 @@ function TWRA:ShowOSDPermanent()
     -- Mark as visible
     self.OSD.isVisible = true
     self.OSD.isPermanent = true
+    
+    -- Also show encounter map in permanent mode
+    if self.encounterMap and self.encounterMap.enabled then
+        self:ShowEncounterMapPermanent()
+    end
+    
     self:Debug("osd", "OSD shown permanently")
     return true
 end
@@ -1476,6 +1508,17 @@ function TWRA:ShowOSD(duration)
             self.OSD.autoHideTimer = nil
         end, hideAfter)
         self:Debug("osd", "OSD shown with " .. hideAfter .. "s auto-hide")
+        
+        -- Also show encounter map with the same timer
+        if self.encounterMap and self.encounterMap.enabled then
+            self:ShowEncounterMap(false)  -- Not permanent
+            
+            -- Use the same hide timer as OSD
+            self.encounterMap.hideTimer = self:ScheduleTimer(function()
+                self:HideEncounterMap()
+                self.encounterMap.hideTimer = nil
+            end, hideAfter)
+        end
     else
         self:Debug("osd", "OSD shown without auto-hide")
     end
@@ -1504,6 +1547,11 @@ function TWRA:HideOSD()
     if self.OSDFrame then
         self.OSDFrame:Hide()
         self:Debug("osd", "OSD hidden")
+    end
+    
+    -- Also hide encounter map if not in permanent mode
+    if self.encounterMap and self.encounterMap.enabled and not self.encounterMapPermanent then
+        self:HideEncounterMap()
     end
     
     return true

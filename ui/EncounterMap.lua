@@ -193,18 +193,50 @@ function TWRA:GetEncounterMapFrame()
     headerBg:SetAllPoints()
     headerBg:SetTexture(0, 0, 0, 0.5) -- Semi-transparent black
     headerContainer.bg = headerBg
+    
+    -- Add permanent mode toggle button in top left corner
+    local permanentToggle = CreateFrame("CheckButton", nil, headerContainer)
+    permanentToggle:SetWidth(20)
+    permanentToggle:SetHeight(20)
+    permanentToggle:SetPoint("TOPLEFT", headerContainer, "TOPLEFT", 10, -5)
+    permanentToggle:SetNormalTexture("Interface\\Buttons\\UI-RadioButton")
+    permanentToggle:GetNormalTexture():SetTexCoord(0, 0.25, 0, 1)
+    permanentToggle:SetCheckedTexture("Interface\\Buttons\\UI-RadioButton")
+    permanentToggle:GetCheckedTexture():SetTexCoord(0.5, 0.75, 0, 1)
+    
+    -- Set initial state based on permanent mode
+    permanentToggle:SetChecked(self.encounterMapPermanent)
+    
+    -- Set the click handler to toggle permanent mode
+    permanentToggle:SetScript("OnClick", function()
+        TWRA.encounterMapPermanent = permanentToggle:GetChecked()
+        TWRA:Debug("map", "Encounter Map permanent mode " .. (TWRA.encounterMapPermanent and "enabled" or "disabled"))
+    end)
+    
+    -- Add tooltip
+    permanentToggle:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(permanentToggle, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Toggle Permanent Mode")
+        GameTooltip:Show()
+    end)
+    
+    permanentToggle:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    frame.permanentToggle = permanentToggle
 
     -- Create title text (centered, without the icon)
     local titleText = headerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     titleText:SetPoint("TOP", headerContainer, "TOP", 0, 0)
-    titleText:SetPoint("LEFT", headerContainer, "LEFT", 10, 0)
+    titleText:SetPoint("LEFT", headerContainer, "LEFT", 35, 0) -- Moved to make room for the toggle button
     titleText:SetPoint("RIGHT", headerContainer, "RIGHT", -10, 0)
     titleText:SetHeight(25)
     titleText:SetJustifyH("CENTER")
     titleText:SetText("Encounter Map")
     titleText:SetTextColor(1, 1, 1) -- Set title text to white
     frame.titleText = titleText
-    
+
     -- Navigation area at the bottom with semi-transparent background - now only shows on hover
     local navContainer = CreateFrame("Frame", nil, controlsContainer)
     navContainer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 15, 15) -- Increased padding
@@ -236,15 +268,6 @@ function TWRA:GetEncounterMapFrame()
         if not MouseIsOver(navContainer) then
             navContainer:Hide()
         end
-    end)
-    
-    -- Add mouse enter/leave scripts for the container itself
-    navContainer:SetScript("OnEnter", function()
-        navContainer:Show()
-    end)
-    
-    navContainer:SetScript("OnLeave", function()
-        navContainer:Hide()
     end)
     
     frame.navContainer = navContainer
@@ -291,10 +314,22 @@ function TWRA:GetEncounterMapFrame()
     -- Set resize script
     resizeButton:SetScript("OnMouseDown", function()
         frame:StartSizing("BOTTOMRIGHT")
+        
+        -- Setup a continuous update while resizing
+        frame:SetScript("OnSizeChanged", function()
+            -- Update aspect ratio in real-time during resize
+            TWRA:UpdateTextureAspectRatio()
+        end)
     end)
     
     resizeButton:SetScript("OnMouseUp", function()
         frame:StopMovingOrSizing()
+        
+        -- Remove the continuous update
+        frame:SetScript("OnSizeChanged", nil)
+        
+        -- Final update to aspect ratio
+        TWRA:UpdateTextureAspectRatio()
         
         -- Save new dimensions in saved variables
         if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.encounterMap then
@@ -470,7 +505,78 @@ function TWRA:LoadCurrentImage()
     -- Update navigation buttons
     self:UpdateEncounterMapNavigation()
     
+    -- Update aspect ratio
+    self:UpdateTextureAspectRatio()
+    
     return true
+end
+
+-- Function to update the content container size to preserve aspect ratio
+function TWRA:UpdateTextureAspectRatio()
+    local frame = self.encounterMapFrame
+    if not frame then return end
+    
+    -- Get current frame dimensions
+    local frameWidth = frame:GetWidth()
+    local frameHeight = frame:GetHeight()
+    
+    -- Default aspect ratio (1:1 square for most encounter maps)
+    local textureAspectRatio = 1.0
+    
+    -- Get header and navigation container heights for padding calculations
+    local headerHeight = frame.headerContainer and frame.headerContainer:GetHeight() or 30
+    local navHeight = frame.navContainer and frame.navContainer:GetHeight() or 40
+    
+    -- Adjust frame height to account for UI elements
+    local adjustedFrameHeight = frameHeight - 10
+    
+    -- Calculate content dimensions to maintain aspect ratio
+    local contentWidth, contentHeight
+    
+    -- Determine if width or height is the constraining dimension
+    local frameAspectRatio = frameWidth / adjustedFrameHeight
+    
+    if frameAspectRatio > textureAspectRatio then
+        -- Frame is wider than texture - constrain by height
+        contentHeight = adjustedFrameHeight
+        contentWidth = adjustedFrameHeight * textureAspectRatio
+    else
+        -- Frame is taller than texture - constrain by width
+        contentWidth = frameWidth
+        contentHeight = frameWidth / textureAspectRatio
+    end
+    
+    -- Position content container centrally
+    if frame.contentContainer then
+        -- Resize the content container to match calculated dimensions
+        frame.contentContainer:SetWidth(contentWidth)
+        frame.contentContainer:SetHeight(contentHeight)
+        
+        -- Center the content container within the available space
+        frame.contentContainer:ClearAllPoints()
+        frame.contentContainer:SetPoint("CENTER", frame, "CENTER", 0, (headerHeight - navHeight) / 2)
+    end
+    
+    -- Update all texture frames to properly center their textures
+    if self.encounterMap and self.encounterMap.textureFrames then
+        for _, textureFrame in pairs(self.encounterMap.textureFrames) do
+            -- Make sure texture frame fills the content container
+            textureFrame:ClearAllPoints()
+            textureFrame:SetAllPoints(frame.contentContainer)
+            
+            -- Ensure texture itself is centered and fills the frame properly
+            if textureFrame.texture then
+                textureFrame.texture:ClearAllPoints()
+                textureFrame.texture:SetAllPoints(textureFrame)
+            end
+        end
+    end
+    
+    -- Hide all letterbox textures - we're using the frame background instead
+    if frame.letterboxTop then frame.letterboxTop:Hide() end
+    if frame.letterboxBottom then frame.letterboxBottom:Hide() end
+    if frame.letterboxLeft then frame.letterboxLeft:Hide() end
+    if frame.letterboxRight then frame.letterboxRight:Hide() end
 end
 
 -- Navigate to previous image
@@ -701,10 +807,32 @@ end
 function TWRA:RegisterEncounterMapEvents()
     -- Listen for section changes to update encounter map
     self:RegisterEvent("SECTION_CHANGED", function()
-        -- Only update if encounter map is visible
+        -- Get current section name
+        local currentSection = nil
+        if TWRA.navigation and TWRA.navigation.currentIndex and TWRA.navigation.handlers then
+            currentSection = TWRA.navigation.handlers[TWRA.navigation.currentIndex]
+        end
+        
+        -- Check if section has an image
+        local hasImage = currentSection and TWRA:HasEncounterMapImage(currentSection)
+        
+        -- If the frame is currently shown
         if TWRA.encounterMapFrame and TWRA.encounterMapFrame:IsShown() then
-            TWRA:Debug("map", "Section changed - updating encounter map via event")
-            TWRA:UpdateEncounterMapContent()
+            if not hasImage then
+                -- Hide the map if there's no image for this section, even if in permanent mode
+                TWRA:Debug("map", "Section changed to one without an image - hiding encounter map")
+                TWRA:HideEncounterMap(true) -- true = preserve permanent mode setting
+            else
+                -- Update map content if there is an image
+                TWRA:Debug("map", "Section changed - updating encounter map via event")
+                TWRA:UpdateEncounterMapContent()
+            end
+        else
+            -- If the frame is not shown but we're in permanent mode and there's an image, show it
+            if TWRA.encounterMapPermanent and hasImage then
+                TWRA:Debug("map", "Section changed to one with an image - showing encounter map")
+                TWRA:ShowEncounterMap(true)
+            end
         end
     end, "EncounterMap")
     
@@ -790,11 +918,107 @@ function TWRA:GetEncounterMapPath(sectionName)
     return nil
 end
 
+-- Helper function to check if a section has an encounter map image
+function TWRA:HasEncounterMapImage(sectionName)
+    if not sectionName then return false end
+    
+    -- Check section data for map path information
+    if TWRA_Assignments and TWRA_Assignments.data then
+        for _, section in pairs(TWRA_Assignments.data) do
+            if section["Section Name"] == sectionName then
+                -- Check for image information in section metadata
+                if section["Section Metadata"] then
+                    -- Check for multiple images
+                    if section["Section Metadata"]["Images"] and 
+                       type(section["Section Metadata"]["Images"]) == "table" and
+                       table.getn(section["Section Metadata"]["Images"]) > 0 then
+                        return true
+                    end
+                    
+                    -- Check for single image
+                    if section["Section Metadata"]["Image"] and 
+                       section["Section Metadata"]["Image"] ~= "" then
+                        return true
+                    end
+                end
+                
+                -- No valid image found in metadata
+                return false
+            end
+        end
+    end
+    
+    -- Section not found
+    return false
+end
+
+-- Public function to check if the current section has an image
+function TWRA:SectionHasEncounterMapImage(sectionName)
+    -- If no section name provided, get current section name
+    if not sectionName then
+        if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+            sectionName = self.navigation.handlers[self.navigation.currentIndex]
+        end
+        
+        if not sectionName then
+            self:Debug("map", "SectionHasEncounterMapImage: No current section available")
+            return false
+        end
+    end
+    
+    self:Debug("map", "Checking for encounter map image in section: " .. sectionName)
+    
+    -- Check section data for map path information
+    if TWRA_Assignments and TWRA_Assignments.data then
+        for _, section in pairs(TWRA_Assignments.data) do
+            if section["Section Name"] == sectionName then
+                -- Check for image information in section metadata
+                if section["Section Metadata"] then
+                    -- Check for multiple images
+                    if section["Section Metadata"]["Images"] and 
+                       type(section["Section Metadata"]["Images"]) == "table" and
+                       table.getn(section["Section Metadata"]["Images"]) > 0 then
+                        self:Debug("map", "Found images array for section: " .. sectionName)
+                        return true
+                    end
+                    
+                    -- Check for single image
+                    if section["Section Metadata"]["Image"] and 
+                       section["Section Metadata"]["Image"] ~= "" then
+                        self:Debug("map", "Found single image for section: " .. sectionName)
+                        return true
+                    end
+                end
+                
+                -- No valid image found in metadata
+                self:Debug("map", "No images found in metadata for section: " .. sectionName)
+                return false
+            end
+        end
+    end
+    
+    -- Section not found
+    self:Debug("map", "Section not found: " .. sectionName)
+    return false
+end
+
 -- Show the Encounter Map (applies to both permanent and temporary)
 function TWRA:ShowEncounterMap(permanent)
     -- Skip if encounter map is disabled
     if not self.encounterMap or not self.encounterMap.enabled then
         self:Debug("map", "Encounter Map is disabled, cannot show")
+        return false
+    end
+    
+    -- Get current section name
+    local currentSection = nil
+    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+        currentSection = self.navigation.handlers[self.navigation.currentIndex]
+    end
+    
+    -- Additional check to ensure we have an image for the current section
+    if not currentSection or not self:HasEncounterMapImage(currentSection) then
+        self:Debug("map", "No image available for current section, not showing encounter map")
         return false
     end
     
@@ -820,6 +1044,10 @@ function TWRA:ShowEncounterMap(permanent)
     -- Set permanent mode if requested
     if permanent then
         self.encounterMapPermanent = true
+        -- Update toggle button state if it exists
+        if frame.permanentToggle then
+            frame.permanentToggle:SetChecked(true)
+        end
         self:Debug("map", "Encounter Map shown permanently")
     else
         self:Debug("map", "Encounter Map shown temporarily")
@@ -830,26 +1058,85 @@ end
 
 -- Show Encounter Map permanently
 function TWRA:ShowEncounterMapPermanent()
+    -- Check if there's an image available for the current section
+    local currentSection = nil
+    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+        currentSection = self.navigation.handlers[self.navigation.currentIndex]
+    end
+    
+    if not currentSection or not self:HasEncounterMapImage(currentSection) then
+        self:Debug("map", "No image available for current section, not showing encounter map")
+        return false
+    end
+    
     return self:ShowEncounterMap(true)
 end
 
 -- Show the Encounter Map temporarily (for mouse hover)
-function TWRA:ShowEncounterMapTemp()
+function TWRA:ShowEncounterMapTemp(duration)
     -- Skip if already in permanent mode
     if self.encounterMapPermanent then
         self:Debug("map", "Encounter Map already in permanent mode, ignoring temporary show request")
         return true
     end
     
-    return self:ShowEncounterMap(false)
+    -- Check if there's an image available for the current section
+    local currentSection = nil
+    if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
+        currentSection = self.navigation.handlers[self.navigation.currentIndex]
+    end
+    
+    if not currentSection or not self:HasEncounterMapImage(currentSection) then
+        self:Debug("map", "No image available for current section, not showing encounter map")
+        return false
+    end
+    
+    -- Set the default duration if not specified
+    if not duration or duration <= 0 then
+        duration = 5 -- Default display time (5 seconds)
+    end
+    
+    -- Show the map without setting permanent mode
+    local result = self:ShowEncounterMap(false)
+    
+    -- Store that this was a temporary display (for mouse enter/leave logic)
+    self.encounterMap.wasTemporary = true
+    
+    -- Clear any existing hide timer first
+    if self.encounterMap.hideTimer then
+        self:CancelTimer(self.encounterMap.hideTimer)
+        self.encounterMap.hideTimer = nil
+        self:Debug("map", "Canceled existing hide timer")
+    end
+    
+    -- Create new hide timer
+    self.encounterMap.hideTimer = self:ScheduleTimer(function()
+        -- Only hide if not in permanent mode
+        if not self.encounterMapPermanent then
+            self:Debug("map", "Hide timer completed - hiding encounter map")
+            self:HideEncounterMap()
+        end
+        self.encounterMap.hideTimer = nil
+        self.encounterMap.wasTemporary = nil
+    end, duration)
+    
+    self:Debug("map", "Encounter Map shown temporarily with " .. duration .. "s auto-hide")
+    
+    return result
 end
 
 -- Hide the Encounter Map
-function TWRA:HideEncounterMap()
-    -- If in permanent mode, don't hide
-    if self.encounterMapPermanent then
-        self:Debug("map", "Encounter Map is in permanent mode, ignoring hide request")
-        return false
+function TWRA:HideEncounterMap(preservePermanent)
+    -- If in permanent mode and we're not preserving it, turn it off
+    if self.encounterMapPermanent and not preservePermanent then
+        self.encounterMapPermanent = false
+        
+        -- Update the toggle button to reflect the change in permanent mode
+        if self.encounterMapFrame and self.encounterMapFrame.permanentToggle then
+            self.encounterMapFrame.permanentToggle:SetChecked(false)
+        end
+        
+        self:Debug("map", "Encounter Map permanent mode disabled by close button")
     end
     
     -- Clear any pending hide timer
@@ -861,7 +1148,7 @@ function TWRA:HideEncounterMap()
     -- Check if the frame exists and hide it safely
     if self.encounterMapFrame then
         self.encounterMapFrame:Hide()
-        self:Debug("map", "Encounter Map hidden")
+        self:Debug("map", "Encounter Map hidden" .. (preservePermanent and " (permanent mode preserved)" or ""))
     end
     
     return true
