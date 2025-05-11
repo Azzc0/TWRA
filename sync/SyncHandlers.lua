@@ -638,6 +638,88 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
         end
     end
     
+    -- Check if this is a chunked structure reference
+    if string.find(structureData, "^CHUNKED:") then
+        self:Debug("sync", "Detected chunked structure reference: " .. structureData)
+        
+        -- Extract the transfer ID from the chunked reference
+        -- Format should be "CHUNKED:transferId"
+        local transferId = nil
+        
+        -- Use string.gfind instead of string.match (Lua 5.0 compatible)
+        for part in string.gfind(structureData, "CHUNKED:([^:]+)") do
+            transferId = part
+            break -- Just get the first match
+        end
+        
+        self:Debug("sync", "Extracted transferId: " .. (transferId or "nil"))
+        
+        if not transferId then
+            self:Debug("error", "Failed to extract transferId from chunked reference: " .. structureData)
+            return false
+        end
+        
+        self:Debug("sync", "Processing chunked structure reference with transferId: " .. transferId)
+        
+        -- Attempt to retrieve the actual chunked data from the chunk manager
+        if not self.chunkManager then
+            self:Debug("error", "Chunk manager not available to retrieve chunked structure data")
+            return false
+        end
+        
+        -- Make sure the chunk manager is initialized
+        if not self.chunkManager.storedChunkData then
+            self:Debug("error", "Chunk manager not properly initialized, cannot retrieve chunked data")
+            return false
+        end
+        
+        -- Use RetrieveChunkData to get the chunked data
+        local actualData = self.chunkManager:RetrieveChunkData(transferId)
+        
+        -- Check if the chunk data is available
+        if not actualData then
+            self:Debug("error", "Chunked data not found for transferId: " .. transferId)
+            self:Debug("sync", "Available transferIds in storedChunkData: " .. self:DebugTableKeys(self.chunkManager.storedChunkData))
+            
+            -- Store the reference temporarily, but mark it for later resolution
+            -- This will allow us to request the missing data later
+            TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+            TWRA_CompressedAssignments.structureReference = {
+                transferId = transferId,
+                timestamp = timestamp
+            }
+            
+            self:Debug("sync", "Marked structure as missing, will request later")
+            return false
+        end
+        
+        -- Debug the retrieved chunk data
+        self:Debug("sync", "Successfully retrieved chunked data for structure" .. 
+                  " (length: " .. string.len(actualData) .. " bytes)")
+        
+        -- Add more detailed debug information about the chunk data
+        if string.len(actualData) > 0 then
+            local firstChar = string.sub(actualData, 1, 1)
+            local firstByte = string.byte(firstChar)
+            self:Debug("sync", "Chunk data first byte: " .. tostring(firstByte) .. 
+                      " (char: '" .. (firstByte >= 32 and firstByte <= 126 and firstChar or "non-printable") .. "')")
+            
+            -- Show first 20 bytes in hex format for debugging
+            local hexOutput = ""
+            local maxBytes = math.min(20, string.len(actualData))
+            for i = 1, maxBytes do
+                hexOutput = hexOutput .. string.format("%02X ", string.byte(string.sub(actualData, i, i)))
+            end
+            self:Debug("sync", "Chunk data first " .. maxBytes .. " bytes: " .. hexOutput)
+        else
+            self:Debug("error", "Retrieved chunk data is empty!")
+            return false
+        end
+        
+        -- Replace the reference with the actual data
+        structureData = actualData
+    end
+    
     -- Ensure TWRA_CompressedAssignments exists
     TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
     
@@ -802,6 +884,12 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
         -- Request missing sections through whisper to sender
         self:Debug("sync", "Requesting " .. missingCount .. " missing sections from " .. sender)
         self:RequestMissingSectionsWhisper(sender, timestamp)
+    end
+    
+    -- Clear structure reference if we successfully processed the structure
+    if TWRA_CompressedAssignments.structureReference then
+        self:Debug("sync", "Clearing structure reference after successful processing")
+        TWRA_CompressedAssignments.structureReference = nil
     end
     
     return true
