@@ -54,8 +54,8 @@ function TWRA:GetEncounterMapFrame()
         return self.encounterMapFrame
     end
 
-    -- Create the main frame - use square dimensions
-    local frameSize = 300 -- Square size
+    -- Create the main frame
+    local frameSize = 400 -- Square size
     local frame = CreateFrame("Frame", "TWRAEncounterMapFrame", UIParent)
     frame:SetFrameStrata("DIALOG")
     frame:SetWidth(frameSize)
@@ -205,10 +205,10 @@ function TWRA:GetEncounterMapFrame()
     titleText:SetTextColor(1, 1, 1) -- Set title text to white
     frame.titleText = titleText
     
-    -- Navigation area at the bottom with semi-transparent background
+    -- Navigation area at the bottom with semi-transparent background - now only shows on hover
     local navContainer = CreateFrame("Frame", nil, controlsContainer)
-    navContainer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 10)
-    navContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 30)
+    navContainer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 15, 15) -- Increased padding
+    navContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -15, 40) -- Increased padding
     navContainer:SetHeight(40) -- Taller for bigger buttons
     
     -- Semi-transparent background for navigation
@@ -217,12 +217,43 @@ function TWRA:GetEncounterMapFrame()
     navBg:SetTexture(0, 0, 0, 0.5) -- Semi-transparent black
     navContainer.bg = navBg
     
-    frame.navContainer = navContainer
+    -- Hide the navigation container by default
+    navContainer:Hide()
     
-    -- Left navigation button - much bigger
+    -- Create a hover area for the navigation container
+    local navHoverArea = CreateFrame("Frame", nil, frame)
+    navHoverArea:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    navHoverArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    navHoverArea:SetHeight(50) -- Slightly taller than the nav container for easier mouse-over
+    
+    -- Add mouse enter/leave scripts for the hover area
+    navHoverArea:SetScript("OnEnter", function()
+        navContainer:Show()
+    end)
+    
+    navHoverArea:SetScript("OnLeave", function()
+        -- Only hide if mouse isn't over the container itself
+        if not MouseIsOver(navContainer) then
+            navContainer:Hide()
+        end
+    end)
+    
+    -- Add mouse enter/leave scripts for the container itself
+    navContainer:SetScript("OnEnter", function()
+        navContainer:Show()
+    end)
+    
+    navContainer:SetScript("OnLeave", function()
+        navContainer:Hide()
+    end)
+    
+    frame.navContainer = navContainer
+    frame.navHoverArea = navHoverArea
+    
+    -- Left navigation button - moved back to the bottom navigation container
     local prevButton = CreateFrame("Button", nil, navContainer)
-    prevButton:SetWidth(40) -- Doubled size
-    prevButton:SetHeight(40) -- Doubled size
+    prevButton:SetWidth(30) -- Smaller size
+    prevButton:SetHeight(30) -- Smaller size
     prevButton:SetPoint("LEFT", navContainer, "LEFT", 10, 0)
     
     -- Set left button textures (Normal, Pushed, Disabled)
@@ -231,10 +262,10 @@ function TWRA:GetEncounterMapFrame()
     prevButton:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
     frame.prevButton = prevButton
     
-    -- Right navigation button - much bigger
+    -- Right navigation button - moved back to the bottom navigation container
     local nextButton = CreateFrame("Button", nil, navContainer)
-    nextButton:SetWidth(40) -- Doubled size
-    nextButton:SetHeight(40) -- Doubled size
+    nextButton:SetWidth(30) -- Smaller size
+    nextButton:SetHeight(30) -- Smaller size
     nextButton:SetPoint("RIGHT", navContainer, "RIGHT", -10, 0)
     
     -- Set right button textures (Normal, Pushed, Disabled)
@@ -242,6 +273,61 @@ function TWRA:GetEncounterMapFrame()
     nextButton:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
     nextButton:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
     frame.nextButton = nextButton
+    
+    -- Add resize functionality in the bottom right corner using the missing icon texture
+    local resizeButton = CreateFrame("Button", nil, frame)
+    resizeButton:SetWidth(32)
+    resizeButton:SetHeight(32)
+    resizeButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0) -- No padding
+    
+    -- Create a texture for the resize button using the missing icon
+    -- if TWRA.ICONS and TWRA.ICONS["Missing"] and TWRA.ICONS["Missing"][1] then
+        local resizeTexture = resizeButton:CreateTexture(nil, "OVERLAY")
+        resizeTexture:SetAllPoints()
+        resizeTexture:SetTexture("Interface\\Addons\\TWRA\\textures\\SizeGrabber-Up")
+        resizeButton.texture = resizeTexture
+    -- end
+    
+    -- Set resize script
+    resizeButton:SetScript("OnMouseDown", function()
+        frame:StartSizing("BOTTOMRIGHT")
+    end)
+    
+    resizeButton:SetScript("OnMouseUp", function()
+        frame:StopMovingOrSizing()
+        
+        -- Save new dimensions in saved variables
+        if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.encounterMap then
+            TWRA_SavedVariables.options.encounterMap.width = frame:GetWidth()
+            TWRA_SavedVariables.options.encounterMap.height = frame:GetHeight()
+        end
+    end)
+    
+    -- Add tooltip to help users understand this is for resizing
+    resizeButton:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(resizeButton, "ANCHOR_LEFT")
+        GameTooltip:AddLine("Resize Map")
+        GameTooltip:Show()
+    end)
+    
+    resizeButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    frame.resizeButton = resizeButton
+    
+    -- Make the frame resizable
+    frame:SetResizable(true)
+    frame:SetMinResize(200, 200) -- Minimum size
+    frame:SetMaxResize(800, 800) -- Maximum size
+    
+    -- Load saved frame size if available
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.encounterMap then
+        if TWRA_SavedVariables.options.encounterMap.width and TWRA_SavedVariables.options.encounterMap.height then
+            frame:SetWidth(TWRA_SavedVariables.options.encounterMap.width)
+            frame:SetHeight(TWRA_SavedVariables.options.encounterMap.height)
+        end
+    end
     
     -- Set initial button states
     prevButton:Disable()
@@ -552,12 +638,31 @@ function TWRA:UpdateEncounterMapNavigation()
     local frame = self.encounterMapFrame
     if not frame then return false end
     
+    -- Check if we have multiple images
+    local hasMultipleImages = self.encounterMap.currentImages and 
+                             type(self.encounterMap.currentImages) == "table" and
+                             table.getn(self.encounterMap.currentImages) > 1
+    
+    -- Show or hide the navigation container based on having multiple images
+    if hasMultipleImages then
+        -- We have multiple images, always show the navigation container
+        -- when there are multiple images available
+        if frame.navContainer then
+            frame.navContainer:Show()
+        end
+    else
+        -- Only one image, always hide navigation container
+        if frame.navContainer then
+            frame.navContainer:Hide()
+        end
+    end
+    
     -- Disable both buttons by default
     frame.prevButton:Disable()
     frame.nextButton:Disable()
     
     -- If we have multiple images, enable navigation buttons as appropriate
-    if self.encounterMap.currentImages and type(self.encounterMap.currentImages) == "table" then
+    if hasMultipleImages then
         local totalImages = table.getn(self.encounterMap.currentImages)
         local currentIndex = self.encounterMap.currentImageIndex or 1
         
