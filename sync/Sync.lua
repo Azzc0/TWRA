@@ -217,8 +217,13 @@ end
 
 -- Function to create a bulk sync request message (BSREQ)
 function TWRA:CreateBulkSyncRequestMessage()
-    -- No timestamp needed in the request
-    return self.SYNC.COMMANDS.BULK_SYNC_REQ
+    -- Include our current timestamp in the request so others can decide if we need data
+    local ourTimestamp = 0
+    if TWRA_Assignments and TWRA_Assignments.timestamp then
+        ourTimestamp = TWRA_Assignments.timestamp
+    end
+    
+    return self.SYNC.COMMANDS.BULK_SYNC_REQ .. ":" .. ourTimestamp
 end
 
 -- Function to create a bulk sync acknowledgment message (BSACK)
