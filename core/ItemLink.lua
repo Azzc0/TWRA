@@ -28,13 +28,14 @@ function TWRA.Items:ProcessText(text)
     -- Convert text to string if it's a table
     if type(text) == "table" then
         TWRA:Debug("error", "ProcessText received a table instead of a string")
-        return "[Table]"
+        -- Return a safe string representation instead of [Table]
+        return TWRA:SafeToString(text)
     end
     
     -- IMPORTANT FIX: First check if the text already contains item links (|Hitem:)
     -- If it does, don't try to process further to avoid breaking existing links
     if string.find(text, "|Hitem:") then
-        self:Debug("items", "Text already contains item links, preserving as-is: " .. TWRA:SafeToString(text))
+        TWRA:Debug("items", "Text already contains item links, preserving as-is: " .. TWRA:SafeToString(text))
         return text
     end
     
@@ -72,6 +73,12 @@ end
 function TWRA.Items:ProcessConsumables(text)
     if not text then return text end
     
+    -- For safety: convert tables to strings to prevent errors
+    if type(text) == "table" then
+        TWRA:Debug("error", "ProcessConsumables received a table instead of a string")
+        return TWRA:SafeToString(text)
+    end
+    
     -- Common consumables that might appear in raid instructions
     local consumables = {
         ["fire prot"] = "Greater Fire Protection Potion",
@@ -107,6 +114,12 @@ end
 -- Enhanced process function that combines all processing methods
 function TWRA.Items:EnhancedProcessText(text)
     if not text then return text end
+    
+    -- Safety check for tables
+    if type(text) == "table" then
+        TWRA:Debug("error", "EnhancedProcessText received a table instead of a string")
+        return TWRA:SafeToString(text)
+    end
     
     -- First process bracketed items
     text = self:ProcessText(text)

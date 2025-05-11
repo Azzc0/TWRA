@@ -55,7 +55,7 @@ function TWRA:GetEncounterMapFrame()
     end
 
     -- Create the main frame
-    local frameSize = 400 -- Square size
+    local frameSize = 100 -- Square size
     local frame = CreateFrame("Frame", "TWRAEncounterMapFrame", UIParent)
     frame:SetFrameStrata("DIALOG")
     frame:SetWidth(frameSize)
