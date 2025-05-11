@@ -19,6 +19,19 @@ function TWRA:CloseDropdownMenu()
     end
 end
 
+-- Add a safety function to ensure we don't concatenate tables
+function TWRA:SafeToString(value)
+    if value == nil then
+        return ""
+    elseif type(value) == "table" then
+        -- Convert table to a safe string representation
+        return "[Table]"
+    else
+        -- For numbers, booleans, or strings, convert to string
+        return tostring(value)
+    end
+end
+
 -- Enhance CreateMainFrame to use the standardized dropdown and remove Edit button
 function TWRA:CreateMainFrame()
     -- Check if frame already exists

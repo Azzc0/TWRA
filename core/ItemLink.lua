@@ -8,7 +8,8 @@ function TWRA.Items:GetLinkByName(itemName)
     
     local itemData = TWRA.ITEM_DATABASE[itemName]
     if not itemData then 
-        TWRA:Debug("items", "Item not found in database: " .. itemName)
+        -- Use SafeToString to handle the case where itemName might be a table
+        TWRA:Debug("items", "Item not found in database: " .. TWRA:SafeToString(itemName))
         return nil 
     end
     
@@ -16,17 +17,24 @@ function TWRA.Items:GetLinkByName(itemName)
     local colorHex = TWRA.ITEM_QUALITY_COLORS[itemData.quality] or TWRA.ITEM_QUALITY_COLORS["Common"]
     
     -- Create the proper item link
-    return "|cff" .. colorHex .. "|Hitem:" .. itemData.id .. ":0:0:0|h[" .. itemName .. "]|h|r"
+    return "|cff" .. colorHex .. "|Hitem:" .. itemData.id .. ":0:0:0|h[" .. TWRA:SafeToString(itemName) .. "]|h|r"
 end
 
 -- Process text to replace item name patterns with item links
 function TWRA.Items:ProcessText(text)
-    if not text then return text end
+    -- Use SafeToString to handle the case where text might be a table
+    if not text then return "" end
+    
+    -- Convert text to string if it's a table
+    if type(text) == "table" then
+        TWRA:Debug("error", "ProcessText received a table instead of a string")
+        return "[Table]"
+    end
     
     -- IMPORTANT FIX: First check if the text already contains item links (|Hitem:)
     -- If it does, don't try to process further to avoid breaking existing links
     if string.find(text, "|Hitem:") then
-        self:Debug("items", "Text already contains item links, preserving as-is: " .. text)
+        self:Debug("items", "Text already contains item links, preserving as-is: " .. TWRA:SafeToString(text))
         return text
     end
     
@@ -37,7 +45,7 @@ function TWRA.Items:ProcessText(text)
             return link
         else
             -- Keep the original bracketed text if no item found
-            return "[" .. itemName .. "]"
+            return "[" .. TWRA:SafeToString(itemName) .. "]"
         end
     end)
     

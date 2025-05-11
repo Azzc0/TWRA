@@ -463,10 +463,10 @@ end
 function TWRA:InitializeSync()
     self:Debug("sync", "Initializing sync module")
     
-    -- CRITICAL FIX: Register addon message prefix with the client
-    -- Without this, addon messages will not be processed by the client
-    RegisterAddonMessagePrefix(self.SYNC.PREFIX)
-    self:Debug("sync", "Registered addon message prefix: " .. self.SYNC.PREFIX)
+    -- CRITICAL NOTE: In WoW 1.12, we don't need to register addon message prefixes
+    -- as this functionality wasn't added until later versions of WoW.
+    -- The original RegisterAddonMessagePrefix call has been removed.
+    self:Debug("sync", "Using addon message prefix: " .. self.SYNC.PREFIX)
     
     -- Register for SECTION_CHANGED event early, regardless of sync settings
     -- Ensure this is actually called by adding explicit debugging and error checking
