@@ -638,6 +638,20 @@ function TWRA:ShowMainView()
             self:Debug("ui", "Updated handlerText to: " .. sectionName)
         end
         
+        -- Check if the current section should show encounter map elements
+        local currentSection = self.navigation.handlers[self.navigation.currentIndex]
+        if self.encounterButton and self.mapTexture then
+            if self.SectionHasEncounterMapImage and self:SectionHasEncounterMapImage(currentSection) then
+                self.encounterButton:Show()
+                self.mapTexture:Show()
+                self:Debug("ui", "Showing encounter map elements for section: " .. currentSection)
+            else
+                self.encounterButton:Hide()
+                self.mapTexture:Hide()
+                self:Debug("ui", "Hiding encounter map elements for section: " .. currentSection)
+            end
+        end
+        
         -- Check if we have a pending handler that was deferred while in options view
         if self.pendingHandler then
             self:Debug("ui", "Found pending handler: " .. self.pendingHandler)

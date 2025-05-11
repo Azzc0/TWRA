@@ -962,6 +962,10 @@ function TWRA:ShowOptionsView()
     if self.updateTanksButton then self.updateTanksButton:Hide() end
     if self.syncAllButton then self.syncAllButton:Show() end  -- Show Sync All button in options view
     
+    -- Hide encounter map elements
+    if self.mapTexture then self.mapTexture:Hide() end
+    if self.encounterButton then self.encounterButton:Hide() end
+    
     -- Reset frame height to default while in options
     self.mainFrame:SetHeight(300)
     
