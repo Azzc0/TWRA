@@ -380,7 +380,7 @@ function TWRA:LoadExampleData()
                         self.navigation.handlerText:SetText(handler)
                     end
                     
-                    -- Navigate to this section
+                    -- CRITICAL: Navigate to this section - explicitly use "user" as source
                     self:NavigateToSection(i, "user")
                     
                     -- Hide the dropdown
@@ -450,79 +450,379 @@ function TWRA:LoadExampleData()
     return true
 end
 
--- Function to load example data and show main view - called by the Example button
-function TWRA:LoadExampleDataAndShow()
-    -- Load the example data
-    if self:LoadExampleData() then
-        -- Ensure UI state is correct by creating the main frame if it doesn't exist
+-- Function to import data from Base64 string
+function TWRA:ImportString(importString, isSync, syncTimestamp)
+    -- Debug the import process
+    self:Debug("data", "Importing data string (length: " .. string.len(importString) .. ")")
+
+    -- Always clear example data mode when importing
+    if self.usingExampleData then
+        self:Debug("data", "Clearing example data mode before import")
+        -- Restore original NavigateToSection function if we've overridden it
+        if self.NavigateToSectionExample then
+            self:Debug("nav", "Restoring original NavigateToSection function")
+            -- No need to explicitly restore, as import will create a new instance anyway
+            self.NavigateToSectionExample = nil
+        end
+        
+        -- Clear example data flag
+        self.usingExampleData = false
+    end
+    
+    -- Explicitly set non-example mode for the incoming data
+    if TWRA_Assignments then
+        self:Debug("data", "Explicitly set isExample = false for manual import")
+        TWRA_Assignments.isExample = false
+    end
+    
+    -- Ensure we're starting with a clean slate for indexes
+    if self.navigation then
+        self:Debug("nav", "Resetting navigation indexes before import")
+        self.navigation.currentIndex = 1
+    end
+
+    -- Disable OSD temporarily
+    local osdWasVisible = false
+    if self.OSD and self.OSD.isVisible then
+        osdWasVisible = true
+        self.OSD:Hide()
+    end
+
+    -- Try to decode the import string
+    local success, result = pcall(function()
+        return self:Base64Decode(importString)
+    end)
+
+    -- Handle decode errors
+    if not success or not result then
+        self:Debug("error", "Failed to decode Base64 string")
+        -- Show error message
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000TWRA: Import failed - Invalid data format|r")
+        return false
+    end
+
+    -- Try to load the decoded string
+    local encodingType = 0
+    
+    -- Attempt to determine encoding type from first byte
+    local firstByte = string.byte(result, 1)
+    if firstByte == 241 then -- 0xF1 - Compressed data
+        encodingType = 1
+    end
+    
+    -- Handle different encoding types
+    if encodingType == 1 then
+        -- Compressed data - pass directly to SaveAssignments
+        success = self:SaveAssignments(result, importString, syncTimestamp or nil, isSync)
+    else
+        -- Legacy format - decode the string
+        success = self:DecodeLegacyImportString(result, importString, isSync, syncTimestamp)
+    end
+    
+    -- Show OSD if it was visible before
+    if osdWasVisible and success and self.OSD then
+        self.OSD:Show()
+    end
+    
+    -- Update minimap icon if import was successful
+    if success and self.Minimap and self.Minimap.SetHasData then
+        self.Minimap:SetHasData(true)
+    end
+    
+    -- Refresh UI views if import was successful
+    if success then
+        -- Create main frame if it doesn't exist
         if not self.mainFrame then
             self:CreateMainFrame()
-            self:Debug("ui", "Created main frame during LoadExampleDataAndShow")
         end
         
-        -- Ensure main frame is shown regardless of current state
-        if self.mainFrame and not self.mainFrame:IsShown() then
-            -- Use ToggleMainFrame to ensure proper visibility handling
-            self:ToggleMainFrame()
-            self:Debug("ui", "Showing main frame during LoadExampleDataAndShow")
+        -- Reset the UI to main view
+        self:Debug("ui", "Resetting UI to main view after import")
+        self:ShowMainView()
+    end
+    
+    return success
+end
+
+-- Function to load example data and show main view - called by the Example button
+function TWRA:LoadExampleDataAndShow()
+    self:Debug("ui", "Loading example data and showing main view")
+    
+    -- Clear any existing data first
+    if self.ClearData then
+        self:ClearData()
+        self:Debug("data", "Cleared existing data")
+    end
+    
+    -- Ensure we don't have a stale custom navigation function
+    self.NavigateToSectionExample = nil
+    
+    -- Store the original NavigateToSection function
+    local originalNavigateToSection = self.NavigateToSection
+    
+    -- Setup data and flags for example mode
+    self.usingExampleData = true
+    TWRA_CompressedAssignments = nil
+    self:Debug("data", "Cleared TWRA_CompressedAssignments for example data")
+    
+    -- Temporarily disable OSD from showing on navigation change
+    local originalShowOnNavigation = nil
+    if self.OSD then
+        originalShowOnNavigation = self.OSD.showOnNavigation
+        self.OSD.showOnNavigation = false
+        self:Debug("osd", "Temporarily disabled OSD showOnNavigation")
+    end
+    
+    -- Directly assign the example data with proper structure
+    TWRA_Assignments = {
+        data = self.EXAMPLE_DATA.data,
+        timestamp = 0,      -- Use 0 for example data timestamp
+        currentSection = 1, -- Start at first section
+        currentSectionName = "Welcome",
+        version = 2,        -- Use version 2 format
+        isExample = true,   -- Mark as example data
+        needsProcessing = false  -- Mark as already processed to avoid compression check
+    }
+    
+    -- Mark sections as not needing compression or processing
+    if TWRA_Assignments.data then
+        for idx, section in pairs(TWRA_Assignments.data) do
+            if type(idx) == "number" and section then
+                section.missingCompressedData = false
+                section.needsProcessing = false
+            end
         end
+    end
+    
+    -- CRITICAL: Force complete rebuilding of navigation
+    if self.RebuildNavigation then
+        self:Debug("nav", "Rebuilding navigation from example data")
+        self:RebuildNavigation()
+    else
+        self:Debug("error", "RebuildNavigation function not available")
+    end
+    
+    -- Ensure UI state is correct by creating the main frame if it doesn't exist
+    if not self.mainFrame then
+        self:CreateMainFrame()
+        self:Debug("ui", "Created main frame for example data")
+    end
+    
+    -- Process player-specific information for relevant highlighting
+    if self.ProcessPlayerInfo then
+        self:Debug("data", "Processing player-relevant information for example data")
+        self:ProcessPlayerInfo()
+    else
+        self:Debug("error", "ProcessPlayerInfo function not available")
+    end
+    
+    -- Create our safe example navigation function
+    self.NavigateToSectionExample = function(self, index, source)
+        -- Ensure source is a string to prevent nil concatenation errors
+        source = source or "fromExample"
         
-        -- Switch to main view if we're in options view
-        if self.currentView == "options" then
-            self:ShowMainView()
-            self:Debug("ui", "Switched from options to main view during LoadExampleDataAndShow")
-        end
-        
-        -- CRITICAL CHANGE: Handle the dropdown menu properly
-        if self.navigation and self.navigation.dropdownMenu then
-            -- Hide the dropdown if showing
-            self.navigation.dropdownMenu:Hide()
-            
-            -- Completely reset the dropdown buttons
-            if self.navigation.dropdownMenu.buttons then
-                for _, button in pairs(self.navigation.dropdownMenu.buttons) do
-                    if button and button.Hide then
-                        button:Hide()
-                    end
-                    if button and button.text then
-                        button.text:SetText("")
+        -- Ensure index is a number, not a string
+        if type(index) == "string" then
+            self:Debug("nav", "Converting string index to number: " .. index)
+            -- Try to find the section with this name
+            if self.navigation and self.navigation.handlers then
+                for i, name in ipairs(self.navigation.handlers) do
+                    if name == index then
+                        index = i
+                        break
                     end
                 end
             end
             
-            -- Clear the buttons array to force recreation with proper formatting
-            self.navigation.dropdownMenu.buttons = {}
-            
-            -- Reset the offset to ensure proper positioning
-            self.navigation.dropdownMenu.offset = 0
-            
-            self:Debug("nav", "Reset dropdown menu for proper recreation")
+            -- If we still have a string, it's invalid
+            if type(index) == "string" then
+                self:Debug("error", "No section found with name: " .. index)
+                return false
+            end
         end
         
-        -- Set current section to 1 (first section)
+        self:Debug("nav", "Custom example NavigateToSection called: index=" .. index .. ", source=" .. source)
+        
+        -- Update navigation tracking variables
         if self.navigation then
-            self.navigation.currentIndex = 1
+            self.navigation.currentIndex = index
         end
         
-        -- Navigate to first section to refresh all UI components
-        if self.navigation and self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
-            self:Debug("nav", "Calling NavigateToSection to ensure complete UI refresh")
-            self:NavigateToSection(1, "fromExample")
+        -- Get the section name
+        local sectionName = nil
+        if self.navigation and self.navigation.handlers and self.navigation.handlers[index] then
+            sectionName = self.navigation.handlers[index]
+        else
+            self:Debug("error", "No section name found for index: " .. index)
+            return false
         end
         
-        -- Make sure OSD is not showing after loading example data
-        if self.OSD and self.OSD.isVisible then
-            self:HideOSD()
-            self:Debug("osd", "Explicitly hiding OSD after loading example data")
+        -- Update TWRA_Assignments
+        TWRA_Assignments.currentSection = index
+        TWRA_Assignments.currentSectionName = sectionName
+        
+        -- Update UI elements
+        if self.navigation.handlerText then
+            self.navigation.handlerText:SetText(sectionName)
         end
         
-        -- Show user feedback
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Example data loaded!")
+        if self.navigation.menuButton and self.navigation.menuButton.text then
+            self.navigation.menuButton.text:SetText(sectionName)
+        end
+        
+        -- CRITICAL: Force display update for the section
+        if self.FilterAndDisplayHandler then
+            self:Debug("nav", "Directly calling FilterAndDisplayHandler for example section: " .. sectionName)
+            self:FilterAndDisplayHandler(sectionName)
+        end
+        
+        -- Refresh the assignment table
+        if self.RefreshAssignmentTable then
+            self:RefreshAssignmentTable()
+        end
         
         return true
     end
     
-    return false
+    -- Create hook for NavigateToSection specifically for example data
+    -- This will be the active navigation function during example data mode
+    self.NavigateToSection = function(self, index, source)
+        -- Forward to our safety-enhanced example function
+        if self.usingExampleData and self.NavigateToSectionExample then
+            return self:NavigateToSectionExample(index, source)
+        else
+            -- Ensure source is a string even for the original function
+            source = source or "unknown"
+            return originalNavigateToSection(self, index, source)
+        end
+    end
+    
+    -- Register an addon cleanup function to restore original behavior
+    -- This is essential for proper cleanup when addon is reloaded or disabled
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("PLAYER_LOGOUT")
+    frame:SetScript("OnEvent", function()
+        -- Restore original NavigateToSection function on logout/reload
+        if self.usingExampleData then
+            self:Debug("nav", "Restoring original NavigateToSection function on logout/reload")
+            self.NavigateToSection = originalNavigateToSection
+            self.NavigateToSectionExample = nil
+            self.usingExampleData = false
+        end
+    end)
+    
+    -- Ensure main frame is shown
+    if self.mainFrame and not self.mainFrame:IsShown() then
+        -- Use ToggleMainFrame to ensure proper visibility handling
+        self:ToggleMainFrame()
+        self:Debug("ui", "Showing main frame for example data")
+    end
+    
+    -- Switch to main view if we're in options view
+    if self.currentView == "options" then
+        self:ShowMainView()
+        self:Debug("ui", "Switched from options to main view for example data")
+    end
+    
+    -- IMPORTANT: Navigate to first section to properly initialize all UI elements
+    if self.navigation and self.navigation.handlers and table.getn(self.navigation.handlers) > 0 then
+        self:Debug("nav", "Navigating to first section")
+        self:NavigateToSection(1, "fromExample")
+        
+        -- Update the dropdown button text to match the current section
+        if self.navigation.menuButton and self.navigation.menuButton.text and 
+           self.navigation.handlers[1] then
+            self.navigation.menuButton.text:SetText(self.navigation.handlers[1])
+        end
+    end
+    
+    -- Make sure OSD is not showing after loading example data
+    if self.OSD and self.OSD.isVisible then
+        self:Debug("osd", "Hiding OSD after loading example data")
+        self.OSD:Hide()
+    end
+    
+    -- Explicitly refresh the assignment table to ensure data is displayed
+    if self.RefreshAssignmentTable then
+        self:RefreshAssignmentTable()
+        self:Debug("ui", "Refreshed assignment table")
+    else
+        self:Debug("error", "RefreshAssignmentTable function not available")
+    end
+    
+    -- Set up a timer to restore the original NavigateToSection function
+    self:ScheduleTimer(function()
+        -- Only restore if we're still in example mode
+        if self.usingExampleData then
+            self:Debug("nav", "Restoring original NavigateToSection function")
+            self.NavigateToSection = originalNavigateToSection
+            self.NavigateToSectionExample = nil
+            self.usingExampleData = false
+        end
+    end, 300) -- Restore after 5 minutes instead of 1 hour
+    
+    -- Restore the original OSD showOnNavigation setting
+    if self.OSD and originalShowOnNavigation ~= nil then
+        self.OSD.showOnNavigation = originalShowOnNavigation
+        self:Debug("osd", "Restored OSD showOnNavigation to " .. tostring(originalShowOnNavigation))
+    end
+    
+    -- Show user feedback
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Example data loaded!")
+    
+    return true
+end
+
+-- Custom navigation function specifically for example data
+-- This follows the pattern used in HandleBulkStructureCommand but simplified
+function TWRA:CustomNavigateSection(index, sectionName, source)
+    self:Debug("nav", "CustomNavigateSection called for section " .. index .. ": " .. sectionName)
+    
+    -- Update tracking variables
+    if self.navigation then
+        self.navigation.currentIndex = index
+    end
+    
+    -- Update assignments current section
+    TWRA_Assignments.currentSection = index
+    TWRA_Assignments.currentSectionName = sectionName
+    
+    -- Update UI text elements
+    if self.navigation and self.navigation.handlerText then
+        self.navigation.handlerText:SetText(sectionName)
+    end
+    
+    if self.navigation and self.navigation.menuButton and self.navigation.menuButton.text then
+        self.navigation.menuButton.text:SetText(sectionName)
+    end
+    
+    -- CRITICAL: Direct display update - this is what was missing before
+    if self.FilterAndDisplayHandler then
+        self:Debug("nav", "Directly calling FilterAndDisplayHandler for section: " .. sectionName)
+        self:FilterAndDisplayHandler(sectionName)
+    else
+        self:Debug("error", "FilterAndDisplayHandler not available")
+    end
+    
+    -- Refresh assignment table to ensure data is properly displayed
+    if self.RefreshAssignmentTable then
+        self:RefreshAssignmentTable()
+    end
+    
+    -- Update OSD if needed (following the SyncHandlers pattern)
+    if self.RebuildOSDIfVisible then
+        self:RebuildOSDIfVisible()
+    end
+    
+    -- Clear any pending sections (similar to SyncHandlers)
+    if self.SYNC and self.SYNC.pendingSection then
+        self.SYNC.pendingSection = nil
+    end
+    
+    -- This is a complete navigation operation
+    self:Debug("nav", "CustomNavigateSection complete for " .. sectionName)
+    
+    return true
 end
 
 -- Function to check if data is example data

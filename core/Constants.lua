@@ -9,11 +9,19 @@ TWRA.UI = TWRA.UI or {}
 TWRA.SYNC = TWRA.SYNC or {
     PREFIX = "TWRA",
     COMMANDS = {
-        VERSION = "VERSION",      -- For version checking
+        VERSION = "VER",          -- For version checking
         SECTION = "SECTION",      -- For live section updates
-        DATA_REQUEST = "DREQ",    -- Request full data
-        DATA_RESPONSE = "DRES",   -- Send full data
-        ANNOUNCE = "ANC"          -- Announce new import
+        
+        -- Bulk sync commands
+        BULK_SECTION = "BSEC",    -- Bulk section data transmission
+        BULK_STRUCTURE = "BSTR",  -- Bulk structure data transmission
+        BULK_SYNC_REQUEST = "BSREQ", -- Request bulk sync
+        BULK_SYNC_ACK = "BSACK",  -- Acknowledge bulk sync request
+        
+        -- Missing sections commands
+        MISS_SEC_REQ = "MSREQ",   -- Request missing sections
+        MISS_SEC_ACK = "MSACK",   -- Acknowledge missing sections request
+        MISS_SEC_RES = "MSRES"    -- Respond with missing section
     },
     liveSync = false,            -- Live sync enabled
     pendingSection = nil,        -- Section to navigate to after sync
@@ -436,11 +444,12 @@ TWRA.DEFAULT_OSD_SETTINGS = {
 
 -- Export version information
 TWRA.VERSION = {
-    MAJOR = 0,
-    MINOR = 1,
-    PATCH = 0,
-    STRING = "0.1.0",
-    BUILD_DATE = "2023-10-09"
+    MAJOR = 0,         -- Major version - increment for breaking changes
+    MINOR = 1,         -- Minor version - increment for new features
+    PATCH = 0,         -- Patch version - increment for bug fixes
+    DATE = "2025-05-11", -- Current date in YYYY-MM-DD format
+    DATA_COMPAT = 1,   -- Minimum compatible minor version for data structures
+    STRING = "0.1.0",  -- Version string in format "MAJOR.MINOR.PATCH"
 }
 
 -- Export base64 character table for encoding/decoding

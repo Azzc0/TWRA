@@ -19,6 +19,10 @@ function TWRA:OnLoad(eventFrame)
     self.eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
     self.eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
     
+    -- Initialize version checking variables
+    self.SYNC.hasSeenNewerVersion = false
+    self.SYNC.newerVersionString = nil
+    
     -- Initialize saved variables if needed
     TWRA_SavedVariables = TWRA_SavedVariables or {}
     -- Ensure options table exists
@@ -466,6 +470,26 @@ SlashCmdList["TWRA"] = function(msg)
         return
     end
     
+    -- Version command
+    if msg == "version" or msg == "ver" then
+        local versionStr = TWRA.VERSION.STRING or "0.1.0"
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Version:|r " .. versionStr)
+        
+        -- Check for new versions if in a group
+        if UnitInRaid("player") or GetNumPartyMembers() > 0 then
+            if TWRA.CheckVersionCompatibility then
+                TWRA:CheckVersionCompatibility()
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Checking for version compatibility with group members...")
+            end
+        end
+        
+        -- Show if we've seen a newer version
+        if TWRA.SYNC and TWRA.SYNC.hasSeenNewerVersion and TWRA.SYNC.newerVersionString then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r A newer version is available: " .. TWRA.SYNC.newerVersionString)
+        end
+        return
+    end
+    
     -- Navigation commands
     if msg == "next" then
         TWRA:Debug("nav", "Next section command received")
@@ -811,6 +835,11 @@ function TWRA:OnGroupChanged()
             -- Double-check that we're still in a group
             if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
                 self:Debug("sync", "Requesting bulk sync after joining group")
+                
+                -- Trigger version check when joining a group
+                if self.CheckVersionCompatibility then
+                    self:CheckVersionCompatibility()
+                end
                 
                 -- Only request sync if LiveSync is enabled
                 if self.SYNC.liveSync then

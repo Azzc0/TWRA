@@ -18,7 +18,7 @@ function TWRA:InitializeHandlerMap()
     self.syncHandlers = {
         -- Standard messages
         SECTION = self.HandleSectionCommand,
-        VER = self.UnusedCommand,
+        VER = self.HandleVersionCommand, -- Version check handler
         BSEC = self.HandleBulkSectionCommand, -- Bulk section handler
         BSTR = self.HandleBulkStructureCommand, -- Bulk structure handler
         MSREQ = self.HandleMissingSectionsRequestCommand, -- Missing sections request handler
@@ -1227,4 +1227,153 @@ function TWRA:HandleBulkSyncAckCommand(components, sender)
     end
     
     return true
+end
+
+-- Function to handle version check messages
+-- @param versionString The version string from sender 
+-- @param sender The player who sent the message
+function TWRA:HandleVersionCommand(versionString, sender)
+    self:Debug("sync", "Received version check from " .. sender .. ": " .. versionString)
+    
+    if not versionString then
+        self:Debug("error", "Invalid version check - missing version string")
+        return false
+    end
+    
+    -- Parse the version components (format: MAJOR.MINOR.PATCH)
+    local major, minor, patch = 0, 0, 0
+    
+    -- Use string.gfind instead of string.match (Lua 5.0 compatible)
+    local parts = {}
+    local index = 1
+    for part in string.gfind(versionString, "([^.]+)") do
+        parts[index] = tonumber(part) or 0
+        index = index + 1
+    end
+    
+    -- Extract version components
+    major = parts[1] or 0
+    minor = parts[2] or 0
+    patch = parts[3] or 0
+    
+    -- Get our version information
+    local ourMajor = self.VERSION.MAJOR or 0
+    local ourMinor = self.VERSION.MINOR or 0
+    local ourPatch = self.VERSION.PATCH or 0
+    
+    -- Check version compatibility
+    local isCompatible = true
+    local isOlder = false
+    local isNewer = false
+    
+    -- Version is incompatible if major versions don't match
+    if major ~= ourMajor then
+        isCompatible = false
+        if major < ourMajor then
+            isOlder = true
+        else
+            isNewer = true
+        end
+    -- If major versions match but minor versions don't, check compatibility threshold
+    elseif minor ~= ourMinor then
+        -- If their minor version is less than our DATA_COMPAT, it's incompatible
+        if minor < self.VERSION.DATA_COMPAT then
+            isCompatible = false
+            isOlder = true
+        -- If their minor version is greater than ours, we're the older one
+        elseif minor > ourMinor then
+            isNewer = true
+        end
+    -- If major and minor match but patch is different, they're compatible but one is newer
+    elseif patch ~= ourPatch then
+        if patch > ourPatch then
+            isNewer = true
+        else
+            isOlder = true
+        end
+    end
+    
+    -- Log the compatibility result
+    if not isCompatible then
+        if isOlder then
+            self:Debug("error", sender .. " is using an older incompatible version: " .. versionString)
+            -- Respond with our version to inform them
+            self:SendVersionResponse(sender, true)
+        else
+            self:Debug("error", sender .. " is using a newer incompatible version: " .. versionString)
+            -- Store that we've seen a newer version
+            self.SYNC.hasSeenNewerVersion = true
+            self.SYNC.newerVersionString = versionString
+        end
+    else
+        if isNewer then
+            self:Debug("sync", sender .. " is using a newer compatible version: " .. versionString)
+            -- Store that we've seen a newer version
+            self.SYNC.hasSeenNewerVersion = true
+            self.SYNC.newerVersionString = versionString
+        elseif isOlder then
+            self:Debug("sync", sender .. " is using an older compatible version: " .. versionString)
+        else
+            self:Debug("sync", sender .. " is using the same version: " .. versionString)
+        end
+    end
+    
+    -- Notify the user if an incompatible version is detected
+    if not isCompatible then
+        local messageColor
+        local message
+        
+        if isOlder then
+            messageColor = "FF9900" -- Orange for warning
+            message = sender .. " is using an older incompatible version (" .. versionString .. "). They may not be able to see your assignments correctly."
+        else
+            messageColor = "FF0000" -- Red for error
+            message = sender .. " is using a newer incompatible version (" .. versionString .. "). You should update your TWRA addon."
+        end
+        
+        -- Send a clear visual message to the user
+        local formattedMessage = "|cFF33FF99TWRA|r |cFF" .. messageColor .. "VERSION MISMATCH:|r " .. message
+        DEFAULT_CHAT_FRAME:AddMessage(formattedMessage)
+    end
+    
+    return true
+end
+
+-- Function to check version compatibility with other raid/party members
+function TWRA:CheckVersionCompatibility()
+    self:Debug("sync", "Checking version compatibility with group members")
+    
+    -- Send version check to appropriate channel
+    local channel = "RAID"
+    
+    -- If not in a raid, try party
+    if not UnitInRaid("player") then
+        if GetNumPartyMembers() > 0 then
+            channel = "PARTY"
+        else
+            self:Debug("sync", "Not in a raid or party, skipping version check")
+            return
+        end
+    end
+    
+    -- Send our version to the group
+    local versionMessage = self:CreateVersionMessage(self.VERSION.STRING)
+    self:SendAddonMessage(versionMessage, channel)
+    self:Debug("sync", "Sent version check to " .. channel .. ": " .. self.VERSION.STRING)
+end
+
+-- Function to send a version response to a specific player
+function TWRA:SendVersionResponse(target, isIncompatible)
+    if not target then return end
+    
+    -- Send our version to the specified player
+    local versionMessage = self:CreateVersionMessage(self.VERSION.STRING, isIncompatible)
+    self:SendAddonMessage(versionMessage, "WHISPER", target)
+    self:Debug("sync", "Sent version response to " .. target .. ": " .. self.VERSION.STRING)
+end
+
+-- Function to create a version message
+function TWRA:CreateVersionMessage(versionString, isIncompatible)
+    local suffix = isIncompatible and ":INCOMPATIBLE" or ""
+    return self.SYNC.COMMANDS.VERSION .. ":" .. versionString .. suffix
 end
