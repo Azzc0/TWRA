@@ -308,6 +308,12 @@ frame:SetScript("OnEvent", function()
             TWRA:InitOSD()
         end
         
+        -- Initialize Encounter Map system
+        if TWRA.InitEncounterMap then
+            TWRA:Debug("ui", "Initializing Encounter Map system")
+            TWRA:InitEncounterMap()
+        end
+        
         -- IMPORTANT: Ensure PLAYERS table is properly initialized
         -- This ensures the table is always populated properly even if early initialization failed
         if TWRA.UpdatePlayerTable then

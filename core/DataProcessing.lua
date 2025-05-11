@@ -17,6 +17,11 @@ function TWRA:EnsureCompleteRows(data)
                 
                 -- Process section rows if they exist
                 if section["Section Rows"] and type(section["Section Rows"]) == "table" then
+                    -- Track rows to be removed (Image rows)
+                    local rowsToRemove = {}
+                    -- Track image references found
+                    local imageRefs = {}
+                    
                     for rowIdx, rowData in ipairs(section["Section Rows"]) do
                         -- Skip non-table rows
                         if type(rowData) == "table" then
@@ -30,6 +35,18 @@ function TWRA:EnsureCompleteRows(data)
                                 for i = 3, table.getn(rowData) do
                                     rowData[i] = nil
                                 end
+                            -- Handle Image rows by storing data in section metadata and marking for removal
+                            elseif rowData[1] == "Image" and rowData[2] and rowData[2] ~= "" then
+                                -- Get the image reference from column 2
+                                local imageRef = rowData[2]
+                                
+                                -- Add to our list of image references
+                                table.insert(imageRefs, imageRef)
+                                
+                                -- Mark this row for removal
+                                table.insert(rowsToRemove, rowIdx)
+                                
+                                self:Debug("data", "Found image reference '" .. imageRef .. "' in section " .. sectionIdx)
                             else
                                 -- Normal rows - make sure they have maxColumns entries
                                 -- Make sure we have at least as many columns as the header
@@ -43,6 +60,33 @@ function TWRA:EnsureCompleteRows(data)
                             self:Debug("data", "EnsureCompleteRows: Row " .. rowIdx .. " in section " .. 
                                       tostring(section["Section Name"] or sectionIdx) .. " is not a table")
                         end
+                    end
+                    
+                    -- Store the image references in section metadata
+                    if table.getn(imageRefs) > 0 then
+                        -- Ensure Section Metadata exists
+                        section["Section Metadata"] = section["Section Metadata"] or {}
+                        
+                        -- If we have just one image, store it directly
+                        if table.getn(imageRefs) == 1 then
+                            section["Section Metadata"]["Image"] = imageRefs[1]
+                            self:Debug("data", "Stored image reference '" .. imageRefs[1] .. "' in section metadata for section " .. sectionIdx)
+                        else
+                            -- If we have multiple images, store them as an array
+                            section["Section Metadata"]["Images"] = imageRefs
+                            self:Debug("data", "Stored " .. table.getn(imageRefs) .. " image references in section metadata for section " .. sectionIdx)
+                        end
+                    end
+                    
+                    -- Remove rows that were marked for removal (Image rows)
+                    -- We need to remove in reverse order to avoid shifting indices
+                    table.sort(rowsToRemove, function(a, b) return a > b end)
+                    for _, rowIdx in ipairs(rowsToRemove) do
+                        table.remove(section["Section Rows"], rowIdx)
+                    end
+                    
+                    if table.getn(rowsToRemove) > 0 then
+                        self:Debug("data", "Removed " .. table.getn(rowsToRemove) .. " Image rows from section " .. sectionIdx)
                     end
                 end
             else
@@ -611,28 +655,9 @@ function TWRA:ProcessSectionData(sectionIndex)
                     if not isPendingChunkedSection then
                         -- Get the compressed section data
                         local sectionData = TWRA_CompressedAssignments.sections[idx]
-                        if not sectionData or sectionData == "" then
-                            self:Debug("error", "Empty compressed data for section " .. idx)
-                            -- FIXED: Explicitly mark as needing processing for empty data
-                            if TWRA_Assignments.data[idx] then
-                                TWRA_Assignments.data[idx]["NeedsProcessing"] = true
-                                self:Debug("data", "Marked section " .. idx .. " as needing processing (empty data)")
-                                
-                                -- Add to missing sections tracking
-                                TWRA_CompressedAssignments.sections.missing[idx] = true
-                                self:Debug("data", "Added section " .. idx .. " to missing sections tracking (empty data)")
-                            end
-                            errorCount = errorCount + 1
-                        else
-                            self:Debug("data", "Processing section: " .. sectionName .. " (index: " .. idx .. ")")
-                            
-                            -- IMPORTANT: Always mark as needing processing before attempting decompression
-                            -- This ensures that if decompression fails, we won't have a false "processed" state
-                            TWRA_Assignments.data[idx]["NeedsProcessing"] = true
-                            
-                            -- Decompress the section data
-                            local decompressedData = nil
-                            
+                        local decompressedData = nil
+                        
+                        if sectionData and sectionData ~= "" then
                             -- Use pcall to catch any decompression errors
                             local success, result = pcall(function()
                                 if self.DecompressSectionData then
@@ -796,6 +821,15 @@ function TWRA:ProcessSectionData(sectionIndex)
                                 
                                 errorCount = errorCount + 1
                             end
+                        else
+                            self:Debug("error", "Empty section data for section " .. idx)
+                            TWRA_Assignments.data[idx]["NeedsProcessing"] = true
+                            
+                            -- Add to missing sections tracking
+                            TWRA_CompressedAssignments.sections.missing[idx] = true
+                            self:Debug("data", "Added section " .. idx .. " to missing sections tracking (empty data)")
+                            
+                            errorCount = errorCount + 1
                         end
                     end
                 end

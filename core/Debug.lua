@@ -15,6 +15,7 @@ TWRA.DEBUG_CATEGORIES = {
     auto = { name = "Auto", default = true, description = "Automatic features" },
     tank = { name = "Tank", default = true, description = "Tank assignments" },
     osd = { name = "OSD", default = true, description = "On-screen display messages" },
+    map = { name = "Map", default = true, description = "Encounter map messages" },
     error = { name = "Error", default = true, description = "Errors and warnings" }
 }
 
@@ -140,6 +141,7 @@ function TWRA:InitDebug()
         compress = "33FFFF", -- Cyan
         chunk = "FF9933",    -- Dark Orange
         osd = "FFFF33",      -- Yellow
+        map = "FF33AA",      -- Purple
         error = "FF0000",    -- Red
         warning = "FFAA00",  -- Orange
         details = "AAAAAA"   -- Gray

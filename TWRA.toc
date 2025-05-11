@@ -28,6 +28,7 @@ ui\Frame.lua
 ui\Minimap.lua
 ui\OSD.lua
 ui\Options.lua
+ui\EncounterMap.lua
 
 # Feature modules
 features\AutoTanks.lua

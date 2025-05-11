@@ -19,30 +19,6 @@ function TWRA:CloseDropdownMenu()
     end
 end
 
--- -- Register for player update events
--- function TWRA:RegisterPlayerEvents()
---     -- Only register if we have the event system
---     if not self.RegisterEvent then
---         self:Debug("ui", "Event system not available, cannot register player events")
---         return false
---     end
-    
---     -- Register for PLAYERS_UPDATED event
---     self:RegisterEvent("PLAYERS_UPDATED", function()
---         -- Only update UI if main frame is visible and in main view
---         if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
---             -- If we have a refresh function, call it to update the UI
---             if self.RefreshAssignmentTable then
---                 self:Debug("ui", "Refreshing display after player update")
---                 self:RefreshAssignmentTable()
---             end
---         end
---     end)
-    
---     self:Debug("ui", "Registered for player update events")
---     return true
--- end
-
 -- Enhance CreateMainFrame to use the standardized dropdown and remove Edit button
 function TWRA:CreateMainFrame()
     -- Check if frame already exists
@@ -463,6 +439,51 @@ function TWRA:CreateMainFrame()
         return
     end)
 
+    -- Create logo texture in the map left corner
+    local mapTexture = self.mainFrame:CreateTexture(nil, "OVERLAY")
+    mapTexture:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 15, -10)
+    mapTexture:SetWidth(32)
+    mapTexture:SetHeight(32)
+    if TWRA.ICONS and TWRA.ICONS.Image then
+        local iconInfo = TWRA.ICONS.Image
+        mapTexture:SetTexture(iconInfo[1])
+        mapTexture:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    end
+    self.mapTexture = mapTexture
+    
+    -- Update the encounterButton in Frame.lua to use the EncounterMap module
+    local encounterButton = CreateFrame("Button", nil, self.mainFrame)
+    encounterButton:SetAllPoints(mapTexture)
+    encounterButton:SetScript("OnEnter", function()
+        -- Show tooltip
+        GameTooltip:SetOwner(encounterButton, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Encounter Map")
+        GameTooltip:AddLine("Click to toggle map display", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+        
+        -- Show map temporarily if not already in permanent mode
+        if self.ShowEncounterMapTemp and not self.encounterMapPermanent then
+            self:ShowEncounterMapTemp()
+        end
+    end)
+    
+    encounterButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        
+        -- Hide map if not in permanent mode
+        if self.HideEncounterMap and self.encounterMapInitialized and not self.encounterMapPermanent then
+            self:HideEncounterMap()
+        end
+    end)
+    
+    encounterButton:SetScript("OnClick", function()
+        -- Toggle permanent map display
+        if self.ToggleEncounterMap then
+            self:ToggleEncounterMap()
+        end
+    end)
+    self.encounterButton = encounterButton
+
     -- After creating all UI elements, rebuild navigation but don't display content yet
     if TWRA_Assignments and TWRA_Assignments.data then
         self:Debug("ui", "Main frame detected new data format, rebuilding navigation")
@@ -584,6 +605,11 @@ function TWRA:ShowMainView()
     if self.updateTanksButton then self.updateTanksButton:Show() end
     if self.syncAllButton then self.syncAllButton:Hide() end  -- Hide Sync All button in main view
 
+    -- Make sure the logo is visible
+    if self.logoTexture then 
+        self.logoTexture:Show() 
+    end
+    
     -- Change button text if options button exists
     if self.optionsButton then
         self.optionsButton:SetText("Options")

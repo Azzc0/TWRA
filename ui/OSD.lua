@@ -273,27 +273,61 @@ function TWRA:GetOSDFrame()
     headerContainer:SetHeight(25)
     frame.headerContainer = headerContainer
 
+    -- Create encounter image texture in the top left corner
+    local encounterImage = headerContainer:CreateTexture(nil, "OVERLAY")
+    encounterImage:SetPoint("TOPLEFT", headerContainer, "TOPLEFT", 5, 0)
+    encounterImage:SetWidth(24)
+    encounterImage:SetHeight(24)
+    if TWRA.ICONS and TWRA.ICONS.Image then
+        local iconInfo = TWRA.ICONS.Image
+        encounterImage:SetTexture(iconInfo[1])
+        encounterImage:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    end
+    frame.encounterImage = encounterImage
+    
+    -- Add encounterButton functionality
+    local encounterButton = CreateFrame("Button", nil, headerContainer)
+    encounterButton:SetAllPoints(encounterImage)
+    encounterButton:SetScript("OnEnter", function()
+        -- Show tooltip
+        GameTooltip:SetOwner(encounterButton, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Encounter Map")
+        GameTooltip:AddLine("Click to toggle map display", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+                
+        -- Show map temporarily on hover - use the EncounterMap module
+        if TWRA.ShowEncounterMapTemp then
+            TWRA:ShowEncounterMapTemp()
+        end
+    end)
+    
+    encounterButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        
+        -- Hide map if not in permanent mode
+        if TWRA.HideEncounterMap and not TWRA.encounterMapPermanent then
+            TWRA:HideEncounterMap()
+        end
+    end)
+    
+    encounterButton:SetScript("OnClick", function()
+        -- Toggle permanent map display
+        if TWRA.ToggleEncounterMap then
+            TWRA:ToggleEncounterMap()
+        end
+    end)
+    frame.encounterButton = encounterButton
+
     -- Create title text
     local titleText = headerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     titleText:SetPoint("TOP", headerContainer, "TOP", 0, 0)
-    titleText:SetPoint("LEFT", headerContainer, "LEFT", 10, 0)
+    titleText:SetPoint("LEFT", encounterImage, "RIGHT", 5, 0)
     titleText:SetPoint("RIGHT", headerContainer, "RIGHT", -10, 0)
     titleText:SetHeight(25)
     titleText:SetJustifyH("CENTER")
     titleText:SetText("TWRA On-Screen Display")
     titleText:SetTextColor(1, 1, 1) -- Set title text to white
     frame.titleText = titleText
-    if frame.titleText then
-        local sectionTitle = sectionName
-        
-        -- Try to get proper section name from saved variables
-        if TWRA_Assignments and TWRA_Assignments.currentSectionName then
-            sectionTitle = TWRA_Assignments.currentSectionName
-            self:Debug("osd", "Using saved currentSectionName for title: " .. sectionTitle)
-        end
-        
-        frame.titleText:SetText(sectionTitle)
-    end
 
     -- Create content container (for assignment rows)
     local contentContainer = CreateFrame("Frame", nil, frame)

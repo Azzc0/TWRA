@@ -19,6 +19,7 @@ var ABBREVIATION_MAPPINGS = {
   "GUID": "9",
   "Warning": "!",
   "Note": "?",
+  "Image": "I", // Added Image abbreviation
   
   // Class and group abbreviations
   "Druids": "D",

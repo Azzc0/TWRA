@@ -29,6 +29,7 @@ TWRA.ABBREVIATION_MAPPINGS = {
     ["9"] = "GUID",
     ["!"] = "Warning",
     ["?"] = "Note",
+    ["Im"] = "Image",
     
     -- Class and group abbreviations
     ["D"] = "Druids",

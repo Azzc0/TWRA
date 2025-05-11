@@ -133,6 +133,12 @@ function TWRA:NavigateToSection(index, source)
     -- This is needed for OSD, Minimap, AutoTanks, and other modules
     self:TriggerEvent("SECTION_CHANGED", sectionName, index, table.getn(self.navigation.handlers), source)
     
+    -- Update Encounter Map for the new section
+    if self.UpdateEncounterMapForNavigation then
+        self:Debug("map", "Updating encounter map for section change")
+        self:UpdateEncounterMapForNavigation()
+    end
+    
     -- Update UI if main frame exists and is shown
     if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
         -- Update main frame content
