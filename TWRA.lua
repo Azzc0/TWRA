@@ -351,7 +351,7 @@ end
 function TWRA:LoadSavedAssignments()
     self:Debug("data", "Loading saved assignments from saved variables")
     
-    -- Ensure TWRA_Assignments exists
+    -- Make sure TWRA_Assignments exists as an object
     TWRA_Assignments = TWRA_Assignments or {}
     
     -- Check if we have saved assignments
@@ -414,25 +414,46 @@ function TWRA:LoadSavedAssignments()
         
         return true
     else
-        -- No saved assignments found, load example data instead to avoid empty TWRA_Assignments
-        self:Debug("data", "No saved assignments found - loading example data to prevent empty TWRA_Assignments")
-        
-        if self.LoadExampleData then
-            self:LoadExampleData()
-            self:Debug("data", "Example data loaded successfully to prevent OSD issues")
-            return true
+        -- No saved assignments data found or TWRA_Assignments.data is empty
+        -- Check if TWRA_Assignments.data is nil or empty
+        if not TWRA_Assignments.data or table.getn(TWRA_Assignments.data or {}) == 0 then
+            -- No assignment data - load example data
+            self:Debug("data", "No assignment data found - loading example data")
+            
+            if self.LoadExampleData then
+                self:LoadExampleData()
+                self:Debug("data", "Example data loaded successfully to prevent OSD issues")
+                return true
+            else
+                self:Debug("error", "LoadExampleData function not available")
+                -- Create minimal assignments structure to prevent nil errors
+                TWRA_Assignments = {
+                    data = TWRA_Assignments.data or {},
+                    version = 2,
+                    timestamp = time(),
+                    currentSection = 1,
+                    currentSectionName = "Welcome",
+                    isExample = true
+                }
+                return false
+            end
         else
-            self:Debug("error", "LoadExampleData function not available")
-            -- Create minimal assignments structure to prevent nil errors
-            TWRA_Assignments = {
-                data = TWRA_Assignments.data or {},
-                version = 2,
-                timestamp = time(),
-                currentSection = 1,
-                currentSectionName = "Welcome",
-                isExample = true
-            }
-            return false
+            -- TWRA_Assignments.data already exists and is not empty
+            self:Debug("data", "Using existing assignment data with " .. 
+                      (TWRA_Assignments.data and table.getn(TWRA_Assignments.data) or 0) .. " sections")
+            
+            -- Make sure we have all required fields
+            TWRA_Assignments.version = TWRA_Assignments.version or 2
+            TWRA_Assignments.timestamp = TWRA_Assignments.timestamp or time()
+            TWRA_Assignments.currentSection = TWRA_Assignments.currentSection or 1
+            
+            -- Rebuild navigation with the existing data
+            if self.RebuildNavigation then
+                self:RebuildNavigation()
+                self:Debug("nav", "Navigation rebuilt with existing assignments")
+            end
+            
+            return true
         end
     end
 end
