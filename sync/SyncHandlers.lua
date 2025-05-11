@@ -36,6 +36,7 @@ end
 
 -- Main addon message handler - routes messages to appropriate handlers
 function TWRA:HandleAddonMessage(message, distribution, sender)
+    self:Debug("sync", "Received addon message: " .. message .. " from " .. sender, false, true)
     -- Shared initial processing for all message types
     if not message or message == "" then
         return
@@ -164,6 +165,11 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
         if self.HandleMissingSectionsAckCommand then
             self:HandleMissingSectionsAckCommand(components[2], components[3], components[4], sender)
         end
+    elseif command == self.SYNC.COMMANDS.BULK_SYNC_REQUEST then
+        -- Handle BSREQ (bulk sync request)
+        if self.HandleBulkSyncRequestCommand then
+            self:HandleBulkSyncRequestCommand(components, sender)
+        end
     -- Handle other command types here...
     else
         -- Try using the handler map for other commands
@@ -174,6 +180,30 @@ function TWRA:HandleAddonMessage(message, distribution, sender)
             self:Debug("sync", "Unknown command: " .. command)
         end
     end
+end
+
+-- Helper function to extract data portion from a message with a variable number of components
+function TWRA:ExtractDataPortion(message, startPos)
+    if not message or not startPos or startPos < 1 then
+        return ""
+    end
+    
+    -- Find the position of the Nth colon (startPos-1 colons)
+    local colonCount = 0
+    local dataStartPos = 1
+    
+    for i = 1, string.len(message) do
+        if string.sub(message, i, i) == ":" then
+            colonCount = colonCount + 1
+            if colonCount == startPos - 1 then
+                dataStartPos = i + 1
+                break
+            end
+        end
+    end
+    
+    -- Extract everything after that position
+    return string.sub(message, dataStartPos)
 end
 
 -- Handler for chunk header messages
@@ -398,6 +428,440 @@ function TWRA:TestChunkSync()
             self:Debug("chunk", "CHUNK SYNC TEST: No test transfers found in receivingChunks or processedTransfers tables")
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[TWRA Chunk Test]|r No test chunk transfer found. Did the sender run /run TWRA:TestChunkSync()?")
         end
+    end
+end
+
+-- Function to handle bulk section messages (BSEC)
+-- These are stored directly without processing
+function TWRA:HandleBulkSectionCommand(timestamp, sectionIndex, sectionData, sender)
+    self:Debug("sync", "Handling BULK_SECTION from Clickyou for section " .. sectionIndex)
+    
+    -- Skip if we're missing required arguments
+    if not timestamp or not sectionIndex or not sectionData then
+        self:Debug("error", "Missing required arguments for BULK_SECTION handler")
+        return false
+    end
+    
+    -- Convert section index to number
+    sectionIndex = tonumber(sectionIndex)
+    if not sectionIndex then
+        self:Debug("error", "Invalid section index in BULK_SECTION: " .. tostring(sectionIndex))
+        return false
+    end
+    
+    -- Make sure TWRA_CompressedAssignments and its sections table exist
+    if not TWRA_CompressedAssignments then
+        TWRA_CompressedAssignments = {}
+    end
+    
+    if not TWRA_CompressedAssignments.sections then
+        TWRA_CompressedAssignments.sections = {}
+    end
+
+    -- Check if this is a chunked section reference
+    if string.find(sectionData, "^CHUNKED:") then
+        self:Debug("sync", "Detected chunked section reference: " .. sectionData)
+        
+        -- Extract the transfer ID from the chunked reference
+        -- Format should be "CHUNKED:transferId"
+        local transferId = nil
+        
+        -- Use string.gfind instead of string.match (Lua 5.0 compatible)
+        for part in string.gfind(sectionData, "CHUNKED:([^:]+)") do
+            transferId = part
+            break -- Just get the first match
+        end
+        
+        self:Debug("sync", "Extracted transferId: " .. (transferId or "nil"))
+        
+        if not transferId then
+            self:Debug("error", "Failed to extract transferId from chunked reference: " .. sectionData)
+            return false
+        end
+        
+        self:Debug("sync", "Processing chunked section reference with transferId: " .. transferId)
+        
+        -- Attempt to retrieve the actual chunked data from the chunk manager
+        if not self.chunkManager then
+            self:Debug("error", "Chunk manager not available to retrieve chunked section data")
+            return false
+        end
+        
+        -- Make sure the chunk manager is initialized
+        if not self.chunkManager.storedChunkData then
+            self:Debug("error", "Chunk manager not properly initialized, cannot retrieve chunked data")
+            return false
+        end
+        
+        -- Use RetrieveChunkData to get the chunked data
+        local actualData = self.chunkManager:RetrieveChunkData(transferId)
+        
+        -- Check if the chunk data is available
+        if not actualData then
+            self:Debug("error", "Chunked data not found for transferId: " .. transferId)
+            self:Debug("sync", "Available transferIds in storedChunkData: " .. self:DebugTableKeys(self.chunkManager.storedChunkData))
+            
+            -- Store the reference temporarily, but mark it for later resolution
+            -- This will allow us to request the missing data later
+            TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
+            
+            -- Track this as a missing section that needs to be requested
+            TWRA_CompressedAssignments.sections.missing = TWRA_CompressedAssignments.sections.missing or {}
+            TWRA_CompressedAssignments.sections.missing[sectionIndex] = transferId
+            
+            self:Debug("sync", "Marked section " .. sectionIndex .. " as missing, will request later")
+            return false
+        end
+        
+        -- Debug the retrieved chunk data
+        self:Debug("sync", "Successfully retrieved chunked data for section " .. sectionIndex .. 
+                  " (length: " .. string.len(actualData) .. " bytes)")
+        
+        -- Add more detailed debug information about the chunk data
+        if string.len(actualData) > 0 then
+            local firstChar = string.sub(actualData, 1, 1)
+            local firstByte = string.byte(firstChar)
+            self:Debug("sync", "Chunk data first byte: " .. tostring(firstByte) .. 
+                      " (char: '" .. (firstByte >= 32 and firstByte <= 126 and firstChar or "non-printable") .. "')")
+            
+            -- Show first 20 bytes in hex format for debugging
+            local hexOutput = ""
+            local maxBytes = math.min(20, string.len(actualData))
+            for i = 1, maxBytes do
+                hexOutput = hexOutput .. string.format("%02X ", string.byte(string.sub(actualData, i, i)))
+            end
+            self:Debug("sync", "Chunk data first " .. maxBytes .. " bytes: " .. hexOutput)
+        else
+            self:Debug("error", "Retrieved chunk data is empty!")
+        end
+        
+        -- Replace the reference with the actual data
+        sectionData = actualData
+    end
+    
+    -- Store the actual data (either the original or the retrieved chunked data)
+    TWRA_CompressedAssignments.sections[sectionIndex] = sectionData
+    
+    -- Update the timestamp if it's newer than our current one
+    -- Note: We don't trigger a new sync request here, just update the timestamp
+    if TWRA_Assignments then
+        local currentTimestamp = TWRA_Assignments.timestamp or 0
+        if tonumber(timestamp) > currentTimestamp then
+            self:Debug("sync", "Updating our timestamp to " .. timestamp .. " from BULK_SECTION without triggering a new sync")
+            TWRA_Assignments.timestamp = tonumber(timestamp)
+        end
+    end
+    
+    self:Debug("sync", "Successfully stored bulk section " .. sectionIndex .. " data without processing")
+    
+    -- Add this section to our tracking of received sections
+    self.SYNC.receivedSectionResponses = self.SYNC.receivedSectionResponses or {}
+    self.SYNC.receivedSectionResponses[sectionIndex] = true
+    
+    -- Remove this section from the missing sections tracking if it was there
+    if TWRA_CompressedAssignments.sections.missing and 
+       TWRA_CompressedAssignments.sections.missing[sectionIndex] then
+        self:Debug("sync", "Removing section " .. sectionIndex .. " from missing sections list")
+        TWRA_CompressedAssignments.sections.missing[sectionIndex] = nil
+    end
+    
+    return true
+end
+
+-- Helper function to debug table keys - only create if it doesn't exist
+function TWRA:DebugTableKeys(tbl)
+    if not tbl then return "nil" end
+    
+    local keys = ""
+    local count = 0
+    
+    for k, _ in pairs(tbl) do
+        if count > 0 then
+            keys = keys .. ", "
+        end
+        keys = keys .. tostring(k)
+        count = count + 1
+    end
+    
+    if count == 0 then
+        return "empty table"
+    else
+        return keys .. " (total: " .. count .. ")"
+    end
+end
+
+-- Handle a bulk structure message (BSTR) in reversed bulk sync approach
+function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
+    self:Debug("sync", "Handling BULK_STRUCTURE from " .. sender)
+    
+    -- Skip if we're missing required arguments
+    if not timestamp or not structureData then
+        self:Debug("error", "Missing required arguments for BULK_STRUCTURE handler")
+        return false
+    end
+    
+    -- Convert timestamp to number
+    timestamp = tonumber(timestamp)
+    if not timestamp then
+        self:Debug("error", "Invalid timestamp in BULK_STRUCTURE: " .. tostring(timestamp))
+        return false
+    end
+    
+    -- Check our current data timestamp against the received one
+    local localTimestamp = 0
+    if TWRA_CompressedAssignments then
+        localTimestamp = TWRA_CompressedAssignments.timestamp or 0
+    elseif TWRA_Assignments then
+        localTimestamp = TWRA_Assignments.timestamp or 0
+    end
+    
+    -- Compare timestamps
+    local timestampDiff = self:CompareTimestamps(localTimestamp, timestamp)
+    
+    -- If our timestamp is newer, we should keep our data
+    if timestampDiff > 0 then
+        self:Debug("sync", "Our data is newer than BULK_STRUCTURE received - ignoring")
+        return false
+    end
+    
+    -- UPDATED: Validate bulkSyncTimestamp with this message's timestamp
+    -- If we have a bulkSyncTimestamp but it doesn't match this message's timestamp
+    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.bulkSyncTimestamp then
+        if TWRA_CompressedAssignments.bulkSyncTimestamp ~= timestamp then
+            -- Timestamps don't match, discard all compressed assignments
+            self:Debug("sync", "Timestamp mismatch: BULK_STRUCTURE timestamp (" .. timestamp .. 
+                     ") doesn't match bulkSyncTimestamp (" .. TWRA_CompressedAssignments.bulkSyncTimestamp .. 
+                     "). Discarding all compressed assignments.")
+            
+            -- Reset the entire compressed assignments table
+            TWRA_CompressedAssignments = {}
+        end
+    end
+    
+    -- Ensure TWRA_CompressedAssignments exists
+    TWRA_CompressedAssignments = TWRA_CompressedAssignments or {}
+    
+    -- Store the structure data
+    -- Ensure the compressed data has the marker if needed
+    if string.byte(structureData, 1) ~= 241 then
+        structureData = "\241" .. structureData
+    end
+    -- Store the structure
+    TWRA_CompressedAssignments.structure = structureData
+
+    -- Update Timestamp after storing the data
+    TWRA_CompressedAssignments.timestamp = timestamp
+    
+    -- IMPORTANT: Decompress the structure now to rebuild navigation
+    local success, decodedStructure = pcall(function()
+        return self:DecompressStructureData(structureData)
+    end)
+    
+    if not success or not decodedStructure then
+        self:Debug("error", "Failed to decompress structure data from BSTR message")
+        return false
+    end
+    
+    -- Update assignment timestamp to match the structure
+    -- IMPORTANT: Just update the timestamp without triggering new sync requests
+    if TWRA_Assignments then
+        self:Debug("sync", "Updating our timestamp to " .. timestamp .. " from BULK_STRUCTURE without triggering a new sync")
+        TWRA_Assignments.timestamp = timestamp
+    else
+        TWRA_Assignments = { timestamp = timestamp }
+    end
+    
+    -- CRITICAL: Build skeleton from structure BEFORE rebuilding navigation
+    -- This properly sets up the TWRA_Assignments data structure with placeholders
+    local hasBuiltSkeleton = false
+    if self.BuildSkeletonFromStructure then
+        self:Debug("sync", "Building skeleton structure from decoded data")
+        hasBuiltSkeleton = self:BuildSkeletonFromStructure(decodedStructure, timestamp, true)
+        if hasBuiltSkeleton then
+            self:Debug("sync", "Successfully built skeleton structure from decoded data")
+        else
+            self:Debug("error", "Failed to build skeleton structure - may cause navigation issues")
+        end
+    else
+        self:Debug("error", "BuildSkeletonFromStructure function not available")
+        return false
+    end
+    
+    -- Process the structure if we have received bulk sections that match the timestamp
+    local hasSections = TWRA_CompressedAssignments.sections and next(TWRA_CompressedAssignments.sections)
+    
+    -- Always rebuild navigation regardless of whether we have sections or not
+    self:Debug("sync", "CRITICAL: Rebuilding navigation after skeleton structure creation")
+    if self.RebuildNavigation then
+        self:RebuildNavigation()
+        self:Debug("sync", "Navigation successfully rebuilt")
+    else
+        self:Debug("error", "RebuildNavigation function not available")
+    end
+    
+    if hasSections then
+        self:Debug("sync", "Sections available after receiving bulk structure")
+        
+        -- Get the current section name or index
+        local currentSection = TWRA_Assignments and TWRA_Assignments.currentSectionName or 1
+        
+        -- ADDED: Verify that the current section name exists in decodedStructure
+        local sectionExists = false
+        if type(currentSection) == "string" then
+            -- When currentSection is a section name (string), verify it exists in decodedStructure
+            for index, sectionName in pairs(decodedStructure) do
+                if type(index) == "number" and type(sectionName) == "string" and sectionName == currentSection then
+                    self:Debug("sync", "Verified section name '" .. currentSection .. "' exists in structure")
+                    currentSection = index -- Convert section name to index for navigation
+                    sectionExists = true
+                    break
+                end
+            end
+            
+            if not sectionExists then
+                self:Debug("sync", "Section name '" .. currentSection .. "' not found in structure, defaulting to section 1")
+                currentSection = 1
+            end
+        elseif type(currentSection) == "number" then
+            -- When currentSection is an index, verify it exists
+            if decodedStructure[currentSection] then
+                sectionExists = true
+                self:Debug("sync", "Verified section index " .. currentSection .. " exists in structure")
+            else
+                self:Debug("sync", "Section index " .. currentSection .. " not found in structure, defaulting to section 1")
+                currentSection = 1
+            end
+        else
+            -- Invalid currentSection type, default to first section
+            self:Debug("sync", "Invalid currentSection type, defaulting to section 1")
+            currentSection = 1
+        end
+
+        self:ProcessSectionData()
+        
+        -- Navigate to the selected section after processing all data
+        if self.NavigateToSection then
+            -- CRITICAL FIX: Use "fromSync" context instead of "bulkSync" to prevent broadcast
+            -- "bulkSync" wasn't being recognized in the broadcast prevention logic
+            self:Debug("sync", "Navigating to section " .. currentSection .. " with 'fromSync' context to prevent broadcasting")
+            self:NavigateToSection(currentSection, "fromSync")
+        else
+            self:Debug("error", "NavigateToSection function not available")
+        end
+        
+        if self.RefreshAssignmentTable then
+            self:RefreshAssignmentTable()
+        else
+            self:Debug("error", "RefreshAssignmentTable function not available")
+        end
+        
+        if self.RebuildOSDIfVisible then
+            self:RebuildOSDIfVisible()
+        end
+        
+        self:Debug("sync", "Bulk sync data processing and navigation rebuild complete!")
+    else
+        self:Debug("sync", "Received bulk structure but no sections")
+        
+        -- Since we've already rebuilt navigation, just refresh UI if needed
+        -- Use a timer to ensure everything is processed
+        self:ScheduleTimer(function()
+            -- Refresh UI if needed
+            if self.RefreshAssignmentTable then
+                self:RefreshAssignmentTable()
+                self:Debug("sync", "Refreshed assignment table")
+            else
+                self:Debug("error", "RefreshAssignmentTable function not available")
+            end
+            
+            -- Navigate to the first section as a fallback
+            if self.NavigateToSection then
+                self:NavigateToSection(1, "bulkSyncNoData")
+                self:Debug("sync", "Navigated to first section (no section data)")
+            end
+        end, 0.3)
+    end
+    
+    -- Check if we have any missing sections after processing
+    local missingCount = 0
+    if TWRA_CompressedAssignments.sections and TWRA_CompressedAssignments.sections.missing then
+        for idx, _ in pairs(TWRA_CompressedAssignments.sections.missing) do
+            if type(idx) == "number" then
+                missingCount = missingCount + 1
+            end
+        end
+    end
+    
+    -- Only clear bulkSyncTimestamp if we have no missing sections
+    if missingCount == 0 then
+        self:Debug("sync", "No missing sections, clearing bulkSyncTimestamp")
+        TWRA_CompressedAssignments.bulkSyncTimestamp = nil
+    else
+        self:Debug("sync", "Still have " .. missingCount .. " missing sections, keeping bulkSyncTimestamp")
+        
+        -- Request missing sections through whisper to sender
+        self:Debug("sync", "Requesting " .. missingCount .. " missing sections from " .. sender)
+        self:RequestMissingSectionsWhisper(sender, timestamp)
+    end
+    
+    return true
+end
+
+-- Handler for SECTION command to change the current section
+function TWRA:HandleSectionCommand(timestamp, sectionIndex, sender)
+    -- Add debug statement right at the start
+    self:Debug("sync", "HandleSectionCommand called with sectionIndex: " .. sectionIndex .. 
+              ", timestamp: " .. timestamp .. " from " .. sender)
+    
+    -- Convert to numbers (default to 0 if conversion fails)
+    local sectionIndexNum = tonumber(sectionIndex)
+    local timestampNum = tonumber(timestamp)
+    
+    if not sectionIndexNum then
+        self:Debug("sync", "Failed to convert section index to number: " .. sectionIndex)
+        return
+    end
+    
+    if not timestampNum then
+        self:Debug("sync", "Failed to convert timestamp to number: " .. timestamp)
+        return
+    end
+    
+    sectionIndex = sectionIndexNum
+    timestamp = timestampNum
+    
+    -- Always debug what we received
+    self:Debug("sync", string.format("Section change from %s (index: %d, timestamp: %d)", 
+        sender, sectionIndex, timestamp))
+    
+    -- Get our own timestamp for comparison
+    local ourTimestamp = TWRA_Assignments and TWRA_Assignments.timestamp or 0
+
+    -- Debug the timestamp comparison
+    self:Debug("sync", "Comparing timestamps - Received: " .. timestamp .. 
+               " vs Our: " .. ourTimestamp)
+    
+    -- Compare timestamps and act accordingly
+    local comparisonResult = self:CompareTimestamps(ourTimestamp, timestamp)
+    
+    if comparisonResult == 0 then
+        -- Timestamps match - navigate to the section
+        self:Debug("sync", "Timestamps match - navigating to section " .. sectionIndex)
+        self:NavigateToSection(sectionIndex, "fromSync")
+        
+    elseif comparisonResult > 0 then
+        -- We have a newer version - just log it and don't navigate
+        self:Debug("sync", "We have a newer version (timestamp " .. ourTimestamp .. 
+                  " > " .. timestamp .. "), ignoring section change")
+    
+    else -- comparisonResult < 0
+        -- They have a newer version - LOG ONLY, NO SYNC REQUEST
+        self:Debug("sync", "Detected newer data from " .. sender .. " (timestamp " .. 
+                  timestamp .. " > " .. ourTimestamp .. "), but automatic sync is disabled")
+        
+        -- Only store the section index for reference, but don't trigger sync
+        self.SYNC.pendingSection = sectionIndex
+        self:Debug("sync", "User must manually request newer data using /twra sync")
     end
 end
 

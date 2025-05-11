@@ -700,8 +700,9 @@ function TWRA:ProcessSectionData(sectionIndex)
                                     for _, row in ipairs(decompressedData["Section Rows"]) do
                                         -- Verify row is a table
                                         if type(row) == "table" then
-                                            -- For standard data rows, check if they have essential items (icon and target at minimum)
-                                            if row[1] and row[1] ~= "" and row[2] and row[2] ~= "" then
+                                            -- MODIFIED: For standard data rows, check if they have first two columns (icon and target) present at all
+                                            -- Regardless of whether they contain empty strings or actual content
+                                            if row[1] ~= nil and row[2] ~= nil then
                                                 validRows = validRows + 1
                                             end
                                             

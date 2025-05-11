@@ -458,6 +458,11 @@ end
 function TWRA:InitializeSync()
     self:Debug("sync", "Initializing sync module")
     
+    -- CRITICAL FIX: Register addon message prefix with the client
+    -- Without this, addon messages will not be processed by the client
+    RegisterAddonMessagePrefix(self.SYNC.PREFIX)
+    self:Debug("sync", "Registered addon message prefix: " .. self.SYNC.PREFIX)
+    
     -- Register for SECTION_CHANGED event early, regardless of sync settings
     -- Ensure this is actually called by adding explicit debugging and error checking
     if self.RegisterSectionChangeHandler then
@@ -500,6 +505,11 @@ function TWRA:InitializeSync()
         end
     else
         self:Debug("sync", "No saved sync settings found")
+    end
+    
+    -- Initialize our handler map for addon messages
+    if self.InitializeHandlerMap then
+        self:InitializeHandlerMap()
     end
     
     -- Mark as initialized to prevent duplicate initialization
@@ -925,18 +935,112 @@ function TWRA:SendAllSections()
     local channel = GetNumRaidMembers() > 0 and "RAID" or 
                    (GetNumPartyMembers() > 0 and "PARTY" or nil)
     
-    -- Track transfer IDs for chunked sections
-    self.SYNC.chunkedSectionTransfers = self.SYNC.chunkedSectionTransfers or {}
+    -- Initialize the chunk transfers tracking table
+    self.SYNC.chunkedSectionTransfers = {}
     
-    -- REVERSED ORDER: Send sections first
-    self:Debug("sync", "REVERSED ORDER: Sending all sections first")
+    -- STEP 1: PRE-SCAN FOR LARGE SECTIONS THAT NEED CHUNKING
+    -- This step identifies all large content and prepares chunk transfers
+    self:Debug("sync", "STEP 1: Pre-scanning for large sections that need chunking")
+    local neededChunking = {}
+    local structureNeedsChunking = false
+    local structureTransferId = nil
+    
+    -- Get structure data and check if it needs chunking
+    local structureData = self:GetCompressedStructure()
+    if not structureData then
+        self:Debug("error", "No structure data available to send")
+        return false
+    end
+    
+    -- Test structure message size
+    local structureMessage = self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":" .. structureData
+    if string.len(structureMessage) > 2000 then
+        structureNeedsChunking = true
+        self:Debug("sync", "Structure data needs chunking (" .. string.len(structureMessage) .. " bytes)")
+    else
+        self:Debug("sync", "Structure data fits in single message (" .. string.len(structureMessage) .. " bytes)")
+    end
+    
+    -- Check each section for size
+    for _, sectionIndex in ipairs(sectionIndices) do
+        local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
+        
+        -- Skip empty sections
+        if not sectionData or sectionData == "" then
+            self:Debug("sync", "Skipping empty section " .. sectionIndex)
+        else
+            -- Create the regular message to check size
+            local normalMessage = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
+            
+            -- Determine if chunking is needed
+            if string.len(normalMessage) > 2000 then
+                neededChunking[sectionIndex] = {
+                    data = sectionData
+                }
+                self:Debug("sync", "Section " .. sectionIndex .. " needs chunking (" .. string.len(normalMessage) .. " bytes)")
+            else
+                self:Debug("sync", "Section " .. sectionIndex .. " fits in single message (" .. string.len(normalMessage) .. " bytes)")
+            end
+        end
+    end
+    
+    -- STEP 2: PRE-SEND ALL CHUNKS FOR SECTIONS AND STRUCTURE THAT NEED IT
+    -- This step sends all the chunks before sending any section references
+    self:Debug("sync", "STEP 2: Pre-sending all chunks for large content")
+    
+    -- Initialize the chunk manager if needed
+    if not self.chunkManager then
+        self:Debug("error", "Chunk manager not initialized")
+        if TWRA.chunkManager and TWRA.chunkManager.Initialize then
+            self.chunkManager = TWRA.chunkManager
+            self.chunkManager:Initialize()
+            self:Debug("sync", "Initialized chunk manager")
+        else
+            self:Debug("error", "Could not initialize chunk manager")
+            return false
+        end
+    end
+    
+    -- Send chunks for all sections that need chunking
+    for sectionIndex, chunkInfo in pairs(neededChunking) do
+        self:Debug("sync", "Pre-sending chunks for section " .. sectionIndex)
+        
+        -- Send chunks and get the transfer ID
+        local transferId = self.chunkManager:ChunkContent(chunkInfo.data, channel)
+        
+        if transferId then
+            self:Debug("sync", "Successfully pre-sent chunks for section " .. sectionIndex .. " with transferId: " .. transferId)
+            -- Store the transfer ID for later reference - IMPORTANT: use exactly as returned
+            self.SYNC.chunkedSectionTransfers[sectionIndex] = transferId
+        else
+            self:Debug("error", "Failed to pre-send chunks for section " .. sectionIndex)
+            neededChunking[sectionIndex] = nil  -- Remove from chunking list on failure
+        end
+    end
+    
+    -- Send chunks for structure if needed
+    if structureNeedsChunking then
+        self:Debug("sync", "Pre-sending chunks for structure")
+        -- Send chunks and get the transfer ID
+        structureTransferId = self.chunkManager:ChunkContent(structureData, channel)
+        
+        if structureTransferId then
+            self:Debug("sync", "Successfully pre-sent chunks for structure with transferId: " .. structureTransferId)
+        else
+            self:Debug("error", "Failed to pre-send chunks for structure")
+            structureNeedsChunking = false
+        end
+    end
+    
+    -- STEP 3: SEND SECTION REFERENCES (OR DIRECT DATA FOR SMALL SECTIONS)
+    self:Debug("sync", "STEP 3: Sending section references or direct data")
     
     local sentCount = 0
     local emptyCount = 0
     local errorCount = 0
     local chunkedCount = 0
     
-    -- Send each section, potentially using chunking
+    -- Send each section, with reference to chunks where needed
     for _, sectionIndex in ipairs(sectionIndices) do
         local sectionData = TWRA_CompressedAssignments.sections[sectionIndex]
         
@@ -945,58 +1049,49 @@ function TWRA:SendAllSections()
             emptyCount = emptyCount + 1
             self:Debug("sync", "Skipping empty section " .. sectionIndex)
         else
-            -- Create the regular message to check size
-            local normalMessage = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
-            
-            -- Determine if chunking is needed
-            if string.len(normalMessage) > 2000 then
-                -- Section needs chunking
-                chunkedCount = chunkedCount + 1
-                self:Debug("sync", "Section " .. sectionIndex .. " is large (" .. string.len(normalMessage) .. " bytes), using ChunkManager")
-                
-                -- Create prefix for this section's chunks
-                local chunkPrefix = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":"
-                
-                -- Use ChunkManager to send the section data
-                if self.chunkManager then
-                    -- Send the content via ChunkManager and get transfer ID
-                    local transferId = self.chunkManager:ChunkContent(sectionData, channel, nil, nil)
+            -- Check if this section needs chunking
+            if neededChunking[sectionIndex] then
+                -- Get the transfer ID we stored earlier
+                local transferId = self.SYNC.chunkedSectionTransfers[sectionIndex]
+                if transferId then
+                    -- Create a reference message with the EXACT transfer ID (no modifications)
+                    local refMessage = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":CHUNKED:" .. transferId
                     
-                    if transferId then
-                        -- Store the transfer ID for this section
-                        self.SYNC.chunkedSectionTransfers[sectionIndex] = transferId
-                        
-                        -- Create and send a special message indicating that this section is chunked
-                        local chunkRefMessage = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":CHUNK:" .. transferId
-                        local success = self:SendAddonMessage(chunkRefMessage, channel)
-                        
-                        if success then
-                            sentCount = sentCount + 1
-                            self:Debug("sync", "Sent chunked section reference for section " .. sectionIndex .. " with transfer ID " .. transferId)
-                        else
-                            errorCount = errorCount + 1
-                            self:Debug("error", "Failed to send chunked section reference for section " .. sectionIndex)
-                        end
+                    -- Send the reference message
+                    local success = self:SendAddonMessage(refMessage, channel)
+                    
+                    if success then
+                        chunkedCount = chunkedCount + 1
+                        sentCount = sentCount + 1
+                        self:Debug("sync", "Sent chunk reference for section " .. sectionIndex .. " with transferId: " .. transferId)
                     else
                         errorCount = errorCount + 1
-                        self:Debug("error", "Failed to create chunked transfer for section " .. sectionIndex)
+                        self:Debug("error", "Failed to send chunk reference for section " .. sectionIndex)
                     end
                 else
                     errorCount = errorCount + 1
-                    self:Debug("error", "Chunk manager not available for large section data")
+                    self:Debug("error", "Missing transfer ID for chunked section " .. sectionIndex)
                 end
             else
-                -- Send normal (non-chunked) message
-                local success = self:SendAddonMessage(normalMessage, channel)
+                -- Send the section data directly (small enough for a single message)
+                local message = self.SYNC.COMMANDS.BULK_SECTION .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
+                
+                -- Send the message
+                local success = self:SendAddonMessage(message, channel)
                 
                 if success then
                     sentCount = sentCount + 1
-                    self:Debug("sync", "Sent regular section " .. sectionIndex .. " (" .. string.len(normalMessage) .. " bytes)")
+                    self:Debug("sync", "Sent section " .. sectionIndex .. " directly (" .. string.len(sectionData) .. " bytes)")
                 else
                     errorCount = errorCount + 1
                     self:Debug("error", "Failed to send section " .. sectionIndex)
                 end
             end
+        end
+        
+        -- Brief pause between messages to avoid flooding
+        if sentCount - (math.floor(sentCount / 5) * 5) == 0 then
+            self:Debug("sync", "Sent " .. sentCount .. " sections so far")
         end
     end
     
@@ -1007,38 +1102,34 @@ function TWRA:SendAllSections()
              emptyCount .. " empty sections skipped. " .. 
              errorCount .. " errors.")
     
-    -- REVERSED ORDER: Now get the structure data and send it LAST
-    local structureData = self:GetCompressedStructure()
-    if not structureData then
-        self:Debug("error", "No structure data available to send at end of bulk sync")
-        return false
-    end
+    -- STEP 4: SEND STRUCTURE REFERENCE (OR DIRECT DATA IF SMALL ENOUGH)
+    self:Debug("sync", "STEP 4: Sending structure reference or direct data")
     
-    -- Create the bulk structure message
-    local structureMessage = self:CreateBulkStructureMessage(timestamp, structureData)
-    
-    -- Check if structure message needs chunking
-    if string.len(structureMessage) > 2000 then
-        self:Debug("sync", "Structure data too large, using chunk manager for final structure message")
-        if self.chunkManager then
-            local prefix = self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":"
-            local success = self.chunkManager:ChunkContent(structureData, channel, nil, prefix)
-            if success then
-                self:Debug("sync", "Successfully sent final structure message via chunk manager")
-            else
-                return false
-            end
+    -- Send structure data, using chunk reference if needed
+    if structureNeedsChunking and structureTransferId then
+        -- Create a reference message with the EXACT transfer ID (no modifications)
+        local refMessage = self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":CHUNKED:" .. structureTransferId
+        
+        -- Send the reference message
+        local success = self:SendAddonMessage(refMessage, channel)
+        
+        if success then
+            self:Debug("sync", "Successfully sent structure chunk reference with transferId: " .. structureTransferId)
         else
-            self:Debug("error", "Chunk manager not available for large structure data")
+            self:Debug("error", "Failed to send structure chunk reference")
             return false
         end
     else
-        -- Send the structure message directly
-        local success = self:SendAddonMessage(structureMessage, channel)
+        -- Send the structure data directly
+        local message = self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":" .. structureData
+        
+        -- Send the message
+        local success = self:SendAddonMessage(message, channel)
+        
         if success then
-            self:Debug("sync", "Successfully sent final structure message")
+            self:Debug("sync", "Successfully sent structure data directly (" .. string.len(structureData) .. " bytes)")
         else
-            self:Debug("error", "Failed to send final structure message")
+            self:Debug("error", "Failed to send structure data")
             return false
         end
     end
@@ -1052,13 +1143,8 @@ function TWRA:SendAllSections()
     -- Schedule clearing the lastSendAllSectionsTime after a cooldown period
     self:ScheduleTimer(function()
         self.SYNC.lastSendAllSectionsTime = nil
-        self:Debug("sync", "Cleared send cooldown, ready for next sync if needed")
-    end, 15) -- 15 second cooldown before allowing another send
+    end, 30)
     
-    -- Final user notification
-    self:Debug("sync", "Bulk sync complete with reversed order (sections first, structure last)!")
-    
-    collectgarbage(0) -- Fixed: In Lua 5.0, collectgarbage takes a number, not a string
     return true
 end
 
