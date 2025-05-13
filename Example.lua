@@ -739,7 +739,7 @@ function TWRA:LoadExampleDataAndShow()
     -- Make sure OSD is not showing after loading example data
     if self.OSD and self.OSD.isVisible then
         self:Debug("osd", "Hiding OSD after loading example data")
-        self.OSD:Hide()
+        self:HideOSD() -- Use the proper method instead of trying to call :Hide() directly
     end
     
     -- Explicitly refresh the assignment table to ensure data is displayed

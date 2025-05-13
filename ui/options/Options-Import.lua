@@ -19,6 +19,12 @@ end
 
 -- Direct import function for processing Base64 import strings
 function TWRA:DirectImport(importString)
+    -- Check that importString is actually a string
+    if type(importString) ~= "string" then
+        self:Debug("error", "DirectImport called with invalid type: " .. type(importString))
+        return false
+    end
+    
     self:Debug("data", "DirectImport called with string length: " .. string.len(importString))
     
     -- Ensure we have a proper import string
@@ -316,7 +322,20 @@ function TWRA:CreateOptionsImportColumn(rightColumn)
                         
             -- Switch to main view
             if self.ShowMainView then
+                self:Debug("data", "Switching to main view after successful import")
                 self:ShowMainView()
+                
+                -- Make sure the view is actually changed
+                self:ScheduleTimer(function()
+                    if self.currentView ~= "main" then
+                        self:Debug("error", "Failed to switch to main view - forcing view change")
+                        if self.ShowMainView then
+                            self:ShowMainView()
+                        end
+                    end
+                end, 0.1)
+            else
+                self:Debug("error", "ShowMainView function not available!")
             end
         else
             -- Import failed
