@@ -101,7 +101,7 @@ function TWRA:DirectImport(importString)
                 end
                 
                 -- Add proper type checking before using string.len
-                if type(decodedString) ~= "table" then
+                if type(decodedString) ~= "string" then
                     self:Debug("data", "Base64 decoded successfully, emount of entries: " .. table.getn(decodedString))
                 else
                     self:Debug("data", "Base64 decoded successfully, string length: " .. string.len(decodedString))
