@@ -17,6 +17,135 @@ function TWRA:LoadOptionsImport()
     }
 end
 
+-- Direct import function for processing Base64 import strings
+function TWRA:DirectImport(importString)
+    self:Debug("data", "DirectImport called with string length: " .. string.len(importString))
+    
+    -- Ensure we have a proper import string
+    if not importString or importString == "" then
+        self:Debug("error", "Empty import string provided")
+        return false
+    end
+    
+    -- Remove any formatting characters that might have been added
+    importString = string.gsub(importString, "\n", "")
+    importString = string.gsub(importString, "\r", "")
+    importString = string.gsub(importString, " ", "")
+    
+    -- Check if the import string is valid Lua code (starts with TWRA_ImportString=)
+    if string.sub(importString, 1, 17) == "TWRA_ImportString=" then
+        self:Debug("data", "Processing direct Lua import string")
+        
+        -- Try to load the string as Lua code
+        local func, err = loadstring(importString)
+        if not func then
+            self:Debug("error", "Failed to parse import string: " .. (err or "Unknown error"))
+            return false
+        end
+        
+        -- Execute the loaded function to define TWRA_ImportString
+        local success, result = pcall(func)
+        if not success then
+            self:Debug("error", "Failed to execute import string: " .. (result or "Unknown error"))
+            return false
+        end
+        
+        -- Check if TWRA_ImportString was defined correctly
+        if not TWRA_ImportString or not TWRA_ImportString.data then
+            self:Debug("error", "Import string did not define valid TWRA_ImportString with data")
+            return false
+        end
+        
+        -- Store the imported data in TWRA_Assignments
+        TWRA_Assignments = TWRA_Assignments or {}
+        TWRA_Assignments.data = TWRA_ImportString.data
+        TWRA_Assignments.version = 2
+        TWRA_Assignments.timestamp = time()
+        TWRA_Assignments.currentSection = 1
+        
+        -- Clear TWRA_ImportString to free memory
+        TWRA_ImportString = nil
+        
+        self:Debug("data", "Direct Lua import successful")
+        return true
+    else
+        -- Try Base64 import via the decode function if available
+        if self.DecodeBase64 then
+            -- First ensure we have clean Base64 (remove any unwanted characters)
+            importString = string.gsub(importString, "[^A-Za-z0-9+/=]", "")
+            
+            self:Debug("data", "Processing Base64 import string (length: " .. string.len(importString) .. ")")
+            
+            -- Check if we need to call HandleImportedData or if we'll decode directly
+            if self.HandleBase64Import then
+                -- Use the dedicated handler function with better error handling
+                local success, errorMessage = self:HandleBase64Import(importString)
+                if not success then
+                    self:Debug("error", "Base64 import failed: " .. (errorMessage or "Unknown error"))
+                end
+                return success
+            else
+                -- Try to decode and process directly - add more debug messages
+                self:Debug("data", "Decoding Base64 string directly...")
+                local decodedString = self:DecodeBase64(importString)
+                
+                if not decodedString then
+                    self:Debug("error", "Failed to decode Base64 string - decoding returned nil")
+                    return false
+                end
+                
+                self:Debug("data", "Base64 decoded successfully, string length: " .. string.len(decodedString))
+                
+                -- Try to load the decoded string as Lua code - add more debug for parsing
+                self:Debug("data", "Parsing decoded Lua code...")
+                local func, err = loadstring(decodedString)
+                if not func then
+                    self:Debug("error", "Failed to parse decoded Base64: " .. (err or "Unknown error"))
+                    return false
+                end
+                
+                -- Execute the loaded function to define TWRA_ImportString - add more debug
+                self:Debug("data", "Executing parsed Lua code...")
+                local success, result = pcall(func)
+                if not success then
+                    self:Debug("error", "Failed to execute decoded Base64: " .. (result or "Unknown error"))
+                    return false
+                end
+                
+                -- Check if TWRA_ImportString was defined correctly - add more debug
+                if not TWRA_ImportString then
+                    self:Debug("error", "Decoded Base64 did not define TWRA_ImportString")
+                    return false
+                end
+                
+                if not TWRA_ImportString.data then
+                    self:Debug("error", "TWRA_ImportString defined but missing 'data' field")
+                    return false
+                end
+                
+                self:Debug("data", "TWRA_ImportString parsed successfully with " .. 
+                  (TWRA_ImportString.data and table.getn(TWRA_ImportString.data) or 0) .. " sections")
+                
+                -- Store the imported data in TWRA_Assignments
+                TWRA_Assignments = TWRA_Assignments or {}
+                TWRA_Assignments.data = TWRA_ImportString.data
+                TWRA_Assignments.version = 2
+                TWRA_Assignments.timestamp = time()
+                TWRA_Assignments.currentSection = 1
+                
+                -- Clear TWRA_ImportString to free memory
+                TWRA_ImportString = nil
+                
+                self:Debug("data", "Base64 import successful")
+                return true
+            end
+        else
+            self:Debug("error", "DecodeBase64 function not available")
+            return false
+        end
+    end
+end
+
 -- Create the Import options column content
 function TWRA:CreateOptionsImportColumn(rightColumn)
     self:Debug("ui", "Creating Import options column")
@@ -104,6 +233,14 @@ function TWRA:CreateOptionsImportColumn(rightColumn)
             -- Clear the import box and remove focus
             importBox:SetText("")
             importBox:ClearFocus()
+            
+            -- CRITICAL: Rebuild navigation immediately with the new data
+            if self.RebuildNavigation then
+                self:Debug("data", "Rebuilding navigation with imported data")
+                self:RebuildNavigation()
+            else
+                self:Debug("error", "RebuildNavigation function not available!")
+            end
             
             -- CRITICAL: Process each section to explicitly establish Group Rows metadata
             -- This ensures Group Rows are properly identified
@@ -201,6 +338,46 @@ function TWRA:CreateOptionsImportColumn(rightColumn)
         -- Debug log
         self:Debug("ui", "Import box cleared")
     end)
+    
+    -- Add an extra cleanup step when the options panel is shown
+    -- This helps eliminate any stray highlights or tooltips
+    local function CleanupHighlightsAndTooltips()
+        -- Hide GameTooltip if it's showing
+        GameTooltip:Hide()
+        
+        -- Forcefully disable any row click frames that might be active
+        if self.rowFrames then
+            for i, row in pairs(self.rowFrames) do
+                if row.clickFrame then
+                    row.clickFrame:Hide()
+                    row.clickFrame:EnableMouse(false)
+                    self:Debug("ui", "Options: Disabling clickFrame for row " .. i)
+                end
+            end
+        end
+        
+        -- Explicitly hide all highlights from the pool again
+        if self.highlightPool then
+            for _, highlight in ipairs(self.highlightPool) do
+                highlight:Hide()
+                highlight:ClearAllPoints()
+                self:Debug("ui", "Options: Explicitly hiding row highlight")
+            end
+        end
+        
+        -- Hide mouseover highlight if it exists
+        if self.mouseoverHighlight then
+            self.mouseoverHighlight:Hide()
+            self.mouseoverHighlight:ClearAllPoints()
+            self:Debug("ui", "Options: Hiding mouseover highlight")
+        end
+    end
+    
+    -- Call cleanup immediately
+    CleanupHighlightsAndTooltips()
+    
+    -- Schedule another cleanup after a short delay for safety
+    self:ScheduleTimer(CleanupHighlightsAndTooltips, 0.1)
     
     return rightColumn
 end

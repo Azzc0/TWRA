@@ -273,9 +273,16 @@ function GENERATE_TWRA() {
             var cellValue = data[row][col];
               
             // Apply abbreviation to cell value if available and enabled
-            if (useAbbreviations) {
+            if (useAbbreviations && typeof cellValue === 'string') {
               cellValue = applyAbbreviation(cellValue);
-              Logger.log("Abbreviated value: " + data[row][col] + " -> " + cellValue);
+            } else if (typeof cellValue !== 'string') {
+              // Convert non-string values to strings or skip if they can't be processed
+              try {
+                cellValue = String(cellValue);
+              } catch (e) {
+                // Skip this cell if it can't be converted to a string (like images)
+                continue;
+              }
             }
               
             rowData[col + 1] = cellValue;
@@ -366,6 +373,11 @@ function GENERATE_TWRA() {
  * Helper function to apply abbreviations with both exact matches and pattern matching
  */
 function applyAbbreviation(value) {
+  // Handle non-string values by returning them unchanged
+  if (value === null || value === undefined || typeof value !== 'string') {
+    return value;
+  }
+  
   // First check for exact match in abbreviation mapping
   if (ABBREVIATION_MAPPINGS[value]) {
     return ABBREVIATION_MAPPINGS[value];

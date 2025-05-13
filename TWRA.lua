@@ -626,19 +626,8 @@ function TWRA:AnnounceAssignments()
     
     self:Debug("ui", "Role order: " .. table.concat(roleOrder, ", "))
     
-    -- Define role colors with more muted tones
-    local roleColors = {
-        ["Tank"] = "|cFF7799CC", -- Muted blue
-        ["Tanks"] = "|cFF7799CC", -- Muted blue
-        ["Heal"] = "|cFF88BB99", -- Muted green
-        ["Heals"] = "|cFF88BB99", -- Muted green
-        ["Healer"] = "|cFF88BB99", -- Muted green
-        ["Healers"] = "|cFF88BB99", -- Muted green
-        ["Pull"] = "|cFFCCBB77", -- Muted yellow
-        ["default"] = "|cFF88BBAA", -- Muted teal
-    }
-    
-    local roleEndColor = "|r"
+    -- Use the centralized ROLE_COLORS table from Constants.lua
+    local roleEndColor = self.ROLE_COLORS["end"] -- Use the end color marker
     
     -- Process normal assignment rows
     if sectionData["Section Rows"] then
@@ -687,8 +676,8 @@ function TWRA:AnnounceAssignments()
                             displayRoleName = roleName .. "s"
                         end
                         
-                        -- Get color for this role
-                        local roleColor = roleColors[displayRoleName] or roleColors["default"]
+                        -- Get color for this role from the centralized ROLE_COLORS table
+                        local roleColor = self.ROLE_COLORS[displayRoleName] or self.ROLE_COLORS["default"]
                         
                         -- Add role header with proper color and delimiter
                         if roleAdded then
@@ -969,6 +958,9 @@ function TWRA:ShowOptionsView()
     -- Set view state first
     self.currentView = "options"
 
+    -- Hide any active tooltip immediately
+    GameTooltip:Hide()
+
     -- Create options interface if it doesn't exist yet
     if not self.optionsElements or table.getn(self.optionsElements) == 0 then
         self:CreateOptionsInMainFrame()
@@ -1015,6 +1007,15 @@ function TWRA:ShowOptionsView()
                 header:Hide()
             end
         end
+    end
+
+    -- Ensure all highlights are hidden
+    if self.highlightPool then
+        for _, highlight in ipairs(self.highlightPool) do
+            highlight:Hide()
+            highlight:ClearAllPoints()
+        end
+        self:Debug("ui", "Explicitly hiding all row highlights in options view")
     end
 
     -- Show options elements

@@ -301,6 +301,21 @@ TWRA_DECURSIVE = {
     ["abolish disease"] = "didesease",
     ["cleanse"] = "cleanse",
 }
+
+-- Role colors for announcements with more muted tones
+TWRA.ROLE_COLORS = {
+    ["Tank"] = "|cFF7799CC", -- Muted blue
+    ["Tanks"] = "|cFF7799CC", -- Muted blue
+    ["Heal"] = "|cFF88BB99", -- Muted green
+    ["Heals"] = "|cFF88BB99", -- Muted green
+    ["Healer"] = "|cFF88BB99", -- Muted green
+    ["Healers"] = "|cFF88BB99", -- Muted green
+    ["Pull"] = "|cFFCCBB77", -- Muted yellow
+    ["default"] = "|cFF88BBAA", -- Muted teal
+    -- Add end color constant for convenience
+    ["end"] = "|r" -- End color marker
+}
+
 -- Mapping of role names to icon paths (previously TWRA.ROLE_MAPPINGS)
 TWRA.ROLE_ICONS_MAPPINGS = {
     ["tank"] = "Tank",

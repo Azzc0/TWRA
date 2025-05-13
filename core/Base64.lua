@@ -437,7 +437,7 @@ end
 function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
     if not processedData then
         self:Debug("error", "HandleImportedData: nil data provided", true)
-        return
+        return false
     end
     
     -- If this is not a sync operation with timestamp, handle it as manual import
@@ -453,23 +453,19 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
                 self:Debug("data", "Explicitly set isExample = false for manual import")
             end
             
+            -- CRITICAL: Ensure navigation is rebuilt after import
+            if self.RebuildNavigation then
+                self:Debug("nav", "Rebuilding navigation after manual import")
+                self:RebuildNavigation()
+            else
+                self:Debug("error", "RebuildNavigation function not available")
+            end
+            
             -- Reset UI state after import
             if self.ShowMainView then
                 self:Debug("ui", "Resetting UI to main view after import")
                 self:ShowMainView()
             end
-            
-            -- -- Make sure navigation is rebuilt
-            -- if self.RebuildNavigation then
-            --     self:Debug("nav", "Rebuilding navigation after import")
-            --     self:RebuildNavigation()
-            -- end
-            
-            -- -- Navigate to first section
-            -- if self.NavigateToSection then
-            --     self:Debug("nav", "Navigating to first section after import")
-            --     self:NavigateToSection(1)
-            -- end
             
             -- Clear import text box if it exists
             if self.importEditBox then
@@ -492,8 +488,11 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
             else
                 self:Debug("sync", "Not in a group, no need to send data after manual import")
             end
+            
+            return true
         else
             self:Debug("error", "SaveAssignments function not found")
+            return false
         end
     else
         -- If this is a sync operation with timestamp, handle it directly
@@ -513,11 +512,7 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
             self:Debug("data", "Processed dynamic player information after sync import")
         end
         
-        -- -- Navigate to first section after sync import
-        -- if self.NavigateToSection then
-        --     self:Debug("nav", "Navigating to first section after sync import")
-        --     self:NavigateToSection(1)
-        -- end
+        return true
     end
 end
 

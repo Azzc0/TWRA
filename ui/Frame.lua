@@ -1602,12 +1602,23 @@ end
 
 -- Update ClearRows to hide all highlights but not destroy them
 function TWRA:ClearRows()
-    -- Hide all highlights from the pool
+    -- Aggressively hide and clear all highlights from the pool
     if self.highlightPool then
-        for _, highlight in ipairs(self.highlightPool) do
+        for i, highlight in ipairs(self.highlightPool) do
             highlight:Hide()
             highlight:ClearAllPoints()
+            highlight:SetParent(nil)
+            highlight:SetParent(self.mainFrame)
         end
+        -- Debug that we're explicitly hiding highlights
+        self:Debug("ui", "ClearRows: Explicitly hiding and clearing all row highlights")
+    end
+    
+    -- Hide mouseover highlight if it exists
+    if self.mouseoverHighlight then
+        self.mouseoverHighlight:Hide()
+        self.mouseoverHighlight:ClearAllPoints()
+        self:Debug("ui", "ClearRows: Hiding mouseover highlight")
     end
     
     -- Clear existing row frames
@@ -1617,6 +1628,12 @@ function TWRA:ClearRows()
                 if cell.text then cell.text:Hide() end
                 if cell.bg then cell.bg:Hide() end
                 if cell.icon then cell.icon:Hide() end
+            end
+            -- Make sure the click frame is disabled and hidden
+            if row.clickFrame then
+                row.clickFrame:Hide()
+                row.clickFrame:EnableMouse(false)
+                self:Debug("ui", "ClearRows: Disabling clickFrame for row " .. i)
             end
             self.rowFrames[i] = nil
         end
@@ -1649,6 +1666,12 @@ end
 
 -- Create a function to apply highlights based on section data
 function TWRA:ApplyRowHighlights(sectionData, displayData)
+    -- Only apply highlights in main view, not in options view
+    if self.currentView ~= "main" then
+        self:Debug("ui", "ApplyRowHighlights: Not in main view, skipping highlights")
+        return
+    end
+    
     -- Hide all highlights first
     for _, highlight in ipairs(self.highlightPool) do
         highlight:Hide()
@@ -1911,18 +1934,8 @@ function TWRA:FormatRowAnnouncement(rowData)
         return nil
     end
     
-    -- Define role colors with more muted tones - same as AnnounceAssignments
-    local roleColors = {
-        ["Tank"] = "|cFF7799CC", -- Muted blue
-        ["Tanks"] = "|cFF7799CC", -- Muted blue
-        ["Heal"] = "|cFF88BB99", -- Muted green
-        ["Heals"] = "|cFF88BB99", -- Muted green
-        ["Healer"] = "|cFF88BB99", -- Muted green
-        ["Healers"] = "|cFF88BB99", -- Muted green
-        ["Pull"] = "|cFFCCBB77", -- Muted yellow
-        ["default"] = "|cFF88BBAA", -- Muted teal
-    }
-    local roleEndColor = "|r"
+    -- Use the centralized role colors from Constants.lua
+    local roleEndColor = self.ROLE_COLORS["end"]
     
     -- Start with the icon and target formatted with colored icons if available
     local message = ""
@@ -2009,8 +2022,8 @@ function TWRA:FormatRowAnnouncement(rowData)
                 displayRoleName = roleName .. "s"
             end
             
-            -- Get color for this role
-            local roleColor = roleColors[displayRoleName] or roleColors["default"]
+            -- Get color for this role from the centralized ROLE_COLORS table
+            local roleColor = self.ROLE_COLORS[displayRoleName] or self.ROLE_COLORS["default"]
             
             -- Add role header with proper color and delimiter
             if roleAdded then
