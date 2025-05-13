@@ -215,7 +215,7 @@ function TWRA:CreateMinimapButton()
     miniButton:SetFrameLevel(8)
     
     -- IMPORTANT: Register for both left and right clicks properly
-    miniButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    miniButton:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     
     -- Set position (default to 180 degrees)
     local defaultAngle = 180
@@ -261,14 +261,14 @@ function TWRA:CreateMinimapButton()
     -- Set up scripts
     miniButton:SetScript("OnEnter", function()
         -- Store whether OSD was already shown
-        miniButton.osdWasShown = TWRA.OSD and TWRA.OSD.shown or false
+        miniButton.osdWasShown = TWRA.OSD and TWRA.OSD.isVisible or false
         
-        -- Show OSD permanently (no auto-hide)
-        if TWRA.ShowOSDPermanent then
-            TWRA:ShowOSDPermanent()
-        elseif TWRA.ShowOSD then
-            -- If ShowOSDPermanent doesn't exist, use ShowOSD directly
-            TWRA:ShowOSD(9999) -- Very long duration effectively makes it permanent
+        -- Show OSD temporarily (not permanent) for hover
+        if not miniButton.osdWasShown then
+            if TWRA.ShowOSD then
+                -- Use a long duration but don't use ShowOSDPermanent to avoid setting explicitlyToggled
+                TWRA:ShowOSD(30) -- 30 second duration during hover
+            end
         end
         
         -- Debug the navigation state
@@ -308,6 +308,7 @@ function TWRA:CreateMinimapButton()
         GameTooltip:AddLine("TWRA - Raid Assignments")
         GameTooltip:AddLine("Left-click: Toggle assignments window", 1, 1, 1)
         GameTooltip:AddLine("Right-click: Toggle options", 1, 1, 1)
+        GameTooltip:AddLine("Middle-click: Toggle OSD visibility", 1, 1, 1)
         GameTooltip:AddLine("Mousewheel: Navigate sections", 1, 1, 1)
         GameTooltip:AddLine("Drag: Move button", 1, 1, 1)
         GameTooltip:Show()
@@ -325,8 +326,10 @@ function TWRA:CreateMinimapButton()
                 miniButton.dropdown:Hide()
                 miniButton.hideTimer:SetScript("OnUpdate", nil)
                 
-                -- Instead of hiding the OSD, show it with default duration when it wasn't showing before
-                if not miniButton.osdWasShown then
+                -- Only show OSD with default duration if:
+                -- 1. It wasn't already showing before hover AND
+                -- 2. It hasn't been explicitly toggled to permanent mode
+                if not miniButton.osdWasShown and not TWRA.OSD.explicitlyToggled then
                     if TWRA.ShowOSD then
                         TWRA:ShowOSD() -- Use default duration from OSD settings
                     end
@@ -340,7 +343,28 @@ function TWRA:CreateMinimapButton()
         local button = arg1  -- In WoW 1.12, click button is passed via arg1
         TWRA:Debug("ui", button .. "-click on minimap button")
         
-        if button == "RightButton" then
+        if button == "MiddleButton" then
+            -- Middle-click behavior: Toggle OSD visibility
+            if TWRA.OSD then
+                if TWRA.OSD.isVisible and TWRA.OSD.explicitlyToggled then
+                    -- OSD is currently shown in permanent mode, hide it
+                    TWRA:Debug("ui", "Middle-click: Hiding OSD from permanent mode")
+                    if TWRA.HideOSD then
+                        TWRA:HideOSD()
+                    end
+                else
+                    -- OSD is currently hidden or not in permanent mode, show it permanently
+                    TWRA:Debug("ui", "Middle-click: Showing OSD in permanent mode")
+                    if TWRA.ShowOSDPermanent then
+                        TWRA:ShowOSDPermanent()
+                    elseif TWRA.ShowOSD then
+                        TWRA:ShowOSD(9999) -- Very long duration effectively makes it permanent
+                    end
+                end
+            else
+                TWRA:Debug("error", "OSD module not initialized")
+            end
+        elseif button == "RightButton" then
             -- Right-click behavior:
             -- 1. If frame not visible: behave like /twra options
             if not TWRA.mainFrame or not TWRA.mainFrame:IsShown() then

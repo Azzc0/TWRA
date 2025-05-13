@@ -361,7 +361,10 @@ function TWRA:GetOSDFrame()
     -- Set initial visibility
     frame:Hide()
     self.OSDFrame = frame
-
+    
+    -- Track if OSD was explicitly toggled to permanent mode
+    self.OSD.explicitlyToggled = false
+    
     self:Debug("osd", "OSD frame created")
     return frame
 end
@@ -1442,6 +1445,10 @@ function TWRA:ShowOSDPermanent()
     self.OSD.isVisible = true
     self.OSD.isPermanent = true
     
+    -- Set flag to indicate explicit toggling (via middle-click, keybind, or slash command)
+    self.OSD.explicitlyToggled = true
+    self:Debug("osd", "OSD marked as explicitly toggled to permanent mode")
+    
     -- Also show encounter map in permanent mode
     if self.encounterMap and self.encounterMap.enabled then
         self:ShowEncounterMapPermanent()
@@ -1516,6 +1523,8 @@ function TWRA:HideOSD()
     if self.OSD then
         self.OSD.isVisible = false
         self.OSD.isPermanent = false
+        self.OSD.explicitlyToggled = false -- Reset the explicit toggle flag when hiding
+        self:Debug("osd", "OSD explicit toggle flag reset")
     end
     
     -- Check if the frame exists and hide it safely
