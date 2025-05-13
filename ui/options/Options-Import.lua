@@ -102,14 +102,21 @@ function TWRA:DirectImport(importString)
                 
                 -- Add proper type checking before using string.len
                 if type(decodedString) ~= "string" then
-                    self:Debug("data", "Base64 decoded successfully, emount of entries: " .. table.getn(decodedString))
-                else
-                    self:Debug("data", "Base64 decoded successfully, string length: " .. string.len(decodedString))
+                    self:Debug("error", "Decode result is not a string (got " .. type(decodedString) .. ")")
+                    return false
                 end
                 
+                self:Debug("data", "Base64 decoded successfully, string length: " .. string.len(decodedString))
                 
                 -- Try to load the decoded string as Lua code - add more debug for parsing
                 self:Debug("data", "Parsing decoded Lua code...")
+                
+                -- Additional type check before using loadstring (which requires a string)
+                if type(decodedString) ~= "string" then
+                    self:Debug("error", "Cannot loadstring on non-string data type: " .. type(decodedString))
+                    return false
+                end
+                
                 local func, err = loadstring(decodedString)
                 if not func then
                     self:Debug("error", "Failed to parse decoded Base64: " .. (err or "Unknown error"))
