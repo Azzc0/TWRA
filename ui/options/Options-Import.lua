@@ -111,11 +111,11 @@ function TWRA:DirectImport(importString)
                 --     return false
                 -- end
                 
-                local func, err = loadstring(decodedString)
-                if not func then
-                    self:Debug("error", "Failed to parse decoded Base64: " .. (err or "Unknown error"))
-                    return false
-                end
+                -- local func, err = loadstring(decodedString)
+                -- if not func then
+                --     self:Debug("error", "Failed to parse decoded Base64: " .. (err or "Unknown error"))
+                --     return false
+                -- end
                 
                 -- -- Execute the loaded function to define TWRA_ImportString - add more debug
                 -- self:Debug("data", "Executing parsed Lua code...")
