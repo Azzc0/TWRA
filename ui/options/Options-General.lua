@@ -253,7 +253,7 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
     local tankSyncIcon, tankSyncIconFrame = self.UI:CreateIconWithTooltip(
         leftColumn,
         "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",
-        "Tank Sync Requires oRA2",
+        "Tank Sync (Requires oRA2)",
         "When enabled, tanks will be automatically assigned in oRA2 based on the currently selected section.",
         tankSyncText,
         5, 22, 22

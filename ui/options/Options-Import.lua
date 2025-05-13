@@ -324,9 +324,21 @@ function TWRA:CreateOptionsImportColumn(rightColumn)
         end
     end)
     
-    -- Example button behavior
+    -- Example button behavior with tooltip
     exampleBtn:SetScript("OnClick", function()
         self:LoadExampleDataAndShow()
+    end)
+    
+    -- Add tooltip to explain what the Example button does
+    exampleBtn:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(exampleBtn, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Load Example Data")
+        GameTooltip:AddLine("Loads the example data and removes synced assignment information", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    
+    exampleBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
     end)
     
     -- Clear button behavior
