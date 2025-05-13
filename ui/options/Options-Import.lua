@@ -100,7 +100,7 @@ function TWRA:DirectImport(importString)
                     return false
                 end
                 
-                self:Debug("data", "Base64 decoded successfully, string length: " .. string.len(decodedString))
+                -- self:Debug("data", "Base64 decoded successfully, string length: " .. string.len(decodedString))
                 
                 -- Try to load the decoded string as Lua code - add more debug for parsing
                 self:Debug("data", "Parsing decoded Lua code...")
