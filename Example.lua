@@ -768,7 +768,7 @@ function TWRA:LoadExampleDataAndShow()
     end
     
     -- Show user feedback
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Example data loaded!")
+    -- DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Example data loaded!")
     
     return true
 end
