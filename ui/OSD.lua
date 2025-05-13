@@ -151,38 +151,13 @@ function TWRA:GetOSDFrame()
     frame.border = border
     
     -- Add close button (X) in top right corner
-    local closeButton = CreateFrame("Button", nil, frame)
-    closeButton:SetWidth(16)
-    closeButton:SetHeight(16)
+    local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -5)
-    
-    -- Set the texture to a standard X button
-    local texture = closeButton:CreateTexture(nil, "ARTWORK")
-    texture:SetTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
-    texture:SetAllPoints()
-    texture:SetTexCoord(0.2, 0.8, 0.2, 0.8) -- Crop to just show the X part
-    closeButton.texture = texture
-    
-    -- Add hover and click visual feedback
-    closeButton:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
-    closeButton:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
-    
-    -- Set the click handler to hide the OSD
+    closeButton:SetWidth(20)
+    closeButton:SetHeight(20)
     closeButton:SetScript("OnClick", function()
         TWRA:HideOSD()
     end)
-    
-    -- Add tooltip
-    closeButton:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(closeButton, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Close OSD")
-        GameTooltip:Show()
-    end)
-    
-    closeButton:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    
     frame.closeButton = closeButton
 
     -- Make the frame movable if not locked

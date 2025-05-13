@@ -1,15 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <Bindings>
-    <Binding name="TWRA_TOGGLE" header="TWRA" category="ADDONS">
+    <Binding name="TWRA_TOGGLE" header="TWRA">
         if TWRA and TWRA.ToggleMainFrame then TWRA:ToggleMainFrame() end
     </Binding>
-    <Binding name="TWRA_NEXT_SECTION" category="ADDONS">
+    
+    <Binding name="TWRA_NEXT" header="TWRA">
         if TWRA and TWRA.NavigateHandler then TWRA:NavigateHandler(1) end
     </Binding>
-    <Binding name="TWRA_PREV_SECTION" category="ADDONS">
+    
+    <Binding name="TWRA_PREV" header="TWRA">
         if TWRA and TWRA.NavigateHandler then TWRA:NavigateHandler(-1) end
     </Binding>
-    <Binding name="TWRA_SHOW_OSD" category="ADDONS">
+    
+    <Binding name="TWRA_TOGGLE_OSD" header="TWRA">
         if TWRA and TWRA.ToggleOSD then TWRA:ToggleOSD() end
     </Binding>
-    <!-- Removed TWRA_SHOW_WHILE_PRESSED and TWRA_SHOW_WHILE_RELEASED bindings -->
 </Bindings>

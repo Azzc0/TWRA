@@ -19,7 +19,7 @@ var ABBREVIATION_MAPPINGS = {
   "GUID": "9",
   "Warning": "!",
   "Note": "?",
-  "Image": "I", // Added Image abbreviation
+  "Image": "Im", // Added Image abbreviation
   
   // Class and group abbreviations
   "Druids": "D",
@@ -141,7 +141,7 @@ function GENERATE_TWRA() {
     var row = 0;
     while (row < data.length) {
       // Check if this is an empty row
-      if (isRowEmpty(data[row])) {
+      if (isRowEmpty(data[row], formulas[row])) {
         emptyRowCount++;
         
         // If we have two consecutive empty rows, we've reached the end of the sheet
@@ -165,7 +165,7 @@ function GENERATE_TWRA() {
         Logger.log("Found section: " + currentSection + " at row " + (row + 1));
         
         // Skip empty row after section name if one exists
-        if (row + 1 < data.length && isRowEmpty(data[row + 1])) {
+        if (row + 1 < data.length && isRowEmpty(data[row + 1], formulas[row + 1])) {
           row++;
         }
         
@@ -212,27 +212,23 @@ function GENERATE_TWRA() {
         // Continue until we find a new section or end of data
         while (row < data.length) {
           // Check if this is an empty row (all columns are empty)
-          var currentRowEmpty = true;
+          var isEmpty = isRowEmpty(data[row], formulas[row]);
           
-          // Check all columns up to the maximum used in headers
-          for (var col = 0; col < headerColumns.length + 1; col++) {  // +1 to include column A (Icon)
-            if (col < data[row].length && data[row][col] !== "") {
-              currentRowEmpty = false;
-              break;
+          if (isEmpty) {
+            // Only use empty rows to detect end of section if there are no formulas
+            // This allows empty-looking rows with formulas to be part of the section
+            if (isRowEmpty(formulas[row])) {
+              // True empty row (no values, no formulas)
+              row++;
+              continue; // Skip this row but keep processing the section
             }
-          }
-          
-          if (currentRowEmpty) {
-            Logger.log("Found empty row at " + (row + 1) + " - end of section " + currentSection);
-            break;
           }
           
           // Check if this is a new section starting
           var isNewSection = data[row][0] === "" && 
                              data[row][1] !== "" && 
                              typeof data[row][1] === "string" && 
-                             col >= 2 && 
-                             isRowEmpty(data[row].slice(2));  // Check if columns C onwards are empty
+                             isRowEmpty(data[row].slice(2), formulas[row].slice(2));  // Check if columns C onwards are empty
           
           if (isNewSection) {
             Logger.log("Found new section at row " + (row + 1) + " while processing " + currentSection);
@@ -391,10 +387,17 @@ function applyAbbreviation(value) {
 
 /**
  * Helper function to check if a row is empty
+ * Now considers both values and formulas to better handle formula cells
  */
-function isRowEmpty(rowData) {
+function isRowEmpty(rowData, rowFormulas) {
   for (var i = 0; i < rowData.length; i++) {
+    // Check if the cell has a value
     if (rowData[i] !== "") {
+      return false;
+    }
+    
+    // If formulas are provided, check if the cell has a formula
+    if (rowFormulas && i < rowFormulas.length && rowFormulas[i] !== "") {
       return false;
     }
   }

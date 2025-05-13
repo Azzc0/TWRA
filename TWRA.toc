@@ -5,6 +5,10 @@
 ## Version: 0.2
 ## SavedVariables: TWRA_SavedVariables, TWRA_Assignments, TWRA_CompressedAssignments
 
+# Keybindings (must load early)
+Bindings.xml
+Bindings.lua
+
 # Libraries (must load first)
 libs\LibStub.lua
 libs\LibCompress.lua
@@ -28,6 +32,9 @@ ui\Frame.lua
 ui\Minimap.lua
 ui\OSD.lua
 ui\Options.lua
+ui\options\Options-General.lua
+ui\options\Options-OSD.lua
+ui\options\Options-Import.lua
 ui\EncounterMap.lua
 
 # Feature modules

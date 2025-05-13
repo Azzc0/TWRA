@@ -17,6 +17,11 @@ function TWRA:CloseDropdownMenu()
     if self.navigation and self.navigation.dropdownMenu and self.navigation.dropdownMenu:IsShown() then
         self.navigation.dropdownMenu:Hide()
     end
+    
+    -- Close announcement channel dropdown if it exists
+    if self.channelDropdown and self.channelDropdown:IsShown() then
+        self.channelDropdown:Hide()
+    end
 end
 
 -- Add a safety function to ensure we don't concatenate tables
@@ -103,7 +108,7 @@ function TWRA:CreateMainFrame()
     local optionsButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
     optionsButton:SetWidth(60)
     optionsButton:SetHeight(20)
-    optionsButton:SetPoint("TOPRIGHT", -20, -15)
+    optionsButton:SetPoint("TOPRIGHT", -45, -15)  -- Moved to the left to make room for close button
     optionsButton:SetText("Options")
     
     -- Add debugging to the click handler
@@ -122,6 +127,16 @@ function TWRA:CreateMainFrame()
         TWRA:Debug("ui", "After options button click, currentView=" .. self.currentView)
     end)
     self.optionsButton = optionsButton
+    
+    -- Create Close button in the top right corner
+    local closeButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", -5, -5)
+    closeButton:SetWidth(24)
+    closeButton:SetHeight(24)
+    closeButton:SetScript("OnClick", function()
+        self.mainFrame:Hide()
+    end)
+    self.closeButton = closeButton
 
     local announceButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
     announceButton:SetWidth(80)

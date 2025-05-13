@@ -974,10 +974,53 @@ function TWRA:ShowOptionsView()
         self:CreateOptionsInMainFrame()
     end
 
+    -- Explicitly hide the channel dropdown if it exists
+    local channelDropdown = getglobal("TWRA_ChannelDropdown")
+    if channelDropdown then
+        channelDropdown:Hide()
+    end
+
+    -- Specifically hide ALL main view content elements
+    if self.contentFrame then
+        self.contentFrame:Hide()
+    end
+    
+    -- Hide the header if it exists
+    if self.headerText then
+        self.headerText:Hide()
+    end
+    
+    -- Hide ALL row frames to avoid any content bleeding through
+    if self.rowFrames then
+        for _, rowFrame in ipairs(self.rowFrames) do
+            if rowFrame and rowFrame.Hide then
+                rowFrame:Hide()
+            end
+        end
+    end
+    
+    -- Hide footer elements
+    if self.leftFooter then
+        self.leftFooter:Hide()
+    end
+    
+    if self.rightFooter then
+        self.rightFooter:Hide()
+    end
+    
+    -- Hide any column headers if they exist
+    if self.columnHeaders then
+        for _, header in ipairs(self.columnHeaders) do
+            if header and header.Hide then
+                header:Hide()
+            end
+        end
+    end
+
     -- Show options elements
     if self.optionsElements then
         for _, element in pairs(self.optionsElements) do
-            if element.Show then
+            if element and element.Show then
                 element:Show()
             end
         end
@@ -1006,7 +1049,7 @@ function TWRA:ShowOptionsView()
     if self.encounterButton then self.encounterButton:Hide() end
     
     -- Reset frame height to default while in options
-    self.mainFrame:SetHeight(300)
+    self.mainFrame:SetHeight(300) -- Original height for options view
     
     -- Change button text if options button exists
     if self.optionsButton then
