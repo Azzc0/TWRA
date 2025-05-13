@@ -1355,6 +1355,77 @@ function TWRA:CreateRow(rowNum, data)
     -- Use dynamic column widths if available, otherwise use defaults
     local xOffset = 20 -- Starting offset
     
+    -- Create row clickable area (skip header row)
+    local rowClickFrame = nil
+    if not isHeader then
+        rowClickFrame = CreateFrame("Button", nil, self.mainFrame)
+        rowClickFrame:SetHeight(20)
+        rowClickFrame:SetPoint("TOPLEFT", self.mainFrame, "TOPLEFT", 20, yOffset)
+        rowClickFrame:SetPoint("TOPRIGHT", self.mainFrame, "TOPRIGHT", -20, yOffset)
+        rowClickFrame:EnableMouse(true) -- Make sure clicking is enabled
+        
+        -- Create mouseover highlight texture
+        local mouseoverHighlight = self:CreateRowMouseoverHighlight()
+        
+        -- Add mouseover behavior
+        rowClickFrame:SetScript("OnEnter", function()
+            -- Show the highlight
+            mouseoverHighlight:ClearAllPoints()
+            mouseoverHighlight:SetPoint("TOPLEFT", rowClickFrame, "TOPLEFT", 2, 0)
+            mouseoverHighlight:SetPoint("BOTTOMRIGHT", rowClickFrame, "BOTTOMRIGHT", -2, 0)
+            mouseoverHighlight:Show()
+            
+            -- Show tooltip with instructions
+            GameTooltip:SetOwner(rowClickFrame, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Click to announce this assignment")
+            GameTooltip:Show()
+        end)
+        
+        rowClickFrame:SetScript("OnLeave", function()
+            -- Hide the highlight
+            mouseoverHighlight:Hide()
+            
+            -- Hide tooltip
+            GameTooltip:Hide()
+        end)
+        
+        -- Add click handler to announce just this row with debug
+        rowClickFrame:SetScript("OnClick", function()
+            self:Debug("ui", "Row clicked - formatting announcement")
+            
+            -- Format the announcement
+            local message = self:FormatRowAnnouncement(data)
+            
+            -- Debug the message
+            self:Debug("ui", "Formatted message: " .. (message or "nil"))
+            
+            -- Only send if we have a message
+            if message then
+                -- Always send to group (converts to raid if in raid)
+                local chatType = "PARTY"
+                if GetNumRaidMembers() > 0 then
+                    chatType = "RAID"
+                end
+                
+                -- Debug before sending
+                self:Debug("ui", "Sending to " .. chatType .. ": " .. message)
+                
+                -- Send the announcement
+                SendChatMessage(message, chatType)
+                
+                -- Visual feedback
+                mouseoverHighlight:SetVertexColor(1, 1, 0.5, 0.5) -- Brighter flash
+                
+                -- Reset after a short delay
+                self:ScheduleTimer(function()
+                    if mouseoverHighlight:IsShown() then
+                        mouseoverHighlight:SetVertexColor(0.7, 0.7, 1, 0.3) -- Back to normal
+                    end
+                end, 0.2)
+            end
+        end)
+    end
+    
     -- Process all columns
     for i = 1, numColumns do
         local cellWidth
@@ -1499,6 +1570,11 @@ function TWRA:CreateRow(rowNum, data)
         
         -- Update offset for next column
         xOffset = xOffset + cellWidth
+    end
+    
+    -- Store the click frame reference
+    if rowClickFrame then
+        rowFrames.clickFrame = rowClickFrame
     end
     
     return rowFrames
@@ -1804,4 +1880,173 @@ function TWRA:CalculateColumnWidths(data)
     headerMeasure:Hide()
     
     return columnWidths
+end
+
+-- Create a mouseover highlight for rows
+function TWRA:CreateRowMouseoverHighlight()
+    -- Create a highlight texture for mouseover if it doesn't exist
+    if not self.mouseoverHighlight then
+        local highlight = self.mainFrame:CreateTexture(nil, "BACKGROUND", nil, -1)
+        highlight:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        highlight:SetBlendMode("ADD")
+        highlight:SetVertexColor(0.7, 0.7, 1, 0.3)  -- Blueish highlight
+        highlight:Hide()  -- Hidden by default
+        self.mouseoverHighlight = highlight
+    end
+    return self.mouseoverHighlight
+end
+
+-- Format a row announcement message with the same coloring/formatting as AnnounceAssignments
+function TWRA:FormatRowAnnouncement(rowData)
+    if not rowData or table.getn(rowData) < 2 then
+        return nil
+    end
+    
+    -- Get the icon and target (columns 1 and 2)
+    local icon = rowData[1] or ""
+    local target = rowData[2] or ""
+    
+    -- Skip empty targets
+    if target == "" then
+        return nil
+    end
+    
+    -- Define role colors with more muted tones - same as AnnounceAssignments
+    local roleColors = {
+        ["Tank"] = "|cFF7799CC", -- Muted blue
+        ["Tanks"] = "|cFF7799CC", -- Muted blue
+        ["Heal"] = "|cFF88BB99", -- Muted green
+        ["Heals"] = "|cFF88BB99", -- Muted green
+        ["Healer"] = "|cFF88BB99", -- Muted green
+        ["Healers"] = "|cFF88BB99", -- Muted green
+        ["Pull"] = "|cFFCCBB77", -- Muted yellow
+        ["default"] = "|cFF88BBAA", -- Muted teal
+    }
+    local roleEndColor = "|r"
+    
+    -- Start with the icon and target formatted with colored icons if available
+    local message = ""
+    
+    -- Use colored icons if available
+    if icon and TWRA.COLORED_ICONS and TWRA.COLORED_ICONS[icon] then
+        message = TWRA.COLORED_ICONS[icon] .. " " .. target
+    else
+        message = target
+    end
+    
+    -- Group assignments by role type (columns 3+)
+    local roleGroups = {}
+    local roleOrder = {}
+    local seenRoles = {}
+    
+    -- First determine which column corresponds to which role
+    -- Try to get the section header for this row 
+    local currentSection = nil
+    local headerRow = nil
+    
+    if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
+        currentSection = self.navigation.handlers[self.navigation.currentIndex]
+        
+        -- Find the section data
+        if currentSection and TWRA_Assignments and TWRA_Assignments.data then
+            for idx, section in pairs(TWRA_Assignments.data) do
+                if section["Section Name"] == currentSection then
+                    headerRow = section["Section Header"]
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Process column roles from header
+    local columnRoles = {}
+    if headerRow then
+        -- In new format: Column 1 = "Icon", Column 2 = "Target", Column 3+ = roles
+        for i = 3, table.getn(headerRow) do
+            local roleName = headerRow[i]
+            columnRoles[i] = roleName
+            
+            -- Track the order of unique roles as they first appear
+            if roleName and not seenRoles[roleName] then
+                seenRoles[roleName] = true
+                table.insert(roleOrder, roleName)
+            end
+        end
+    end
+    
+    -- Process each assignment role (columns 3+)
+    for j = 3, table.getn(rowData) do
+        local assignee = rowData[j]
+        if assignee and assignee ~= "" then
+            -- Get role name from header or use a default
+            local roleName = columnRoles[j] or "Role"
+            
+            -- Create role group if it doesn't exist
+            if not roleGroups[roleName] then
+                roleGroups[roleName] = {}
+            end
+            
+            -- Add to appropriate role group
+            table.insert(roleGroups[roleName], assignee)
+        end
+    end
+    
+    -- If no role order was found from the section header, create a default one
+    if table.getn(roleOrder) == 0 then
+        for roleName, _ in pairs(roleGroups) do
+            table.insert(roleOrder, roleName)
+        end
+    end
+    
+    -- Add roles grouped by type, following the role order
+    local roleAdded = false
+    for _, roleName in ipairs(roleOrder) do
+        local members = roleGroups[roleName]
+        if members and table.getn(members) > 0 then
+            -- Make Tank/Healer plural if there are multiple members
+            local displayRoleName = roleName
+            if (roleName == "Tank" or roleName == "Healer") and table.getn(members) > 1 then
+                displayRoleName = roleName .. "s"
+            end
+            
+            -- Get color for this role
+            local roleColor = roleColors[displayRoleName] or roleColors["default"]
+            
+            -- Add role header with proper color and delimiter
+            if roleAdded then
+                message = message .. " " .. roleColor .. displayRoleName .. ":" .. roleEndColor .. " "
+            else
+                message = message .. " " .. roleColor .. displayRoleName .. ":" .. roleEndColor .. " "
+                roleAdded = true
+            end
+            
+            -- Add members with comma separation and "and" for last (no coloring for names)
+            if table.getn(members) == 1 then
+                message = message .. members[1]
+            elseif table.getn(members) == 2 then
+                message = message .. members[1] .. " and " .. members[2]
+            else
+                for m = 1, table.getn(members) - 1 do
+                    message = message .. members[m]
+                    if m < table.getn(members) - 1 then
+                        message = message .. ", "
+                    else
+                        message = message .. ", and "
+                    end
+                end
+                message = message .. members[table.getn(members)]
+            end
+        end
+    end
+    
+    -- Process item links or consumables if available
+    if TWRA.Items then
+        if TWRA.Items.EnhancedProcessText then
+            message = TWRA.Items:EnhancedProcessText(message)
+        elseif TWRA.Items.ProcessText then
+            message = TWRA.Items:ProcessText(message)
+        end
+    end
+    
+    return message
 end
