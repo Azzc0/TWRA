@@ -200,9 +200,16 @@ function TWRA:Initialize()
                 addon.SYNC.liveSync = true
                 
                 -- Make sure CHAT_MSG_ADDON is registered for LiveSync
-                if frame and not frame:IsEventRegistered("CHAT_MSG_ADDON") then
-                    frame:RegisterEvent("CHAT_MSG_ADDON")
-                    addon:Debug("general", "Registered for CHAT_MSG_ADDON early for LiveSync")
+                if frame then
+                    -- Check if IsEventRegistered method exists before using it
+                    if frame.IsEventRegistered and not frame:IsEventRegistered("CHAT_MSG_ADDON") then
+                        frame:RegisterEvent("CHAT_MSG_ADDON")
+                        addon:Debug("general", "Registered for CHAT_MSG_ADDON early for LiveSync")
+                    elseif not frame.IsEventRegistered then
+                        -- If the method doesn't exist, register anyway to be safe
+                        frame:RegisterEvent("CHAT_MSG_ADDON")
+                        addon:Debug("general", "Registered for CHAT_MSG_ADDON (without check) for LiveSync")
+                    end
                 end
             else
                 addon:Debug("general", "LiveSync not enabled in saved settings")
