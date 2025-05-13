@@ -100,53 +100,16 @@ function TWRA:DirectImport(importString)
                     return false
                 end
                 
-                -- Handle both string and table return types from DecodeBase64
-                if type(decodedString) == "string" then
-                    self:Debug("data", "Base64 decoded successfully to string, length: " .. string.len(decodedString))
-                    
-                    -- Try to load the decoded string as Lua code
-                    self:Debug("data", "Parsing decoded Lua code...")
-                    local func, err = loadstring(decodedString)
-                    if not func then
-                        self:Debug("error", "Failed to parse decoded Base64: " .. (err or "Unknown error"))
-                        return false
-                    end
-                elseif type(decodedString) == "table" then
-                    self:Debug("data", "Base64 decoded successfully to table structure, skipping loadstring")
-                    -- If we received a table directly, we can skip the loadstring/execution steps
-                    -- The table should already contain the proper structure
-                    
-                    -- Check if the table appears to be valid
-                    if not decodedString.data then
-                        self:Debug("error", "Decoded table missing 'data' field")
-                        return false
-                    end
-                    
-                    -- Set the table as TWRA_Assignments directly
-                    TWRA_Assignments = TWRA_Assignments or {}
-                    TWRA_Assignments.data = decodedString.data
-                    TWRA_Assignments.version = 2
-                    TWRA_Assignments.timestamp = time()
-                    TWRA_Assignments.currentSection = 1
-                    
-                    -- Process was successful
-                    self:Debug("data", "Table import successful")
-                    return true
-                else
-                    self:Debug("error", "Decode result is unexpected type: " .. type(decodedString))
-                    return false
-                end
-                
                 self:Debug("data", "Base64 decoded successfully, string length: " .. string.len(decodedString))
                 
                 -- Try to load the decoded string as Lua code - add more debug for parsing
                 self:Debug("data", "Parsing decoded Lua code...")
                 
-                -- Additional type check before using loadstring (which requires a string)
-                if type(decodedString) ~= "string" then
-                    self:Debug("error", "Cannot loadstring on non-string data type: " .. type(decodedString))
-                    return false
-                end
+                -- -- Additional type check before using loadstring (which requires a string)
+                -- if type(decodedString) ~= "string" then
+                --     self:Debug("error", "Cannot loadstring on non-string data type: " .. type(decodedString))
+                --     return false
+                -- end
                 
                 local func, err = loadstring(decodedString)
                 if not func then
@@ -154,13 +117,13 @@ function TWRA:DirectImport(importString)
                     return false
                 end
                 
-                -- Execute the loaded function to define TWRA_ImportString - add more debug
-                self:Debug("data", "Executing parsed Lua code...")
-                local success, result = pcall(func)
-                if not success then
-                    self:Debug("error", "Failed to execute decoded Base64: " .. (result or "Unknown error"))
-                    return false
-                end
+                -- -- Execute the loaded function to define TWRA_ImportString - add more debug
+                -- self:Debug("data", "Executing parsed Lua code...")
+                -- local success, result = pcall(func)
+                -- if not success then
+                --     self:Debug("error", "Failed to execute decoded Base64: " .. (result or "Unknown error"))
+                --     return false
+                -- end
                 
                 -- Check if TWRA_ImportString was defined correctly - add more debug
                 if not TWRA_ImportString then
