@@ -100,9 +100,40 @@ function TWRA:DirectImport(importString)
                     return false
                 end
                 
-                -- Add proper type checking before using string.len
-                if type(decodedString) ~= "string" then
-                    self:Debug("error", "Decode result is not a string (got " .. type(decodedString) .. ")")
+                -- Handle both string and table return types from DecodeBase64
+                if type(decodedString) == "string" then
+                    self:Debug("data", "Base64 decoded successfully to string, length: " .. string.len(decodedString))
+                    
+                    -- Try to load the decoded string as Lua code
+                    self:Debug("data", "Parsing decoded Lua code...")
+                    local func, err = loadstring(decodedString)
+                    if not func then
+                        self:Debug("error", "Failed to parse decoded Base64: " .. (err or "Unknown error"))
+                        return false
+                    end
+                elseif type(decodedString) == "table" then
+                    self:Debug("data", "Base64 decoded successfully to table structure, skipping loadstring")
+                    -- If we received a table directly, we can skip the loadstring/execution steps
+                    -- The table should already contain the proper structure
+                    
+                    -- Check if the table appears to be valid
+                    if not decodedString.data then
+                        self:Debug("error", "Decoded table missing 'data' field")
+                        return false
+                    end
+                    
+                    -- Set the table as TWRA_Assignments directly
+                    TWRA_Assignments = TWRA_Assignments or {}
+                    TWRA_Assignments.data = decodedString.data
+                    TWRA_Assignments.version = 2
+                    TWRA_Assignments.timestamp = time()
+                    TWRA_Assignments.currentSection = 1
+                    
+                    -- Process was successful
+                    self:Debug("data", "Table import successful")
+                    return true
+                else
+                    self:Debug("error", "Decode result is unexpected type: " .. type(decodedString))
                     return false
                 end
                 
