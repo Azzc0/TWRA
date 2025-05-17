@@ -429,17 +429,6 @@ function TWRA:CreateMinimapButton()
             return
         end
         
-        -- -- Show a notification of the section being navigated to
-        -- local function showSectionNotification(index)
-        --     if TWRA.navigation.handlers[index] then
-        --         -- Show a brief notification about which section was changed to
-        --         local sectionName = TWRA.navigation.handlers[index]
-        --         if DEFAULT_CHAT_FRAME and sectionName then
-        --             DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF33TWRA:|r Navigating to "..sectionName)
-        --         end
-        --     end
-        -- end
-        
         -- Navigate through sections with the mousewheel
         if delta > 0 then
             -- Scroll up - go to previous section
@@ -447,11 +436,6 @@ function TWRA:CreateMinimapButton()
             
             if TWRA.NavigateHandler then
                 TWRA:NavigateHandler(-1)
-                
-                -- Show section notification
-                if TWRA.navigation and TWRA.navigation.currentIndex then
-                    showSectionNotification(TWRA.navigation.currentIndex)
-                end
                 
                 -- Make sure OSD is visible when changing sections
                 if TWRA.ShowOSD and TWRA.OSD and not TWRA.OSD.shown then
@@ -464,11 +448,6 @@ function TWRA:CreateMinimapButton()
             
             if TWRA.NavigateHandler then
                 TWRA:NavigateHandler(1)
-                
-                -- Show section notification
-                if TWRA.navigation and TWRA.navigation.currentIndex then
-                    showSectionNotification(TWRA.navigation.currentIndex)
-                end
                 
                 -- Make sure OSD is visible when changing sections
                 if TWRA.ShowOSD and TWRA.OSD and not TWRA.OSD.shown then
