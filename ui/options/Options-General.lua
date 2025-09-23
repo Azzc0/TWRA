@@ -244,29 +244,40 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
     table.insert(self.optionsElements, liveSync)
     table.insert(self.optionsElements, liveSyncText)
     
-    -- Tank Sync Option
-    local tankSyncCheckbox, tankSyncText = self:CreateCheckbox(leftColumn, "Tank Sync", "TOPLEFT", liveSync, "BOTTOMLEFT", 0, -3)
-    table.insert(self.optionsElements, tankSyncCheckbox)
-    table.insert(self.optionsElements, tankSyncText)
+    -- Tank Sync Label
+    local tankSyncLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tankSyncLabel:SetPoint("TOPLEFT", liveSync, "BOTTOMLEFT", 0, -3)
+    tankSyncLabel:SetText("Tank sync:")
+    table.insert(self.optionsElements, tankSyncLabel)
     
-    -- Add info icon for tank sync
+    -- oRA2 Tank Sync Option
+    local oRA2TankSync, oRA2TankSyncText = self:CreateCheckbox(leftColumn, "oRA2", "LEFT", tankSyncLabel, "RIGHT", 5, 0)
+    table.insert(self.optionsElements, oRA2TankSync)
+    table.insert(self.optionsElements, oRA2TankSyncText)
+    
+    -- pfUI Tank Sync Option
+    local pfUITankSync, pfUITankSyncText = self:CreateCheckbox(leftColumn, "pfUI", "LEFT", oRA2TankSync, "RIGHT", 35, 0)
+    table.insert(self.optionsElements, pfUITankSync)
+    table.insert(self.optionsElements, pfUITankSyncText)
+    
+    -- Add info icon for tank sync options
     local tankSyncIcon, tankSyncIconFrame = self.UI:CreateIconWithTooltip(
         leftColumn,
         "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",
-        "Tank Sync (Requires oRA2)",
-        "When enabled, tanks will be automatically assigned in oRA2 based on the currently selected section.",
-        tankSyncText,
+        "Tank Sync Options",
+        "oRA2: Updates the oRA2 tank table and pushes to the raid\npfUI: Edits your local pfUI tanklist with current section tanks",
+        pfUITankSyncText,
         5, 22, 22
     )
     
     tankSyncIcon:ClearAllPoints()
-    tankSyncIcon:SetPoint("LEFT", tankSyncText, "RIGHT", 5, 0)
+    tankSyncIcon:SetPoint("LEFT", pfUITankSyncText, "RIGHT", 5, 0)
     
     table.insert(self.optionsElements, tankSyncIcon)
     table.insert(self.optionsElements, tankSyncIconFrame)
     
     -- AutoNavigate Option
-    local autoNavigate, autoNavigateText = self:CreateCheckbox(leftColumn, "AutoNavigate", "TOPLEFT", tankSyncCheckbox, "BOTTOMLEFT", 0, -3)
+    local autoNavigate, autoNavigateText = self:CreateCheckbox(leftColumn, "AutoNavigate", "TOPLEFT", tankSyncLabel, "BOTTOMLEFT", 0, -20)
     table.insert(self.optionsElements, autoNavigate)
     table.insert(self.optionsElements, autoNavigateText)
     
@@ -446,12 +457,19 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
     end
     liveSync:SetChecked(liveSyncEnabled)
     
-    -- Tank Sync checkbox
-    local tankSyncEnabled = self.SYNC and self.SYNC.tankSync or false
-    if options.tankSync ~= nil then
-        tankSyncEnabled = options.tankSync
+    -- oRA2 Tank Sync checkbox
+    local oRA2TankSyncEnabled = self.SYNC and self.SYNC.oRA2TankSync or false
+    if options.oRA2TankSync ~= nil then
+        oRA2TankSyncEnabled = options.oRA2TankSync
     end
-    tankSyncCheckbox:SetChecked(tankSyncEnabled)
+    oRA2TankSync:SetChecked(oRA2TankSyncEnabled)
+    
+    -- pfUI Tank Sync checkbox
+    local pfUITankSyncEnabled = self.SYNC and self.SYNC.pfUITankSync or false
+    if options.pfUITankSync ~= nil then
+        pfUITankSyncEnabled = options.pfUITankSync
+    end
+    pfUITankSync:SetChecked(pfUITankSyncEnabled)
     
     -- AutoNavigate checkbox
     local autoNavEnabled = self.AUTONAVIGATE and self.AUTONAVIGATE.enabled or false
@@ -476,22 +494,47 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
         self:Debug("sync", "Option 'Live Section Sync' set to " .. (isChecked and "ON" or "OFF"))
     end)
     
-    -- Tank Sync checkbox behavior
-    tankSyncCheckbox:SetScript("OnClick", function()
+    -- oRA2 Tank Sync checkbox behavior
+    oRA2TankSync:SetScript("OnClick", function()
         local isChecked = (this:GetChecked() == 1)
-        TWRA_SavedVariables.options.tankSync = isChecked
+        TWRA_SavedVariables.options.oRA2TankSync = isChecked
         
         -- Update memory value
         if self.SYNC then
-            self.SYNC.tankSync = isChecked
+            self.SYNC.oRA2TankSync = isChecked
+        end
+        
+        -- Update overall tank sync status
+        self.SYNC.tankSync = (TWRA_SavedVariables.options.oRA2TankSync or TWRA_SavedVariables.options.pfUITankSync)
+        
+        -- Debug output
+        self:Debug("tank", "Option 'oRA2 Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
+        
+        -- Initialize tank sync functionality
+        if self.InitializeTankSync then
+            self:InitializeTankSync()
+            
+            -- Force an update of tanks for the current section
+            self:UpdateTanks()
+        end
+    end)
+    
+    -- pfUI Tank Sync checkbox behavior
+    pfUITankSync:SetScript("OnClick", function()
+        local isChecked = (this:GetChecked() == 1)
+        TWRA_SavedVariables.options.pfUITankSync = isChecked
+        
+        -- Update memory value
+        if self.SYNC then
+            self.SYNC.pfUITankSync = isChecked
         end
         
         -- Debug output
-        self:Debug("tank", "Option 'Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
+        self:Debug("tank", "Option 'pfUI Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
         
-        -- Initialize tank sync if it was just enabled
-        if isChecked and self.InitializeTankSync then
-            self:InitializeTankSync()
+        -- Initialize pfUI tank sync if it was just enabled
+        if isChecked and self.InitializepfUITankSync then
+            self:InitializepfUITankSync()
         end
     end)
     
