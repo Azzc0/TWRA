@@ -826,9 +826,9 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
     else
         self:Debug("sync", "Still have " .. missingCount .. " missing sections, keeping bulkSyncTimestamp")
         
-        -- Request missing sections through whisper to sender
-        self:Debug("sync", "Requesting " .. missingCount .. " missing sections from " .. sender)
-        self:RequestMissingSectionsWhisper(sender, timestamp)
+        -- Request missing sections through group channel
+        self:Debug("sync", "Requesting " .. missingCount .. " missing sections")
+        self:RequestMissingSections(timestamp)
     end
     
     -- Clear structure reference if we successfully processed the structure
@@ -1375,17 +1375,8 @@ function TWRA:CreateVersionMessage(versionString, isIncompatible)
     return self.SYNC.COMMANDS.VERSION .. ":" .. versionString .. suffix
 end
 
--- Handler for SECTION command to change the current section
-function TWRA:RequestMissingSectionsWhisper(sections, timestamp)
-    -- Replace whisper implementation with group channel request
-    if not sections or table.getn(sections) == 0 then return end
-    
-    -- Use group channel (party/raid) instead of whispers
-    self:RequestMissingSectionsGroup(timestamp)
-end
-
-function TWRA:RequestMissingSectionsGroup(timestamp)
-    -- Use group channel instead of whispers for missing sections
+-- Function to request missing sections using group channels
+function TWRA:RequestMissingSections(timestamp)
     local channel = IsInRaid() and "RAID" or IsInGroup() and "PARTY" or nil
     if not channel then
         self:Debug("error", "Cannot request missing sections - not in a group")

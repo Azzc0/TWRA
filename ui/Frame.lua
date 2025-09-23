@@ -88,7 +88,7 @@ function TWRA:CreateMainFrame()
 
     local titleText = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     titleText:SetPoint("TOP", 0, -15)
-    titleText:SetText("Raid Assignments (Sync-fixes-250923a)")
+    titleText:SetText("Raid Assignments (Sync-fixes-250923b)")
     
     -- Add Sync All button in the top left corner
     local syncAllButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
