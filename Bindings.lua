@@ -6,9 +6,11 @@ BINDING_HEADER_TWRA = "TWRA"
 
 -- Binding names - must match exactly what's in the XML file
 BINDING_NAME_TWRA_TOGGLE = "Toggle Frame"
+BINDING_NAME_TWRA_HOLD_MAIN = "Hold to view Frame"
 BINDING_NAME_TWRA_NEXT = "Next Section"  
 BINDING_NAME_TWRA_PREV = "Previous Section"
 BINDING_NAME_TWRA_TOGGLE_OSD = "Toggle OSD"
+BINDING_NAME_TWRA_HOLD_OSD = "Hold to view OSD"
 
 -- Keybind state tracking
 TWRA.KEYBIND = {

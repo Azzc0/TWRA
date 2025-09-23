@@ -3,6 +3,15 @@
     <Binding name="TWRA_TOGGLE" header="TWRA">
         if TWRA and TWRA.ToggleMainFrame then TWRA:ToggleMainFrame() end
     </Binding>
+
+    <Binding name="TWRA_HOLD_MAIN" runOnUp="true" header="TWRA">
+        if  ( keystate == "down" ) then
+            if TWRA and TWRA.ToggleMainFrame then TWRA:ToggleMainFrame() end
+            TWRA.mainFrame:Show()
+        else
+            TWRA.mainFrame:Hide()
+        end
+    </Binding>
     
     <Binding name="TWRA_NEXT" header="TWRA">
         if TWRA and TWRA.NavigateHandler then TWRA:NavigateHandler(1) end
@@ -12,6 +21,14 @@
         if TWRA and TWRA.NavigateHandler then TWRA:NavigateHandler(-1) end
     </Binding>
     
+    <Binding name="TWRA_HOLD_OSD" runOnUp="true" header="TWRA">
+        if  ( keystate == "down" ) then
+            TWRA:ShowOSDPermanent()
+        else
+            TWRA:HideOSD()
+        end
+    </Binding>
+
     <Binding name="TWRA_TOGGLE_OSD" header="TWRA">
         if TWRA and TWRA.ToggleOSD then TWRA:ToggleOSD() end
     </Binding>

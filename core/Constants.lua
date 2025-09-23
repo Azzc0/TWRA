@@ -460,11 +460,11 @@ TWRA.DEFAULT_OSD_SETTINGS = {
 -- Export version information
 TWRA.VERSION = {
     MAJOR = 0,         -- Major version - increment for breaking changes
-    MINOR = 1,         -- Minor version - increment for new features
-    PATCH = 0,         -- Patch version - increment for bug fixes
-    DATE = "2025-05-11", -- Current date in YYYY-MM-DD format
-    DATA_COMPAT = 1,   -- Minimum compatible minor version for data structures
-    STRING = "0.1.0",  -- Version string in format "MAJOR.MINOR.PATCH"
+    MINOR = 2,         -- Minor version - increment for new features
+    PATCH = 6,         -- Patch version - increment for bug fixes
+    DATE = "2025-09-23", -- Current date in YYYY-MM-DD format
+    DATA_COMPAT = 4,   -- Minimum compatible minor version for data structures
+    STRING = "0.2.6",  -- Version string in format "MAJOR.MINOR.PATCH"
 }
 
 -- Export base64 character table for encoding/decoding

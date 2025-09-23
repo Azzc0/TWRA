@@ -1,15 +1,15 @@
-# TWRA - Turtle WoW Raid Assistant
-
+# TWRA - Turtle WoW Raid Assignments
 TWRA is an addon for World of Warcraft that helps raid leaders and participants manage and optimize raid encounters by providing tactical information and automated features. It is heavily inspired by TWA.
+The primary feature is displaying tables with player assignments.
 
 ## Features
 See the wiki for more in depth information on each feature.
 
 - **Auto Navigation**: Automatically shows relevant section if specific mobs are marked with skull. (Requires SuperWoW)
-- **Auto Tanks**: Automatically updates oRA2 tank table with tanks for the current section.
-- **Raid Data Synchronization**: More recent assignments are synced across the raid (time of import, causes slowdown due to the sheer amount of data transferred).
+- **Auto Tanks**: Automatically updates oRA2 tank table with tanks for the current section. Also an option to update pfUI tank list (only your own list)
+- **Raid Data Synchronization**: More recent assignments are synced across the raid (last imported assignments gets synced to the raid).
 - **Item Link Management**: Items like [Free Action Potion] will have proper coloring and create clickable links when announced.
-- **OSD (On-Screen Display)**: Smaller window showing assignments that are relevant to you (name, class, group).
+- **OSD (On-Screen Display)**: Smaller window showing assignments that are relevant to you (name, class, group) specifically.
 - **Spreadsheet Integration**: Import raid data from Google Sheets.
 
 ## Installation
@@ -28,7 +28,6 @@ Basic usage information:
 /twra         - Toggles the main TWRA window
 /twra options - Opens the options menu
 /twra osd     - Toggles the OSD window
-/twra debug   - for debug features (spammy)
 
 ```
 

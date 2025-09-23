@@ -76,6 +76,19 @@ function TWRA:NavigateToSection(index, source)
     TWRA_Assignments.currentSection = index
     TWRA_Assignments.currentSectionName = sectionName
     
+    -- IMPORTANT: Update the section title in the UI if it exists
+    -- This ensures the title is updated even if the window is open
+    if self.navigation.handlerText then
+        self.navigation.handlerText:SetText(sectionName)
+        self:Debug("nav", "Updated section title text to: " .. sectionName)
+    end
+    
+    -- Also update main title text if it exists
+    if self.mainFrame and self.mainFrame.titleText then
+        self.mainFrame.titleText:SetText("Raid Assignments - " .. sectionName)
+        self:Debug("nav", "Updated main frame title text")
+    end
+    
     -- Display the current section
     if self.FilterAndDisplayHandler then
         self:FilterAndDisplayHandler(sectionName)
@@ -836,63 +849,6 @@ function TWRA:GetAnnouncementChannels()
     }
 end
 
--- Add slash command
-SLASH_TWRA1 = "/twra"
-SlashCmdList["TWRA"] = function(msg)
-    -- Parse the command
-    local command, arg = string.match(msg, "^(%S+)%s*(.*)$")
-    command = command and string.lower(command) or ""
-    
-    if command == "debug" then
-        -- Handle debug commands
-        if arg == "list" then
-            -- List all debug categories
-            TWRA:ListDebugCategories()
-        elseif arg == "all" or arg == "" then
-            -- Toggle all debug categories
-            TWRA:ToggleDebug()
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug mode " .. 
-                (TWRA.DEBUG.enabled and "enabled" or "disabled"))
-        elseif TWRA.DEBUG_CATEGORIES[arg] then
-            -- Toggle specific category
-            TWRA:ToggleDebugCategory(arg)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Unknown debug category: " .. arg)
-            TWRA:ListDebugCategories()
-        end
-    elseif command == "perf" or command == "performance" then
-        -- Handle performance commands by splitting remaining arguments
-        local args = {}
-        for word in string.gmatch(arg, "%S+") do
-            table.insert(args, word)
-        end
-        
-        -- Call the performance command handler if it exists
-        if TWRA.HandlePerfCommand then
-            TWRA:HandlePerfCommand(args)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Performance monitoring system not initialized")
-        end
-    elseif command == "guid" or command == "targetguid" then
-        -- Get current target GUID
-        if TWRA.GetCurrentTargetGuid then
-            TWRA:GetCurrentTargetGuid()
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: GetCurrentTargetGuid function not available")
-        end
-    elseif command == "listguids" then
-        -- List all stored GUIDs
-        if TWRA.ListAllGuids then
-            TWRA:ListAllGuids()
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: ListAllGuids function not available")
-        end
-    else
-        -- Default behavior - toggle main frame
-        TWRA:ToggleMainFrame()
-    end
-end
-
 -- Initialize UI at end of loading - THIS IS THE ONLY INITIALIZE CALL
 TWRA:Initialize()
 
@@ -1005,26 +961,43 @@ end
 
 -- Handle group composition changes
 function TWRA:OnGroupChanged()
-    self:Debug("general", "Group composition changed, updating player table and dynamic info")
-    
-    -- Update the player table with current group information
-    -- UpdatePlayerTable now checks TWRA_Assignments.isExample automatically
-    self:UpdatePlayerTable()
-    self:RefreshPlayerInfo()
-    -- Update UI if main frame exists and is shown
-    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
-        -- Update main frame content
-        if previousIndex ~= index or source == "reload" then
-            if self.FilterAndDisplayHandler then
-                self:FilterAndDisplayHandler(sectionName)
-                self:Debug("nav", "Updated main frame content for section: " .. sectionName)
-            elseif self.DisplayCurrentSection then
-                self:DisplayCurrentSection()
-                self:Debug("nav", "Updated main frame content using DisplayCurrentSection for section: " .. sectionName)
+    -- First, call the proper implementation from Core.lua
+    if self.core and self.core.OnGroupChanged then
+        -- If we have a direct reference to the core implementation
+        return self.core.OnGroupChanged(self)
+    else
+        self:Debug("general", "Group composition changed, updating player table and dynamic info")
+        
+        -- Update the player table with current group information
+        self:UpdatePlayerTable()
+        
+        -- Refresh player info for all sections
+        self:RefreshPlayerInfo()
+        
+        -- Update UI if main frame exists and is shown
+        if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+            -- Get current section info
+            local currentSection = nil
+            if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
+                currentSection = self.navigation.handlers[self.navigation.currentIndex]
+                
+                -- Update main frame content
+                if self.FilterAndDisplayHandler and currentSection then
+                    self:Debug("nav", "Updating main frame content for section: " .. currentSection)
+                    self:FilterAndDisplayHandler(currentSection)
+                elseif self.DisplayCurrentSection then
+                    self:Debug("nav", "Updating main frame using DisplayCurrentSection")
+                    self:DisplayCurrentSection()
+                end
             end
         end
+        
+        -- Ensure OSD is updated if visible
+        if self.OSD and self.OSD.isVisible then
+            self:Debug("osd", "Updating OSD after group change")
+            self:UpdateOSDWithPlayerInfo()
+        end
     end
-    TWRA:UpdateOSDContent(TWRA_Assignments.currentSectionName, TWRA_Assignments.currentSection)
 end
 
 -- Update the encounterButton visibility in DisplayCurrentSection

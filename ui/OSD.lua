@@ -25,6 +25,7 @@ function TWRA:InitOSD()
         self.OSD.duration = savedOSD.duration or self.OSD.duration
         self.OSD.displayMode = savedOSD.displayMode or self.OSD.displayMode
         self.OSD.showNotes = savedOSD.showNotes ~= false -- Default to true if nil
+        self.OSD.disabled = savedOSD.disabled or false -- New setting for completely disabling OSD
     end
 
     -- Register for events
@@ -34,6 +35,12 @@ function TWRA:InitOSD()
         -- Register for section navigation events
         self:RegisterEvent("SECTION_CHANGED", function(sectionName, currentIndex, totalSections)
             self:Debug("osd", "SECTION_CHANGED event received: " .. sectionName)
+            
+            -- Skip if OSD is disabled
+            if self.OSD.disabled then
+                self:Debug("osd", "OSD is disabled, ignoring SECTION_CHANGED event")
+                return
+            end
             
             -- Check if we're navigating to the same section
             if self.OSD.lastSectionIndex and self.OSD.lastSectionIndex == currentIndex then
@@ -81,6 +88,12 @@ function TWRA:InitOSD()
         self:RegisterEvent("GROUP_ROSTER_UPDATED", function()
             self:Debug("osd", "GROUP_ROSTER_UPDATED event received")
             
+            -- Skip if OSD is disabled
+            if self.OSD.disabled then
+                self:Debug("osd", "OSD is disabled, ignoring GROUP_ROSTER_UPDATED event")
+                return
+            end
+            
             -- Always update OSD content on group changes, regardless of visibility
             -- This ensures that when the OSD is shown, it has current data
             if self.navigation and self.navigation.currentIndex and self.navigation.handlers then
@@ -95,6 +108,12 @@ function TWRA:InitOSD()
         -- Register for player status updates
         self:RegisterEvent("PLAYERS_UPDATED", function()
             self:Debug("osd", "PLAYERS_UPDATED event received")
+            
+            -- Skip if OSD is disabled
+            if self.OSD.disabled then
+                self:Debug("osd", "OSD is disabled, ignoring PLAYERS_UPDATED event")
+                return
+            end
             
             -- Always update OSD content on player changes, regardless of visibility
             -- This ensures that when the OSD is shown, it has current data
@@ -1419,7 +1438,14 @@ end
 
 -- Show OSD permanently (no auto-hide)
 function TWRA:ShowOSDPermanent()
-    -- Skip if OSD is disabled
+    -- Check if OSD is globally disabled first
+    if self.OSD and self.OSD.disabled then
+        self:Debug("osd", "Cannot show OSD - functionality is globally disabled")
+        DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD functionality is globally disabled. Use '/twra osd enable' to enable it.")
+        return false
+    end
+
+    -- Skip if OSD is disabled (legacy enabled flag)
     if not self.OSD or not self.OSD.enabled then
         self:Debug("osd", "OSD is disabled, cannot show permanently")
         return false
@@ -1460,7 +1486,13 @@ end
 
 -- Show the OSD with optional auto-hide
 function TWRA:ShowOSD(duration)
-    -- Skip if OSD is disabled
+    -- Check if OSD is globally disabled
+    if self.OSD and self.OSD.disabled then
+        self:Debug("osd", "Cannot show OSD - functionality is globally disabled")
+        return false
+    end
+    
+    -- Skip if OSD is disabled (legacy enabled flag)
     if not self.OSD or not self.OSD.enabled then
         self:Debug("osd", "OSD is disabled, cannot show")
         return false
@@ -1548,6 +1580,16 @@ function TWRA:ToggleOSD()
         self:InitOSD()
     end
     
+    -- Check if OSD is globally disabled
+    if self.OSD.disabled then
+        -- If disabled and trying to show, inform the user
+        if not self.OSD.isVisible then
+            self:Debug("osd", "Cannot show OSD - functionality is globally disabled")
+            return false
+        end
+        -- Still allow hiding if it's somehow visible while disabled
+    end
+    
     if self.OSD.isVisible then
         self:HideOSD()
     else
@@ -1585,8 +1627,14 @@ end
 
 -- Helper function to determine if OSD should be shown (implementation of placeholder)
 function TWRA:ShouldShowOSD()
-    -- Only show OSD if it's enabled
-    if not self.OSD or not self.OSD.enabled then
+    -- Check if OSD is completely disabled
+    if not self.OSD or self.OSD.disabled then
+        self:Debug("osd", "OSD is disabled, skipping display")
+        return false
+    end
+    
+    -- Only show OSD if it's enabled (legacy enabled flag)
+    if not self.OSD.enabled then
         return false
     end
     

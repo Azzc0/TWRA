@@ -297,154 +297,154 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
     table.insert(self.optionsElements, autoNavIcon)
     table.insert(self.optionsElements, autoNavIconFrame)
     
-    -- Add keybinding options header
-    local keybindHeader = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    keybindHeader:SetPoint("TOPLEFT", autoNavigate, "BOTTOMLEFT", 0, -5)
-    keybindHeader:SetText("Keybindings:")
-    table.insert(self.optionsElements, keybindHeader)
+    -- -- Add keybinding options header
+    -- local keybindHeader = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    -- keybindHeader:SetPoint("TOPLEFT", autoNavigate, "BOTTOMLEFT", 0, -5)
+    -- keybindHeader:SetText("Keybindings:")
+    -- table.insert(self.optionsElements, keybindHeader)
     
-    -- Define label width for uniform presentation
-    local labelWidth = 100
+    -- -- Define label width for uniform presentation
+    -- local labelWidth = 100
     
-    -- ==== TOGGLE FRAME KEYBINDING ====
-    -- Create keybinding label for Toggle Frame
-    local toggleFrameLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    toggleFrameLabel:SetPoint("TOPLEFT", keybindHeader, "BOTTOMLEFT", 5, -5)
-    toggleFrameLabel:SetText("Toggle Frame:")
-    toggleFrameLabel:SetWidth(labelWidth)
-    toggleFrameLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, toggleFrameLabel)
+    -- -- ==== TOGGLE FRAME KEYBINDING ====
+    -- -- Create keybinding label for Toggle Frame
+    -- local toggleFrameLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- toggleFrameLabel:SetPoint("TOPLEFT", keybindHeader, "BOTTOMLEFT", 5, -5)
+    -- toggleFrameLabel:SetText("Toggle Frame:")
+    -- toggleFrameLabel:SetWidth(labelWidth)
+    -- toggleFrameLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, toggleFrameLabel)
     
-    -- Get current binding for Toggle Frame
-    local currentBinding = GetBindingKey("TWRA_TOGGLE")
+    -- -- Get current binding for Toggle Frame
+    -- local currentBinding = GetBindingKey("TWRA_TOGGLE")
     
-    -- Create keybinding button for Toggle Main Frame (smaller size)
-    local toggleFrameKey = CreateFrame("Button", "TWRA_ToggleFrameKeyButton", leftColumn, "UIPanelButtonTemplate")
-    toggleFrameKey:SetWidth(80)
-    toggleFrameKey:SetHeight(20)
-    toggleFrameKey:SetPoint("LEFT", toggleFrameLabel, "RIGHT", 5, 0)
-    toggleFrameKey:SetText(currentBinding or "Not bound")
-    toggleFrameKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, toggleFrameKey)
+    -- -- Create keybinding button for Toggle Main Frame (smaller size)
+    -- local toggleFrameKey = CreateFrame("Button", "TWRA_ToggleFrameKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- toggleFrameKey:SetWidth(80)
+    -- toggleFrameKey:SetHeight(20)
+    -- toggleFrameKey:SetPoint("LEFT", toggleFrameLabel, "RIGHT", 5, 0)
+    -- toggleFrameKey:SetText(currentBinding or "Not bound")
+    -- toggleFrameKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, toggleFrameKey)
     
-    -- Add handler for the keybinding button
-    toggleFrameKey:SetScript("OnClick", function()
-        -- Use the keybinding system from Bindings.lua
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Toggle function")
-            self:StartKeyBinding("TOGGLE", "Toggle Frame", function(key)
-                -- No need to update here, UpdateKeyBindingDisplay will handle it
-            end)
-        else
-            -- Fallback if Bindings.lua hasn't been loaded
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- toggleFrameKey:SetScript("OnClick", function()
+    --     -- Use the keybinding system from Bindings.lua
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Toggle function")
+    --         self:StartKeyBinding("TOGGLE", "Toggle Frame", function(key)
+    --             -- No need to update here, UpdateKeyBindingDisplay will handle it
+    --         end)
+    --     else
+    --         -- Fallback if Bindings.lua hasn't been loaded
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
     
-    -- ==== NEXT SECTION KEYBINDING ====
-    -- Create keybinding label for Next Section
-    local nextSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    nextSectionLabel:SetPoint("TOPLEFT", toggleFrameKey, "BOTTOMLEFT", -labelWidth-5, -5)
-    nextSectionLabel:SetText("Next Section:")
-    nextSectionLabel:SetWidth(labelWidth)
-    nextSectionLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, nextSectionLabel)
+    -- -- ==== NEXT SECTION KEYBINDING ====
+    -- -- Create keybinding label for Next Section
+    -- local nextSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- nextSectionLabel:SetPoint("TOPLEFT", toggleFrameKey, "BOTTOMLEFT", -labelWidth-5, -5)
+    -- nextSectionLabel:SetText("Next Section:")
+    -- nextSectionLabel:SetWidth(labelWidth)
+    -- nextSectionLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, nextSectionLabel)
     
-    -- Get current binding for Next Section
-    local nextBinding = GetBindingKey("TWRA_NEXT")
+    -- -- Get current binding for Next Section
+    -- local nextBinding = GetBindingKey("TWRA_NEXT")
     
-    -- Create keybinding button for Next Section
-    local nextSectionKey = CreateFrame("Button", "TWRA_NextSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
-    nextSectionKey:SetWidth(80)
-    nextSectionKey:SetHeight(20)
-    nextSectionKey:SetPoint("LEFT", nextSectionLabel, "RIGHT", 5, 0)
-    nextSectionKey:SetText(nextBinding or "Not bound")
-    nextSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, nextSectionKey)
+    -- -- Create keybinding button for Next Section
+    -- local nextSectionKey = CreateFrame("Button", "TWRA_NextSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- nextSectionKey:SetWidth(80)
+    -- nextSectionKey:SetHeight(20)
+    -- nextSectionKey:SetPoint("LEFT", nextSectionLabel, "RIGHT", 5, 0)
+    -- nextSectionKey:SetText(nextBinding or "Not bound")
+    -- nextSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, nextSectionKey)
     
-    -- Add handler for the keybinding button
-    nextSectionKey:SetScript("OnClick", function()
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Next function")
-            self:StartKeyBinding("NEXT", "Next Section", function(key)
-                -- No need to update here, UpdateKeyBindingDisplay will handle it
-            end)
-        else
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- nextSectionKey:SetScript("OnClick", function()
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Next function")
+    --         self:StartKeyBinding("NEXT", "Next Section", function(key)
+    --             -- No need to update here, UpdateKeyBindingDisplay will handle it
+    --         end)
+    --     else
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
     
-    -- ==== PREVIOUS SECTION KEYBINDING ====
-    -- Create keybinding label for Previous Section
-    local prevSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    prevSectionLabel:SetPoint("TOPLEFT", nextSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
-    prevSectionLabel:SetText("Previous Section:")
-    prevSectionLabel:SetWidth(labelWidth)
-    prevSectionLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, prevSectionLabel)
+    -- -- ==== PREVIOUS SECTION KEYBINDING ====
+    -- -- Create keybinding label for Previous Section
+    -- local prevSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- prevSectionLabel:SetPoint("TOPLEFT", nextSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
+    -- prevSectionLabel:SetText("Previous Section:")
+    -- prevSectionLabel:SetWidth(labelWidth)
+    -- prevSectionLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, prevSectionLabel)
     
-    -- Get current binding for Previous Section
-    local prevBinding = GetBindingKey("TWRA_PREV")
+    -- -- Get current binding for Previous Section
+    -- local prevBinding = GetBindingKey("TWRA_PREV")
     
-    -- Create keybinding button for Previous Section
-    local prevSectionKey = CreateFrame("Button", "TWRA_PrevSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
-    prevSectionKey:SetWidth(80)
-    prevSectionKey:SetHeight(20)
-    prevSectionKey:SetPoint("LEFT", prevSectionLabel, "RIGHT", 5, 0)
-    prevSectionKey:SetText(prevBinding or "Not bound")
-    prevSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, prevSectionKey)
+    -- -- Create keybinding button for Previous Section
+    -- local prevSectionKey = CreateFrame("Button", "TWRA_PrevSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- prevSectionKey:SetWidth(80)
+    -- prevSectionKey:SetHeight(20)
+    -- prevSectionKey:SetPoint("LEFT", prevSectionLabel, "RIGHT", 5, 0)
+    -- prevSectionKey:SetText(prevBinding or "Not bound")
+    -- prevSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, prevSectionKey)
     
-    -- Add handler for the keybinding button
-    prevSectionKey:SetScript("OnClick", function()
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Previous function")
-            self:StartKeyBinding("PREV", "Previous Section", function(key)
-                -- Update the displayed text with the new keybind
-                prevSectionKey:SetText(key or "Not bound")
-            end)
-        else
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- prevSectionKey:SetScript("OnClick", function()
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Previous function")
+    --         self:StartKeyBinding("PREV", "Previous Section", function(key)
+    --             -- Update the displayed text with the new keybind
+    --             prevSectionKey:SetText(key or "Not bound")
+    --         end)
+    --     else
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
     
-    -- ==== TOGGLE OSD KEYBINDING ====
-    -- Create keybinding label for Toggle OSD
-    local toggleOSDLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    toggleOSDLabel:SetPoint("TOPLEFT", prevSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
-    toggleOSDLabel:SetText("Toggle OSD:")
-    toggleOSDLabel:SetWidth(labelWidth)
-    toggleOSDLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, toggleOSDLabel)
+    -- -- ==== TOGGLE OSD KEYBINDING ====
+    -- -- Create keybinding label for Toggle OSD
+    -- local toggleOSDLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- toggleOSDLabel:SetPoint("TOPLEFT", prevSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
+    -- toggleOSDLabel:SetText("Toggle OSD:")
+    -- toggleOSDLabel:SetWidth(labelWidth)
+    -- toggleOSDLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, toggleOSDLabel)
     
-    -- Get current binding for Toggle OSD
-    local osdBinding = GetBindingKey("TWRA_TOGGLE_OSD")
+    -- -- Get current binding for Toggle OSD
+    -- local osdBinding = GetBindingKey("TWRA_TOGGLE_OSD")
     
-    -- Create keybinding button for Toggle OSD
-    local toggleOSDKey = CreateFrame("Button", "TWRA_ToggleOSDKeyButton", leftColumn, "UIPanelButtonTemplate")
-    toggleOSDKey:SetWidth(80)
-    toggleOSDKey:SetHeight(20)
-    toggleOSDKey:SetPoint("LEFT", toggleOSDLabel, "RIGHT", 5, 0)
-    toggleOSDKey:SetText(osdBinding or "Not bound")
-    toggleOSDKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, toggleOSDKey)
+    -- -- Create keybinding button for Toggle OSD
+    -- local toggleOSDKey = CreateFrame("Button", "TWRA_ToggleOSDKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- toggleOSDKey:SetWidth(80)
+    -- toggleOSDKey:SetHeight(20)
+    -- toggleOSDKey:SetPoint("LEFT", toggleOSDLabel, "RIGHT", 5, 0)
+    -- toggleOSDKey:SetText(osdBinding or "Not bound")
+    -- toggleOSDKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, toggleOSDKey)
     
-    -- Add handler for the keybinding button
-    toggleOSDKey:SetScript("OnClick", function()
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Toggle OSD function")
-            self:StartKeyBinding("TOGGLE_OSD", "Toggle OSD", function(key)
-                -- Update the displayed text with the new keybind
-                toggleOSDKey:SetText(key or "Not bound")
-            end)
-        else
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- toggleOSDKey:SetScript("OnClick", function()
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Toggle OSD function")
+    --         self:StartKeyBinding("TOGGLE_OSD", "Toggle OSD", function(key)
+    --             -- Update the displayed text with the new keybind
+    --             toggleOSDKey:SetText(key or "Not bound")
+    --         end)
+    --     else
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
 
     -- ====================== LOAD SAVED VALUES ======================
     -- Get saved options and apply them to the UI elements
