@@ -21,9 +21,6 @@ function TWRA:InitializeHandlerMap()
         VER = self.HandleVersionCommand, -- Version check handler
         BSEC = self.HandleBulkSectionCommand, -- Bulk section handler
         BSTR = self.HandleBulkStructureCommand, -- Bulk structure handler
-        MSREQ = self.HandleMissingSectionsRequestCommand, -- Missing sections request handler
-        MSACK = self.HandleMissingSectionsAckCommand, -- Missing sections acknowledgment handler
-        MSRES = self.HandleMissingSectionResponseCommand, -- Missing section response handler
         BSREQ = self.HandleBulkSyncRequestCommand, -- Bulk sync request handler
         BSACK = self.HandleBulkSyncAckCommand, -- Bulk sync acknowledgment handler
         
@@ -1376,4 +1373,32 @@ end
 function TWRA:CreateVersionMessage(versionString, isIncompatible)
     local suffix = isIncompatible and ":INCOMPATIBLE" or ""
     return self.SYNC.COMMANDS.VERSION .. ":" .. versionString .. suffix
+end
+
+-- Handler for SECTION command to change the current section
+function TWRA:RequestMissingSectionsWhisper(sections, timestamp)
+    -- Replace whisper implementation with group channel request
+    if not sections or table.getn(sections) == 0 then return end
+    
+    -- Use group channel (party/raid) instead of whispers
+    self:RequestMissingSectionsGroup(timestamp)
+end
+
+function TWRA:RequestMissingSectionsGroup(timestamp)
+    -- Use group channel instead of whispers for missing sections
+    local channel = IsInRaid() and "RAID" or IsInGroup() and "PARTY" or nil
+    if not channel then
+        self:Debug("error", "Cannot request missing sections - not in a group")
+        return
+    end
+    
+    -- Create a bulk sync request message instead
+    if self.RequestBulkSync then
+        self:Debug("sync", "Using bulk sync request instead of individual section requests")
+        self:RequestBulkSync(timestamp) -- This uses the proper group channel
+        return true
+    else
+        self:Debug("error", "RequestBulkSync function not available")
+        return false
+    end
 end

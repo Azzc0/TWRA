@@ -194,7 +194,7 @@ function TWRA:CreateBulkStructureMessage(timestamp, structureData)
     return self.SYNC.COMMANDS.BULK_STRUCTURE .. ":" .. timestamp .. ":" .. structureData
 end
 
--- Function to create a version message (VER)
+-- Function to create a version message
 function TWRA:CreateVersionMessage(version)
     return self.SYNC.COMMANDS.VERSION .. ":" .. version
 end
@@ -203,16 +203,6 @@ end
 function TWRA:CreateMissingSectionsRequestMessage(timestamp, sectionList, originalSender)
     -- sectionList should be a comma-separated list of section indices
     return self.SYNC.COMMANDS.MISS_SEC_REQ .. ":" .. timestamp .. ":" .. sectionList .. ":" .. (originalSender or "")
-end
-
--- Function to create a missing sections acknowledgment message (MSACK)
-function TWRA:CreateMissingSectionsAckMessage(timestamp, sectionList, requester)
-    return self.SYNC.COMMANDS.MISS_SEC_ACK .. ":" .. timestamp .. ":" .. sectionList .. ":" .. requester
-end
-
--- Function to create a missing section response message (MSRES)
-function TWRA:CreateMissingSectionResponseMessage(timestamp, sectionIndex, sectionData)
-    return self.SYNC.COMMANDS.MISS_SEC_RESP .. ":" .. timestamp .. ":" .. sectionIndex .. ":" .. sectionData
 end
 
 -- Function to create a bulk sync request message (BSREQ)
