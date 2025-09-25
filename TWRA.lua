@@ -10,6 +10,58 @@ end
 
 -- Addon namespace
 TWRA = TWRA or {}
+TWRA.version = "1.0"
+
+-- Safely convert any value to string
+function TWRA:SafeToString(value)
+    if value == nil then
+        return "nil"
+    elseif type(value) == "table" then
+        return "[Table]"
+    else
+        return tostring(value)
+    end
+end
+
+-- Addon initialization
+function TWRA:Init()
+    self:Debug("info", "TWRA version " .. self.version .. " loaded")
+    
+    -- Run a diagnostic command to help troubleshoot
+    self:Debug("info", "Type /twra debug to test the link and tooltip system")
+end
+
+-- Register for events
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
+frame:SetScript("OnEvent", function(self, event, addon)
+    if addon == "TWRA" then
+        TWRA:Init()
+    end
+end)
+
+-- Slash command handler
+SLASH_TWRA1 = "/twra"
+SlashCmdList["TWRA"] = function(msg)
+    if msg == "debug" then
+        TWRA:TestDebug()
+        
+        -- Test ability link generation
+        local link = TWRA.Links:GetAbilityLink("Arcane Prison")
+        if link then
+            DEFAULT_CHAT_FRAME:AddMessage("Test ability link: " .. link)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff3333TWRA ERROR|r: Could not generate test link")
+        end
+    elseif msg == "tooltip" then
+        -- Test tooltip directly
+        TWRA.Abilities:DisplayAbilityTooltip("Arcane Prison#12345")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99TWRA|r: Available commands:")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Run diagnostic tests")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra tooltip - Test tooltip display")
+    end
+end
 
 -- Navigate to a specific section by index or name
 function TWRA:NavigateToSection(index, source)
@@ -509,58 +561,6 @@ end
 -- Function to check if we're dealing with example data
 function TWRA:IsExampleData(data)
     self:Debug("error", "IsExampleData called from TWRA.lua")
-    if not data then return false end
-    
-    -- Quick check for known example data markers
-    for i = 1, table.getn(data) do
-        if data[i][1] == "Welcome" and 
-           data[i][2] == "Star" and
-           data[i][3] == "Big nasty boss" then
-            return true
-        end
-    end
-    
-    return false
-end
-
--- Announcement functionality - completely rewritten
-function TWRA:AnnounceAssignments()
-    -- Get current section from navigation
-    local currentSection = nil
-    if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
-        currentSection = self.navigation.handlers[self.navigation.currentIndex]
-    end
-    
-    if not currentSection then
-        self:Debug("ui", "No current section to announce")
-        return
-    end
-    
-    self:Debug("ui", "Preparing to announce section: " .. currentSection)
-    
-    -- Get the current section data
-    local sectionData = self:GetCurrentSectionData()
-    if not sectionData then
-        self:Debug("error", "Failed to get section data for " .. currentSection)
-        return
-    end
-    
-    -- First pass: collect all the messages we'll send
-    local messageQueue = {}
-    
-    -- Add section header message with subtle gold color for emphasis
-    table.insert(messageQueue, {
-        text = "|cFFDDCC55Raid Assignments:|r " .. currentSection,
-        type = "header"
-    })
-    
-    -- Get header row
-    local headerRow = sectionData["Section Header"]
-    if not headerRow then
-        self:Debug("error", "No header found in section data")
-        return
-    end
-    
     -- Create column role mapping from header and track the original order of roles
     local columnRoles = {}
     local roleOrder = {}
@@ -587,9 +587,28 @@ function TWRA:AnnounceAssignments()
     
     -- Process normal assignment rows
     if sectionData["Section Rows"] then
+        -- First collect all Note rows to process and announce after regular assignments
+        local noteRows = {}
+        
         for _, rowData in ipairs(sectionData["Section Rows"]) do
-            -- Skip special rows
-            if rowData[1] ~= "Note" and rowData[1] ~= "Warning" and rowData[1] ~= "GUID" then
+            -- Special handling for Note rows - collect them for later processing
+            if rowData[1] == "Note" and rowData[2] then
+                table.insert(noteRows, rowData[2])
+                self:Debug("ui", "Found Note row: " .. rowData[2])
+            -- Special handling for Warning rows - collect them for later processing
+            elseif rowData[1] == "Warning" and rowData[2] then
+                -- Add warning with subtle red highlighting
+                table.insert(messageQueue, {
+                    text = "|cFFDD5555WARNING:|r " .. rowData[2],
+                    type = "warning"
+                })
+                self:Debug("ui", "Found Warning row: " .. rowData[2])
+            -- Skip other special rows
+            elseif rowData[1] == "GUID" then
+                -- Skip GUID rows
+                self:Debug("ui", "Skipping GUID row")
+            else
+                -- Normal assignment row
                 local icon = rowData[1] -- Icon is now column 1
                 local target = rowData[2] or "" -- Target is now column 2
                 local messageText = ""
@@ -671,6 +690,16 @@ function TWRA:AnnounceAssignments()
                 self:Debug("ui", "Assignment message created: " .. messageText)
             end
         end
+        
+        -- Now process all the note rows we collected
+        for _, noteText in ipairs(noteRows) do
+            -- Add notes with blue-ish highlighting
+            table.insert(messageQueue, {
+                text = "|cFF55AADD" .. noteText .. "|r",
+                type = "note"
+            })
+            self:Debug("ui", "Added note to announcement queue: " .. noteText)
+        end
     end
     
     -- Get warnings from Section Metadata
@@ -744,21 +773,43 @@ function TWRA:SendAnnouncementMessages(messageQueue)
             self:Debug("ui", "Announcing [" .. index .. "/" .. table.getn(messagesToSend) .. "]: " .. 
                       msg.text .. " to " .. msg.channel)
             
-            -- Process item links before sending
+            -- Process text for item and ability links before sending
             local processedText = msg.text
-            if self.Items and self.Items.ProcessText then
-                self:Debug("items", "Processing item links in announcement: " .. msg.text)
-                processedText = self.Items:ProcessText(processedText)
+            
+            -- IMPROVED: Use the unified link processing approach that works in OSD
+            -- First try the unified link system which handles both abilities and items
+            if self.Links and self.Links.ProcessAllLinks then
+                self:Debug("links", "Processing links in announcement with unified link system")
+                processedText = self.Links:ProcessAllLinks(processedText)
                 
-                -- Also try to process common consumable names
-                if self.Items.ProcessConsumables then
-                    processedText = self.Items:ProcessConsumables(processedText)
-                end
-                
-                -- Log the processed text for debugging
                 if processedText ~= msg.text then
-                    self:Debug("items", "Processed item links: " .. processedText)
+                    self:Debug("links", "Unified link processing changed text")
                 end
+            else
+                -- Fall back to separate processing if unified system isn't available
+                
+                -- Process ability links first (since they should take precedence)
+                if self.Abilities and self.Abilities.ProcessText then
+                    self:Debug("abilities", "Processing ability links in announcement")
+                    processedText = self.Abilities:ProcessText(processedText)
+                end
+                
+                -- Then process item links
+                if self.Items and self.Items.ProcessText then
+                    self:Debug("items", "Processing item links in announcement")
+                    processedText = self.Items:ProcessText(processedText)
+                    
+                    -- Also try to process common consumable names
+                    if self.Items.ProcessConsumables then
+                        processedText = self.Items:ProcessConsumables(processedText)
+                    end
+                end
+            end
+            
+            -- Log the processed text for debugging
+            if processedText ~= msg.text then
+                self:Debug("links", "Final processed text with links: " .. processedText)
+                self:Debug("ui", "Announcing footer: " .. processedText)
             end
             
             -- Send the actual message
@@ -1072,8 +1123,10 @@ function TWRA:OnUnload()
     if self.DEBUG then
         TWRA_SavedVariables.debug = {
             enabled = self.DEBUG.enabled,
-            level = self.DEBUG.level,
-            categories = self.DEBUG_CATEGORIES
+            logLevel = self.DEBUG.logLevel,  -- FIXED: Using correct property name
+            showDetails = self.DEBUG.showDetails,  -- ADDED: This was missing
+            timestamp = self.DEBUG.showTimestamps,  -- ADDED: This was missing
+            categories = self.DEBUG.categories  -- FIXED: Saving active settings, not defaults
         }
     end
     

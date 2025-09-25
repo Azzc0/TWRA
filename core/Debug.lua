@@ -867,3 +867,69 @@ function TWRA:HandleDebugCommand(args)
         DEFAULT_CHAT_FRAME:AddMessage("TWRA: Unknown debug command. Type '/twra debug' for help.")
     end
 end
+
+function TWRA:InitializeDebug()
+    -- Create DEBUG namespace if it doesn't exist
+    self.DEBUG = self.DEBUG or {}
+    
+    -- Look for saved debug settings
+    local savedDebug = TWRA_SavedVariables and TWRA_SavedVariables.debug
+    
+    -- Initialize with saved settings or defaults
+    self.DEBUG.enabled = savedDebug and savedDebug.enabled or false
+    self.DEBUG.logLevel = savedDebug and savedDebug.logLevel or 1
+    self.DEBUG.showDetails = savedDebug and savedDebug.showDetails or false
+    self.DEBUG.showTimestamps = savedDebug and savedDebug.timestamp or true
+    
+    -- Define debug categories
+    self.DEBUG_CATEGORIES = {
+        ["general"] = true,  -- General debug messages
+        ["error"] = true,    -- Error messages (always shown if debug enabled)
+        ["warning"] = true,  -- Warning messages
+        ["ui"] = true,       -- UI-related messages
+        ["data"] = true,     -- Data-related messages
+        ["nav"] = true,      -- Navigation-related messages 
+        ["items"] = true,    -- Item-related messages
+        ["abilities"] = true, -- Ability-related messages
+        ["links"] = true,    -- CRITICAL: Enable link-related messages by default
+        ["osd"] = false,     -- OSD-related messages
+        ["sync"] = true,     -- Sync-related messages
+        ["perf"] = false,    -- Performance-related messages
+        ["whisper"] = false, -- Whisper-related messages
+    }
+    
+    -- Initialize categories from saved settings or defaults
+    self.DEBUG.categories = {}
+    if savedDebug and savedDebug.categories then
+        -- Copy saved categories
+        for category, enabled in pairs(savedDebug.categories) do
+            self.DEBUG.categories[category] = enabled
+        end
+        
+        -- Add any missing categories from defaults
+        for category, enabled in pairs(self.DEBUG_CATEGORIES) do
+            if self.DEBUG.categories[category] == nil then
+                self.DEBUG.categories[category] = enabled
+            end
+        end
+        
+        -- CRITICAL: Ensure the links category is enabled for debugging
+        self.DEBUG.categories["links"] = true
+    else
+        -- No saved categories, use defaults
+        for category, enabled in pairs(self.DEBUG_CATEGORIES) do
+            self.DEBUG.categories[category] = enabled
+        end
+    end
+    
+    -- Make sure links category is enabled
+    self.DEBUG.categories["links"] = true
+    
+    -- Log initialization
+    if self.DEBUG.enabled then
+        self:Debug("general", "Debug system initialized with " .. 
+                  self:GetTableSize(self.DEBUG.categories) .. " categories")
+    end
+    
+    return true
+end

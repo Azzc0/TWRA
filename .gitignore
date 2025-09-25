@@ -6,3 +6,6 @@ textures/BLPConverter.exe
 # Ignore textures/old folder
 textures/old/
 Test.lua
+
+# Ignore pfQuest reference directory
+pfQuest/

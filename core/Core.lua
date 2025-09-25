@@ -834,3 +834,26 @@ function TWRA:OnPartyMembersChanged()
     -- Forward to OnGroupChanged for consistent handling
     self:OnGroupChanged()
 end
+
+-- Function to initialize the link hooking system properly 
+function TWRA:InitializeLinkHooks()
+    self:Debug("links", "Link hooks now handled by LinkClickHandler.lua")
+    
+    -- This function is now just a stub since the actual implementation
+    -- is in LinkClickHandler.lua for better focus and reliability
+    
+    return true
+end
+
+-- Utility function to convert hex color to RGB
+function TWRA:HexToRGB(hex)
+    hex = hex:gsub("#","")
+    if string.len(hex) == 6 then
+        return tonumber("0x"..hex:sub(1,2)) / 255, 
+               tonumber("0x"..hex:sub(3,4)) / 255, 
+               tonumber("0x"..hex:sub(5,6)) / 255
+    else
+        -- Default to white if invalid hex
+        return 1, 1, 1
+    end
+end

@@ -1113,7 +1113,7 @@ function TWRA:CreateWarnings(footerContainer)
     end
     
     -- Get metadata
-    local metadata = currentSectionData["Section Metadata"]
+    local metadata = currentSectionData and currentSectionData["Section Metadata"]
     if not metadata then
         self:Debug("osd", "No metadata found in section, creating default warning")
     end
@@ -1121,7 +1121,7 @@ function TWRA:CreateWarnings(footerContainer)
     -- Get warnings
     local warnings = metadata and metadata["Warning"] or {}
     
-    -- Get notes (adding this part)
+    -- Get notes
     local notes = metadata and metadata["Note"] or {}
     
     -- Check if notes should be displayed in OSD
@@ -1131,249 +1131,28 @@ function TWRA:CreateWarnings(footerContainer)
         showNotesInOSD = TWRA_SavedVariables.options.osd.showNotes
     end
     
-    -- Height of each row and spacing
-    local rowHeight = 20
-    local rowSpacing = 1 -- 1px spacing between rows
     local totalHeight = 0
-    
-    -- Create a test font string to calculate text widths accurately
-    local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    testString:Hide() -- Keep it invisible
-    
-    -- Calculate fixed parameters for text fitting once
-    local parentFrame = footerContainer:GetParent()
-    local containerWidth = parentFrame:GetWidth() or 400
-    local iconWidth = 16
-    local leftPadding = 5
-    local iconTextGap = 5
-    local rightPadding = 5
-    local availableWidth = containerWidth - iconWidth - leftPadding - iconTextGap - rightPadding
-    
-    -- Helper function to create a single warning row
-    local function createWarningRow(warningText, yOffset)
-        -- Create background
-        local warningBg = footerContainer:CreateTexture(nil, "BACKGROUND")
-        warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Red background
-        warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
-        warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
-        warningBg:SetHeight(rowHeight)
-        
-        -- Create warning icon
-        local warningIcon = footerContainer:CreateTexture(nil, "OVERLAY")
-        local iconInfo = {"Interface\\GossipFrame\\AvailableQuestIcon", 0, 1, 0, 1}
-        warningIcon:SetTexture(iconInfo[1])
-        warningIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-        warningIcon:SetWidth(16)
-        warningIcon:SetHeight(16)
-        warningIcon:SetPoint("LEFT", warningBg, "LEFT", leftPadding, 0)
-        
-        -- Process warning text for item links
-        local processedText = warningText
-        if self.Items and self.Items.EnhancedProcessText then
-            processedText = self.Items:EnhancedProcessText(warningText)
-            self:Debug("osd", "Processed warning text for item links with EnhancedProcessText")
-        elseif self.Items and self.Items.ProcessText then
-            processedText = self.Items:ProcessText(warningText)
-            self:Debug("osd", "Processed warning text for item links")
-        end
-        
-        -- Create warning text
-        local warnText = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        warnText:SetPoint("LEFT", warningIcon, "RIGHT", iconTextGap, 0)
-        warnText:SetPoint("RIGHT", warningBg, "RIGHT", -rightPadding, 0)
-        warnText:SetHeight(rowHeight)
-        warnText:SetJustifyH("LEFT")
-        
-        -- Measure text and truncate if needed
-        testString:SetText(processedText)
-        local fullTextWidth = testString:GetStringWidth()
-        
-        -- Truncate text if it's too long using simpler approach
-        if fullTextWidth > availableWidth then
-            -- Calculate approximate character width
-            local avgCharWidth = fullTextWidth / string.len(processedText)
-            -- Estimate how many characters will fit
-            local fitChars = math.floor(availableWidth / avgCharWidth) - 3 -- leave room for ellipsis
-            -- Apply upper limit to ensure we don't go out of bounds
-            fitChars = math.min(fitChars, string.len(processedText))
-            
-            local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
-            warnText:SetText(truncatedText)
-        else
-            warnText:SetText(processedText)
-        end
-        
-        -- Set text color
-        warnText:SetTextColor(1, 0.7, 0.7) -- Light red for warnings
-        
-        -- Make the row clickable to announce to raid
-        local clickArea = CreateFrame("Button", nil, footerContainer)
-        clickArea:SetAllPoints(warningBg)
-        clickArea:SetScript("OnEnter", function()
-            warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Highlight on hover
-            GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Click to announce to raid")
-            GameTooltip:Show()
-        end)
-        
-        clickArea:SetScript("OnLeave", function()
-            warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Original color
-            GameTooltip:Hide()
-        end)
-        
-        clickArea:SetScript("OnClick", function()
-            -- Process the warning text with item links before announcing
-            local announcementText = warningText
-            if self.Items and self.Items.EnhancedProcessText then
-                announcementText = self.Items:EnhancedProcessText(warningText)
-            elseif self.Items and self.Items.ProcessText then
-                announcementText = self.Items:ProcessText(warningText)
-            end
-            
-            -- Always try raid warning first, then fall back to raid announcement
-            -- Ignore channel settings for warnings from OSD
-            local success = false
-            
-            -- Try raid warning first
-            if IsRaidOfficer() or IsRaidLeader() then
-                SendChatMessage(announcementText, "RAID_WARNING")
-                success = true
-            end
-            
-            -- Fall back to raid announcement if raid warning failed
-            if not success then
-                SendChatMessage(announcementText, "RAID")
-            end
-            
-            -- Visual feedback
-            warningBg:SetTexture(0.7, 0.1, 0.1, 0.7)
-            self:ScheduleTimer(function()
-                if MouseIsOver(clickArea) then
-                    warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Hover color
-                else
-                    warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Original color
-                end
-            end, 0.2)
-        end)
-        
-        return rowHeight + rowSpacing
-    end
-    
-    -- Helper function to create a single note row
-    local function createNoteRow(noteText, yOffset)
-        -- Create background
-        local noteBg = footerContainer:CreateTexture(nil, "BACKGROUND")
-        noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Blue background (similar to Frame.lua)
-        noteBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
-        noteBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
-        noteBg:SetHeight(rowHeight)
-        
-        -- Create note icon (question mark like in Frame.lua)
-        local noteIcon = footerContainer:CreateTexture(nil, "OVERLAY")
-        local iconInfo = {"Interface\\GossipFrame\\ActiveQuestIcon", 0, 1, 0, 1}
-        noteIcon:SetTexture(iconInfo[1])
-        noteIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
-        noteIcon:SetWidth(16)
-        noteIcon:SetHeight(16)
-        noteIcon:SetPoint("LEFT", noteBg, "LEFT", leftPadding, 0)
-        
-        -- Process note text for item links
-        local processedText = noteText
-        if self.Items and self.Items.EnhancedProcessText then
-            processedText = self.Items:EnhancedProcessText(noteText)
-        elseif self.Items and self.Items.ProcessText then
-            processedText = self.Items:ProcessText(noteText)
-        end
-        
-        -- Create note text
-        local noteTextElement = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        noteTextElement:SetPoint("LEFT", noteIcon, "RIGHT", iconTextGap, 0)
-        noteTextElement:SetPoint("RIGHT", noteBg, "RIGHT", -rightPadding, 0)
-        noteTextElement:SetHeight(rowHeight)
-        noteTextElement:SetJustifyH("LEFT")
-        
-        -- Measure text and truncate if needed
-        testString:SetText(processedText)
-        local fullTextWidth = testString:GetStringWidth()
-        
-        -- Truncate text if it's too long
-        if fullTextWidth > availableWidth then
-            local avgCharWidth = fullTextWidth / string.len(processedText)
-            local fitChars = math.floor(availableWidth / avgCharWidth) - 3
-            fitChars = math.min(fitChars, string.len(processedText))
-            
-            local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
-            noteTextElement:SetText(truncatedText)
-        else
-            noteTextElement:SetText(processedText)
-        end
-        
-        -- Set text color
-        noteTextElement:SetTextColor(0.85, 0.85, 1) -- Light blue for notes (same as Frame.lua)
-        
-        -- Make the row clickable to announce to raid chat (not raid warning)
-        local clickArea = CreateFrame("Button", nil, footerContainer)
-        clickArea:SetAllPoints(noteBg)
-        clickArea:SetScript("OnEnter", function()
-            noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Highlight on hover
-            GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Click to announce to raid chat")
-            GameTooltip:Show()
-        end)
-        
-        clickArea:SetScript("OnLeave", function()
-            noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Original color
-            GameTooltip:Hide()
-        end)
-        
-        clickArea:SetScript("OnClick", function()
-            -- Process the note text with item links before announcing
-            local announcementText = noteText
-            if self.Items and self.Items.EnhancedProcessText then
-                announcementText = self.Items:EnhancedProcessText(noteText)
-            elseif self.Items and self.Items.ProcessText then
-                announcementText = self.Items:ProcessText(noteText)
-            end
-            
-            -- For notes, always use raid announcement (no raid warning)
-            SendChatMessage(announcementText, "RAID")
-            
-            -- Visual feedback
-            noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Bright blue flash
-            self:ScheduleTimer(function()
-                if MouseIsOver(clickArea) then
-                    noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Hover color
-                else
-                    noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Original color
-                end
-            end, 0.2)
-        end)
-        
-        return rowHeight + rowSpacing
-    end
     
     -- Create all warning rows first
     for _, warningText in ipairs(warnings) do
-        local rowHeight = createWarningRow(warningText, totalHeight)
+        local rowHeight = self:CreateWarningRow(footerContainer, warningText, totalHeight)
         totalHeight = totalHeight + rowHeight
     end
     
     -- Then create all note rows if enabled
     if showNotesInOSD then
         for _, noteText in ipairs(notes) do
-            local rowHeight = createNoteRow(noteText, totalHeight)
+            local rowHeight = self:CreateNoteRow(footerContainer, noteText, totalHeight)
             totalHeight = totalHeight + rowHeight
         end
     end
     
-    -- Set footer height based on all rows (subtract the last spacing)
+    -- Set footer height based on all rows (subtract the last spacing if needed)
     if totalHeight > 0 then
-        totalHeight = totalHeight - rowSpacing -- Remove the last spacing
+        totalHeight = totalHeight - 1 -- Remove the last spacing (1px)
     end
-    footerContainer:SetHeight(totalHeight)
     
-    -- Clean up the test string
-    testString:Hide()
+    footerContainer:SetHeight(totalHeight)
     
     self:Debug("osd", "Created footer container with " .. table.getn(warnings) .. " warnings and " .. 
                (showNotesInOSD and table.getn(notes) or 0) .. " notes")
@@ -1679,4 +1458,225 @@ function TWRA:ResetOSDPosition()
     end
     
     return true
+end
+
+-- Helper function to create a single warning row with ability icons support
+function TWRA:CreateWarningRow(footerContainer, warningText, yOffset)
+    -- Create background
+    local warningBg = footerContainer:CreateTexture(nil, "BACKGROUND")
+    warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Red background
+    warningBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
+    warningBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
+    warningBg:SetHeight(20) -- rowHeight
+    
+    -- Create warning icon
+    local warningIcon = footerContainer:CreateTexture(nil, "OVERLAY")
+    local iconInfo = {"Interface\\GossipFrame\\AvailableQuestIcon", 0, 1, 0, 1}
+    warningIcon:SetTexture(iconInfo[1])
+    warningIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    warningIcon:SetWidth(16)
+    warningIcon:SetHeight(16)
+    warningIcon:SetPoint("LEFT", warningBg, "LEFT", 5, 0)
+    
+    -- Process warning text for item and ability links
+    local processedText = warningText
+    if self.Links and self.Links.ProcessAllLinks then
+        processedText = self.Links:ProcessAllLinks(warningText)
+        self:Debug("osd", "Processed warning text for links with unified system")
+    elseif self.Items and self.Items.EnhancedProcessText then
+        processedText = self.Items:EnhancedProcessText(warningText)
+        self:Debug("osd", "Processed warning text for links with EnhancedProcessText")
+    elseif self.Items and self.Items.ProcessText then
+        processedText = self.Items:ProcessText(warningText)
+        self:Debug("osd", "Processed warning text for item links only")
+    end
+    
+    -- Create warning text using a FontString that supports clickable links
+    local warnText = CreateFrame("SimpleHTML", nil, footerContainer)
+    warnText:SetPoint("LEFT", warningIcon, "RIGHT", 5, 0)
+    warnText:SetPoint("RIGHT", warningBg, "RIGHT", -5, 0)
+    warnText:SetHeight(20) -- rowHeight
+    warnText:SetFontObject("GameFontNormal")
+    
+    -- Set HTML attributes to allow links to be clickable
+    warnText:SetHyperlinksEnabled(true)
+    warnText:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        SetItemRef(link, text, button)
+    end)
+    
+    -- Measure and truncate text if needed
+    local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    testString:SetText(processedText)
+    testString:Hide()
+    
+    local containerWidth = footerContainer:GetParent():GetWidth() or 400
+    local availableWidth = containerWidth - 16 - 5 - 5 - 5
+    local fullTextWidth = testString:GetStringWidth()
+    
+    if fullTextWidth > availableWidth then
+        local avgCharWidth = fullTextWidth / string.len(processedText)
+        local fitChars = math.floor(availableWidth / avgCharWidth) - 3
+        fitChars = math.min(fitChars, string.len(processedText))
+        
+        local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
+        warnText:SetText("|cffb2b2b2" .. truncatedText .. "|r")
+    else
+        warnText:SetText("|cffb2b2b2" .. processedText .. "|r")
+    end
+    
+    -- Make the row clickable to announce to raid
+    local clickArea = CreateFrame("Button", nil, footerContainer)
+    clickArea:SetAllPoints(warningBg)
+    clickArea:SetScript("OnEnter", function()
+        warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Highlight on hover
+        GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Click to announce to raid")
+        GameTooltip:Show()
+    end)
+    
+    clickArea:SetScript("OnLeave", function()
+        warningBg:SetTexture(0.3, 0.1, 0.1, 0.3) -- Original color
+        GameTooltip:Hide()
+    end)
+    
+    clickArea:SetScript("OnClick", function()
+        -- Process the warning text with item links before announcing
+        local announcementText = warningText
+        if self.Links and self.Links.ProcessAllLinks then
+            announcementText = self.Links:ProcessAllLinks(warningText)
+        elseif self.Items and self.Items.EnhancedProcessText then
+            announcementText = self.Items:EnhancedProcessText(warningText)
+        elseif self.Items and self.Items.ProcessText then
+            announcementText = self.Items:ProcessText(warningText)
+        end
+        
+        -- Always try raid warning first, then fall back to raid announcement
+        local success = false
+        
+        if IsRaidOfficer() or IsRaidLeader() then
+            SendChatMessage(announcementText, "RAID_WARNING")
+            success = true
+        end
+        
+        -- Fall back to raid announcement if raid warning failed
+        if not success then
+            SendChatMessage(announcementText, "RAID")
+        end
+        
+        -- Visual feedback
+        warningBg:SetTexture(0.7, 0.1, 0.1, 0.7)
+        self:ScheduleTimer(function()
+            if MouseIsOver(clickArea) then
+                warningBg:SetTexture(0.5, 0.1, 0.1, 0.5)
+            else
+                warningBg:SetTexture(0.3, 0.1, 0.1, 0.3)
+            end
+        end, 0.2)
+    end)
+    
+    return 21 -- rowHeight + rowSpacing
+end
+
+-- Helper function to create a single note row with ability icons support
+function TWRA:CreateNoteRow(footerContainer, noteText, yOffset)
+    -- Create background
+    local noteBg = footerContainer:CreateTexture(nil, "BACKGROUND")
+    noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Blue background
+    noteBg:SetPoint("TOPLEFT", footerContainer, "TOPLEFT", 0, -yOffset)
+    noteBg:SetPoint("TOPRIGHT", footerContainer, "TOPRIGHT", 0, -yOffset)
+    noteBg:SetHeight(20) -- rowHeight
+    
+    -- Create note icon
+    local noteIcon = footerContainer:CreateTexture(nil, "OVERLAY")
+    local iconInfo = {"Interface\\GossipFrame\\ActiveQuestIcon", 0, 1, 0, 1}
+    noteIcon:SetTexture(iconInfo[1])
+    noteIcon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+    noteIcon:SetWidth(16)
+    noteIcon:SetHeight(16)
+    noteIcon:SetPoint("LEFT", noteBg, "LEFT", 5, 0)
+    
+    -- Process note text for item and ability links
+    local processedText = noteText
+    if self.Links and self.Links.ProcessAllLinks then
+        processedText = self.Links:ProcessAllLinks(noteText)
+        self:Debug("osd", "Processed note text for links with unified system")
+    elseif self.Items and self.Items.EnhancedProcessText then
+        processedText = self.Items:EnhancedProcessText(noteText)
+        self:Debug("osd", "Processed note text for links with EnhancedProcessText")
+    elseif self.Items and self.Items.ProcessText then
+        processedText = self.Items:ProcessText(noteText)
+        self:Debug("osd", "Processed note text for item links only")
+    end
+    
+    -- Create note text
+    local noteTextElement = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    noteTextElement:SetPoint("LEFT", noteIcon, "RIGHT", 5, 0)
+    noteTextElement:SetPoint("RIGHT", noteBg, "RIGHT", -5, 0)
+    noteTextElement:SetHeight(20) -- rowHeight
+    noteTextElement:SetJustifyH("LEFT")
+    
+    -- Measure and truncate text if needed
+    local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    testString:SetText(processedText)
+    testString:Hide()
+    
+    local containerWidth = footerContainer:GetParent():GetWidth() or 400
+    local availableWidth = containerWidth - 16 - 5 - 5 - 5
+    local fullTextWidth = testString:GetStringWidth()
+    
+    if fullTextWidth > availableWidth then
+        local avgCharWidth = fullTextWidth / string.len(processedText)
+        local fitChars = math.floor(availableWidth / avgCharWidth) - 3
+        fitChars = math.min(fitChars, string.len(processedText))
+        
+        local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
+        noteTextElement:SetText(truncatedText)
+    else
+        noteTextElement:SetText(processedText)
+    end
+    
+    -- Set text color
+    noteTextElement:SetTextColor(0.85, 0.85, 1) -- Light blue for notes
+    
+    -- Make the row clickable to announce to raid chat
+    local clickArea = CreateFrame("Button", nil, footerContainer)
+    clickArea:SetAllPoints(noteBg)
+    clickArea:SetScript("OnEnter", function()
+        noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Highlight on hover
+        GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Click to announce to raid chat")
+        GameTooltip:Show()
+    end)
+    
+    clickArea:SetScript("OnLeave", function()
+        noteBg:SetTexture(0.1, 0.1, 0.3, 0.15) -- Original color
+        GameTooltip:Hide()
+    end)
+    
+    clickArea:SetScript("OnClick", function()
+        -- Process the note text with item links before announcing
+        local announcementText = noteText
+        if self.Links and self.Links.ProcessAllLinks then
+            announcementText = self.Links:ProcessAllLinks(noteText)
+        elseif self.Items and self.Items.EnhancedProcessText then
+            announcementText = self.Items:EnhancedProcessText(noteText)
+        elseif self.Items and self.Items.ProcessText then
+            announcementText = self.Items:ProcessText(noteText)
+        end
+        
+        -- For notes, always use raid announcement
+        SendChatMessage(announcementText, "RAID")
+        
+        -- Visual feedback
+        noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Bright blue flash
+        self:ScheduleTimer(function()
+            if MouseIsOver(clickArea) then
+                noteBg:SetTexture(0.1, 0.1, 0.7, 0.3)
+            else
+                noteBg:SetTexture(0.1, 0.1, 0.3, 0.15)
+            end
+        end, 0.2)
+    end)
+    
+    return 21 -- rowHeight + rowSpacing
 end

@@ -42,7 +42,9 @@ features\AutoTanks.lua
 features\AutoNavigate.lua
 
 # Utility modules
-core\ItemLink.lua
+core\Linking.lua
+core\LinkClickHandler.lua
+core\AbilityLinks.lua
 sync\SyncHandlers.lua
 sync\ChunkManager.lua
 sync\Sync.lua
