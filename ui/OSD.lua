@@ -1480,19 +1480,29 @@ function TWRA:CreateWarningRow(footerContainer, warningText, yOffset)
     
     -- Process warning text for item and ability links
     local processedText = warningText
-    if self.Links and self.Links.ProcessAllLinks then
-        processedText = self.Links:ProcessAllLinks(warningText)
-        self:Debug("osd", "Processed warning text for links with unified system")
-    elseif self.Items and self.Items.EnhancedProcessText then
-        processedText = self.Items:EnhancedProcessText(warningText)
-        self:Debug("osd", "Processed warning text for links with EnhancedProcessText")
-    elseif self.Items and self.Items.ProcessText then
-        processedText = self.Items:ProcessText(warningText)
-        self:Debug("osd", "Processed warning text for item links only")
+    
+    -- Process the text using correct sequence:
+    -- 1. First process actual item links (maintain their colors)
+    if self.Items and self.Items.ProcessText then
+        processedText = self.Items:ProcessText(processedText)
+        self:Debug("osd", "Processed warning text for item links")
     end
     
-    -- Create warning text using a FontString that supports clickable links
+    -- 2. Then process for ability links (avoiding modifying item links)
+    if self.ProcessTextForAbilityLinks then
+        processedText = self:ProcessTextForAbilityLinks(processedText)
+        self:Debug("osd", "Processed warning text for ability links")
+    end
+    
+    -- 3. Use unified system only if available and previous steps didn't modify text
+    if processedText == warningText and self.Links and self.Links.ProcessAllLinks then
+        processedText = self.Links:ProcessAllLinks(processedText)
+        self:Debug("osd", "Processed warning text with unified system")
+    end
+    
+    -- Create warning text using a SimpleHTML that supports clickable links and set to DIALOG strata
     local warnText = CreateFrame("SimpleHTML", nil, footerContainer)
+    warnText:SetFrameStrata("DIALOG") -- Set higher strata than the clickable overlay
     warnText:SetPoint("LEFT", warningIcon, "RIGHT", 5, 0)
     warnText:SetPoint("RIGHT", warningBg, "RIGHT", -5, 0)
     warnText:SetHeight(20) -- rowHeight
@@ -1501,7 +1511,16 @@ function TWRA:CreateWarningRow(footerContainer, warningText, yOffset)
     -- Set HTML attributes to allow links to be clickable
     warnText:SetHyperlinksEnabled(true)
     warnText:SetScript("OnHyperlinkClick", function(self, link, text, button)
-        SetItemRef(link, text, button)
+        -- Handle link clicks
+        if IsShiftKeyDown() then
+            -- Insert into chat if shift is held down
+            if ChatFrameEditBox and ChatFrameEditBox:IsVisible() then
+                ChatFrameEditBox:Insert(text)
+            end
+        else
+            -- Normal click - show tooltip or other default behavior
+            SetItemRef(link, text, button)
+        end
     end)
     
     -- Measure and truncate text if needed
@@ -1519,19 +1538,23 @@ function TWRA:CreateWarningRow(footerContainer, warningText, yOffset)
         fitChars = math.min(fitChars, string.len(processedText))
         
         local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
-        warnText:SetText("|cffb2b2b2" .. truncatedText .. "|r")
+        warnText:SetText(truncatedText)
     else
-        warnText:SetText("|cffb2b2b2" .. processedText .. "|r")
+        warnText:SetText(processedText)
     end
     
-    -- Make the row clickable to announce to raid
+    -- Make the row clickable to announce to raid (only when Ctrl is pressed)
     local clickArea = CreateFrame("Button", nil, footerContainer)
     clickArea:SetAllPoints(warningBg)
+    clickArea:SetFrameStrata("MEDIUM") -- Lower strata than the text
     clickArea:SetScript("OnEnter", function()
-        warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Highlight on hover
-        GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Click to announce to raid")
-        GameTooltip:Show()
+        if IsControlKeyDown() then
+            -- Only show highlight when CTRL is pressed
+            warningBg:SetTexture(0.5, 0.1, 0.1, 0.5) -- Highlight on hover with CTRL
+            GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("CTRL+Click to announce to raid")
+            GameTooltip:Show()
+        end
     end)
     
     clickArea:SetScript("OnLeave", function()
@@ -1540,38 +1563,44 @@ function TWRA:CreateWarningRow(footerContainer, warningText, yOffset)
     end)
     
     clickArea:SetScript("OnClick", function()
-        -- Process the warning text with item links before announcing
-        local announcementText = warningText
-        if self.Links and self.Links.ProcessAllLinks then
-            announcementText = self.Links:ProcessAllLinks(warningText)
-        elseif self.Items and self.Items.EnhancedProcessText then
-            announcementText = self.Items:EnhancedProcessText(warningText)
-        elseif self.Items and self.Items.ProcessText then
-            announcementText = self.Items:ProcessText(warningText)
-        end
-        
-        -- Always try raid warning first, then fall back to raid announcement
-        local success = false
-        
-        if IsRaidOfficer() or IsRaidLeader() then
-            SendChatMessage(announcementText, "RAID_WARNING")
-            success = true
-        end
-        
-        -- Fall back to raid announcement if raid warning failed
-        if not success then
-            SendChatMessage(announcementText, "RAID")
-        end
-        
-        -- Visual feedback
-        warningBg:SetTexture(0.7, 0.1, 0.1, 0.7)
-        self:ScheduleTimer(function()
-            if MouseIsOver(clickArea) then
-                warningBg:SetTexture(0.5, 0.1, 0.1, 0.5)
-            else
-                warningBg:SetTexture(0.3, 0.1, 0.1, 0.3)
+        -- Only announce if CTRL is held down
+        if IsControlKeyDown() then
+            -- Process the warning text for announcing to chat
+            local announcementText = warningText
+            
+            -- Process items first to maintain proper links
+            if self.Items and self.Items.ProcessText then
+                announcementText = self.Items:ProcessText(announcementText)
             end
-        end, 0.2)
+            
+            -- Then process ability links
+            if self.ProcessTextForAbilityLinks then
+                announcementText = self:ProcessTextForAbilityLinks(announcementText)
+            end
+            
+            -- Always try raid warning first, then fall back to raid announcement
+            local success = false
+            
+            if IsRaidOfficer() or IsRaidLeader() then
+                SendChatMessage(announcementText, "RAID_WARNING")
+                success = true
+            end
+            
+            -- Fall back to raid announcement if raid warning failed
+            if not success then
+                SendChatMessage(announcementText, "RAID")
+            end
+            
+            -- Visual feedback
+            warningBg:SetTexture(0.7, 0.1, 0.1, 0.7)
+            self:ScheduleTimer(function()
+                if MouseIsOver(clickArea) and IsControlKeyDown() then
+                    warningBg:SetTexture(0.5, 0.1, 0.1, 0.5)
+                else
+                    warningBg:SetTexture(0.3, 0.1, 0.1, 0.3)
+                end
+            end, 0.2)
+        end
     end)
     
     return 21 -- rowHeight + rowSpacing
@@ -1597,15 +1626,24 @@ function TWRA:CreateNoteRow(footerContainer, noteText, yOffset)
     
     -- Process note text for item and ability links
     local processedText = noteText
-    if self.Links and self.Links.ProcessAllLinks then
-        processedText = self.Links:ProcessAllLinks(noteText)
-        self:Debug("osd", "Processed note text for links with unified system")
-    elseif self.Items and self.Items.EnhancedProcessText then
-        processedText = self.Items:EnhancedProcessText(noteText)
-        self:Debug("osd", "Processed note text for links with EnhancedProcessText")
-    elseif self.Items and self.Items.ProcessText then
-        processedText = self.Items:ProcessText(noteText)
-        self:Debug("osd", "Processed note text for item links only")
+    
+    -- Process the text using correct sequence:
+    -- 1. First process actual item links (maintain their colors)
+    if self.Items and self.Items.ProcessText then
+        processedText = self.Items:ProcessText(processedText)
+        self:Debug("osd", "Processed note text for item links")
+    end
+    
+    -- 2. Then process for ability links (avoiding modifying item links)
+    if self.ProcessTextForAbilityLinks then
+        processedText = self:ProcessTextForAbilityLinks(processedText)
+        self:Debug("osd", "Processed note text for ability links")
+    end
+    
+    -- 3. Use unified system only if available and previous steps didn't modify text
+    if processedText == noteText and self.Links and self.Links.ProcessAllLinks then
+        processedText = self.Links:ProcessAllLinks(processedText)
+        self:Debug("osd", "Processed note text with unified system")
     end
     
     -- Create note text
@@ -1636,7 +1674,7 @@ function TWRA:CreateNoteRow(footerContainer, noteText, yOffset)
     end
     
     -- Set text color
-    noteTextElement:SetTextColor(0.85, 0.85, 1) -- Light blue for notes
+    noteTextElement:SetTextColor(1, 1, 1) -- Changed from light blue to white
     
     -- Make the row clickable to announce to raid chat
     local clickArea = CreateFrame("Button", nil, footerContainer)
@@ -1654,14 +1692,17 @@ function TWRA:CreateNoteRow(footerContainer, noteText, yOffset)
     end)
     
     clickArea:SetScript("OnClick", function()
-        -- Process the note text with item links before announcing
+        -- Process the note text for announcing to chat
         local announcementText = noteText
-        if self.Links and self.Links.ProcessAllLinks then
-            announcementText = self.Links:ProcessAllLinks(noteText)
-        elseif self.Items and self.Items.EnhancedProcessText then
-            announcementText = self.Items:EnhancedProcessText(noteText)
-        elseif self.Items and self.Items.ProcessText then
-            announcementText = self.Items:ProcessText(noteText)
+        
+        -- Process items first to maintain proper links
+        if self.Items and self.Items.ProcessText then
+            announcementText = self.Items:ProcessText(announcementText)
+        end
+        
+        -- Then process ability links
+        if self.ProcessTextForAbilityLinks then
+            announcementText = self:ProcessTextForAbilityLinks(announcementText)
         end
         
         -- For notes, always use raid announcement

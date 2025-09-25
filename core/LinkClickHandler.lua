@@ -6,6 +6,119 @@ TWRA = TWRA or {}
 -- Store the original function reference
 local originalSetItemRef = SetItemRef
 
+-- Format ability links to hide spell IDs in the displayed text
+function TWRA:FormatAbilityLink(abilityName, abilityID)
+    -- Always use the name without ID for display
+    local displayText = abilityName
+    
+    -- But keep the ID in the actual link data for proper identification
+    local linkData = "twra:" .. abilityName .. ":" .. (abilityID or "0")
+    
+    -- Use the standard ability color (light blue) for display
+    local colorHex = "71d5ff" -- Light blue color for abilities
+    
+    -- Format the link with hidden ID but properly colored
+    return "|cff" .. colorHex .. "|H" .. linkData .. "|h[" .. displayText .. "]|h|r"
+end
+
+-- Helper function to detect if text is an item link
+function TWRA:IsItemLink(text)
+    -- Check for standard item link pattern - the pattern needs to match the full colored item links
+    return text and type(text) == "string" and string.find(text, "|c%x+|Hitem:[^|]+|h%[[^%]]+%]|h|r") ~= nil
+end
+
+-- Process text to replace ability name patterns with ability links
+function TWRA:ProcessTextForAbilityLinks(text)
+    if not text or type(text) ~= "string" then
+        return text or ""
+    end
+    
+    -- For mixed content with item links, we need to process each part separately
+    local result = ""
+    local lastPos = 1
+    local itemStart, itemEnd = string.find(text, "|c%x+|Hitem:[^|]+|h%[[^%]]+%]|h|r", lastPos)
+    
+    -- If no item links found, just process the whole text
+    if not itemStart then
+        -- Look for [AbilityName] patterns
+        text = string.gsub(text, "%[([^%]:]+)%]", function(abilityName)
+            -- Skip if this is part of an existing link
+            if string.find(abilityName, "|H") then
+                return "[" .. abilityName .. "]"
+            end
+            -- Simple ability name without ID
+            return "|cff71d5ff|Htwra:" .. abilityName .. ":0|h[" .. abilityName .. "]|h|r"
+        end)
+        
+        -- Look for [AbilityName:ID] patterns and replace with [AbilityName] visually
+        text = string.gsub(text, "%[([^%]]+):(%d+)%]", function(abilityName, abilityID)
+            -- Skip if this is part of an existing link
+            if string.find(abilityName, "|H") then
+                return "[" .. abilityName .. ":" .. abilityID .. "]"
+            end
+            return "|cff71d5ff|Htwra:" .. abilityName .. ":" .. abilityID .. "|h[" .. abilityName .. "]|h|r"
+        end)
+        
+        return text
+    end
+    
+    -- Process text with item links - split into segments
+    while itemStart do
+        -- Process text before the item link
+        local beforeItem = string.sub(text, lastPos, itemStart - 1)
+        beforeItem = string.gsub(beforeItem, "%[([^%]:]+)%]", function(abilityName)
+            -- Skip if this is part of an existing link
+            if string.find(abilityName, "|H") then
+                return "[" .. abilityName .. "]"
+            end
+            -- Simple ability name without ID
+            return "|cff71d5ff|Htwra:" .. abilityName .. ":0|h[" .. abilityName .. "]|h|r"
+        end)
+        
+        beforeItem = string.gsub(beforeItem, "%[([^%]]+):(%d+)%]", function(abilityName, abilityID)
+            -- Skip if this is part of an existing link
+            if string.find(abilityName, "|H") then
+                return "[" .. abilityName .. ":" .. abilityID .. "]"
+            end
+            return "|cff71d5ff|Htwra:" .. abilityName .. ":" .. abilityID .. "|h[" .. abilityName .. "]|h|r"
+        end)
+        
+        -- Add the processed text before the item and the item itself
+        result = result .. beforeItem .. string.sub(text, itemStart, itemEnd)
+        
+        -- Move past this item link
+        lastPos = itemEnd + 1
+        
+        -- Look for next item link
+        itemStart, itemEnd = string.find(text, "|c%x+|Hitem:[^|]+|h%[[^%]]+%]|h|r", lastPos)
+    end
+    
+    -- Process any remaining text after the last item link
+    if lastPos <= string.len(text) then
+        local afterItems = string.sub(text, lastPos)
+        afterItems = string.gsub(afterItems, "%[([^%]:]+)%]", function(abilityName)
+            -- Skip if this is part of an existing link
+            if string.find(abilityName, "|H") then
+                return "[" .. abilityName .. "]"
+            end
+            -- Simple ability name without ID
+            return "|cff71d5ff|Htwra:" .. abilityName .. ":0|h[" .. abilityName .. "]|h|r"
+        end)
+        
+        afterItems = string.gsub(afterItems, "%[([^%]]+):(%d+)%]", function(abilityName, abilityID)
+            -- Skip if this is part of an existing link
+            if string.find(abilityName, "|H") then
+                return "[" .. abilityName .. ":" .. abilityID .. "]"
+            end
+            return "|cff71d5ff|Htwra:" .. abilityName .. ":" .. abilityID .. "|h[" .. abilityName .. "]|h|r"
+        end)
+        
+        result = result .. afterItems
+    end
+    
+    return result
+end
+
 -- Display a tooltip for an ability using database information
 function TWRA:DisplayAbilityTooltipFromDB(abilityName, abilityID)
     -- Find the ability entry in database
@@ -121,6 +234,15 @@ function TWRA:TestDBTooltip(abilityName, abilityID)
     return self:DisplayAbilityTooltipFromDB(abilityName, abilityID)
 end
 
+-- Test function to demonstrate proper tooltip formatting
+function TWRA:TestAbilityLinkFormatting()
+    local text = "Testing links: [Arcane Prison] and [Flame Breath:1000002]"
+    local processed = self:ProcessAbilityLinks(text)
+    DEFAULT_CHAT_FRAME:AddMessage("Original: " .. text)
+    DEFAULT_CHAT_FRAME:AddMessage("Processed: " .. processed)
+    return processed
+end
+
 -- Replace the default SetItemRef function with our improved implementation
 SetItemRef = function(link, text, button, chatFrame)
     -- Only process TWRA links, pass everything else to original handler
@@ -158,7 +280,10 @@ SetItemRef = function(link, text, button, chatFrame)
         -- Support shift-clicking to insert link into chat
         if IsShiftKeyDown() and ChatFrameEditBox:IsVisible() then
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000TWRA:|r Shift-click detected, inserting link to chat")
-            ChatFrameEditBox:Insert(text)
+            
+            -- Format a clean link for chat insertion without showing ID in display text
+            local cleanLink = TWRA:FormatAbilityLink(abilityName, abilityID)
+            ChatFrameEditBox:Insert(cleanLink)
             return true
         end
         
@@ -191,4 +316,10 @@ SlashCmdList["TWRATOOLTIPTEST"] = function(arg)
     TWRA:TestDBTooltip(abilityName, abilityID)
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000TWRA:|r Link click handler installed")
+-- Add a command to test link formatting
+SLASH_TWRALINKTEST1 = "/linktest"
+SlashCmdList["TWRALINKTEST"] = function(arg)
+    TWRA:TestAbilityLinkFormatting()
+end
+
+DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000TWRA:|r Link click handler installed with improved presentation")

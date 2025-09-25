@@ -37,6 +37,69 @@ function TWRA:SafeToString(value)
     end
 end
 
+-- Process text for ability links in frame rows
+function TWRA:ProcessFrameText(text)
+    if not text or type(text) ~= "string" then
+        return text or ""
+    end
+    
+    -- First, process item links to ensure they have proper coloration
+    if self.Items and self.Items.ProcessText then
+        text = self.Items:ProcessText(text)
+    end
+    
+    -- Then process ability links, which will avoid modifying item links
+    if self.ProcessTextForAbilityLinks then
+        text = self:ProcessTextForAbilityLinks(text)
+    end
+    
+    return text
+end
+
+-- Format row announcement with proper links
+function TWRA:FormatRowAnnouncement(rowData, includeTimestamp)
+    if not rowData then return "" end
+    
+    local message = ""
+    
+    -- Add timestamp if requested
+    if includeTimestamp then
+        local timestamp = date("%H:%M:%S")
+        message = "|cffcccccc[" .. timestamp .. "]|r "
+    end
+    
+    -- Add any prefixes like [RL] tag
+    if self.currentSection and self.currentSection["Section Header"] and self.currentSection["Section Header"][1] then
+        message = message .. "|cffb2a08e[" .. self.currentSection["Section Header"][1] .. "]|r "
+    end
+    
+    -- Get player name with class coloring
+    local playerName = rowData[1] or "Unknown"
+    local classColoredName = self.UI:ApplyClassColoring(playerName)
+    message = message .. "|cffb2a08e[" .. classColoredName .. "]|r "
+    
+    -- Get and format announcement text
+    local text = ""
+    local i = 2
+    while rowData[i] do
+        if rowData[i] ~= "" then
+            if i > 2 then
+                text = text .. ", "
+            end
+            text = text .. rowData[i]
+        end
+        i = i + 1
+    end
+    
+    -- Process the text for both item and ability links
+    text = self:ProcessFrameText(text)
+    
+    -- Add the processed text to the message
+    message = message .. text
+    
+    return message
+end
+
 -- Enhance CreateMainFrame to use the standardized dropdown and remove Edit button
 function TWRA:CreateMainFrame()
     -- Check if frame already exists
@@ -1232,10 +1295,7 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     end
     
     -- Process text with item links
-    local processedText = text
-    if TWRA.Items and TWRA.Items.ProcessText then
-        processedText = TWRA.Items:ProcessText(text)
-    end
+    local processedText = self:ProcessFrameText(text)
     
     -- Create text element with item link support
     local textElement = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1246,9 +1306,9 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     
     -- Set text color based on type
     if footerType == "Warning" then
-        textElement:SetTextColor(1, 0.7, 0.7)  -- Light red for warnings
+        textElement:SetTextColor(1, 1, 1)  -- Changed from light red to white
     else
-        textElement:SetTextColor(0.85, 0.85, 1)  -- Light blue for notes
+        textElement:SetTextColor(1, 1, 1)  -- Changed from light blue to white
     end
     
     -- Create a clickable overlay for the entire footer element
@@ -1288,14 +1348,17 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         -- Call the announce function with the footer text, processing item links
         self:Debug("ui", "Announcing footer: " .. text)
         
-        -- Process the text with item links before sending
+        -- Process the text with item links and ability links before sending
         local announcementText = text
-        if self.Items and self.Items.EnhancedProcessText then
-            -- Use the enhanced processor that does both bracketed items and consumables
-            announcementText = self.Items:EnhancedProcessText(text)
-        elseif self.Items and self.Items.ProcessText then
-            -- Fall back to basic processor if enhanced not available
-            announcementText = self.Items:ProcessText(text)
+        
+        -- Process item links first to maintain proper item coloration
+        if self.Items and self.Items.ProcessText then
+            announcementText = self.Items:ProcessText(announcementText)
+        end
+        
+        -- Then process for ability links, which will avoid modifying item links
+        if self.ProcessTextForAbilityLinks then
+            announcementText = self:ProcessTextForAbilityLinks(announcementText)
         end
         
         -- Use specific channel logic based on footer type, ignoring channel settings
@@ -1517,7 +1580,7 @@ function TWRA:CreateRow(rowNum, data)
             if isHeader then
                 cell = self:CreateHeaderCell(cell, "Target", cellWidth, 0)
             elseif cellData and cellData ~= "" then
-                cell:SetText(cellData)
+                cell:SetText(self:ProcessFrameText(cellData))
                 cell:SetJustifyH("LEFT")
                 cell:SetTextColor(1, 1, 1) -- White text for target
             else
@@ -1529,7 +1592,7 @@ function TWRA:CreateRow(rowNum, data)
             if isHeader then
                 cell = self:CreateHeaderCell(cell, cellData, cellWidth, 0)
             else
-                cell:SetText(cellData)
+                cell:SetText(self:ProcessFrameText(cellData))
                 
                 if cellData and cellData ~= "" then
                     -- Get player info from PLAYERS table

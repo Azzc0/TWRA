@@ -523,14 +523,20 @@ function TWRA.Links:GetAbilityLink(input)
         return nil 
     end
     
-    -- Use the specified color or default to arcane blue
-    local colorHex = abilityData.color or "71d5ff"
-    
-    -- Store the ability ID in the link data (either from database or provided)
-    local finalId = spellID or abilityData.id or "1"
-    
-    -- Format the link using the unified linking system
-    return self:CreateLink("twra", abilityName .. ":" .. finalId, abilityName, colorHex)
+    -- Use the TWRA:FormatAbilityLink function from LinkClickHandler to format the link
+    if TWRA.FormatAbilityLink then
+        return TWRA:FormatAbilityLink(abilityName, spellID or abilityData.id)
+    else
+        -- Fallback to old method if FormatAbilityLink isn't available
+        -- Use the specified color or default to arcane blue
+        local colorHex = abilityData.color or "71d5ff"
+        
+        -- Store the ability ID in the link data (either from database or provided)
+        local finalId = spellID or abilityData.id or "1"
+        
+        -- Format the link using the unified linking system
+        return self:CreateLink("twra", abilityName .. ":" .. finalId, abilityName, colorHex)
+    end
 end
 
 -- Function to get the ability key from name and ID
