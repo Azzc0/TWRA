@@ -16,7 +16,13 @@ TWRA.DEBUG_CATEGORIES = {
     tank = { name = "Tank", default = true, description = "Tank assignments" },
     osd = { name = "OSD", default = true, description = "On-screen display messages" },
     map = { name = "Map", default = true, description = "Encounter map messages" },
-    error = { name = "Error", default = true, description = "Errors and warnings" }
+    error = { name = "Error", default = true, description = "Errors and warnings" },
+    warning = { name = "Warning", default = true, description = "Warning messages" },
+    items = { name = "Items", default = true, description = "Item-related messages" },
+    abilities = { name = "Abilities", default = true, description = "Ability-related messages" },
+    links = { name = "Links", default = true, description = "Link-related messages" },
+    perf = { name = "Performance", default = false, description = "Performance-related messages" },
+    whisper = { name = "Whisper", default = false, description = "Whisper-related messages" }
 }
 
 -- Debug level definitions
@@ -422,10 +428,10 @@ function TWRA:ToggleDebugCategory(category, forceState)
         self:InitDebug()
     end
     
-    -- Ensure the category exists
+    -- Ensure the category exists in our master category definition
     if not self.DEBUG_CATEGORIES[category] then
         DEFAULT_CHAT_FRAME:AddMessage("TWRA: Invalid debug category: " .. tostring(category))
-        return
+        return false
     end
     
     -- Toggle or set the category based on forceState
@@ -436,12 +442,13 @@ function TWRA:ToggleDebugCategory(category, forceState)
     end
     
     -- Update saved settings - ENSURE this happens properly
+    TWRA_SavedVariables = TWRA_SavedVariables or {}
     TWRA_SavedVariables.debug = TWRA_SavedVariables.debug or {}
     TWRA_SavedVariables.debug.categories = TWRA_SavedVariables.debug.categories or {}
     TWRA_SavedVariables.debug.categories[category] = self.DEBUG.categories[category]
     
-    -- Also update the CATEGORIES table for UI display
-    if self.DEBUG.CATEGORIES[category] then
+    -- Also update the CATEGORIES table for UI display if it exists
+    if self.DEBUG.CATEGORIES and self.DEBUG.CATEGORIES[category] then
         self.DEBUG.CATEGORIES[category].enabled = self.DEBUG.categories[category]
     end
     
@@ -455,6 +462,8 @@ function TWRA:ToggleDebugCategory(category, forceState)
     -- Display toggle status
     DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug category '" .. category .. "' " .. 
                                 (self.DEBUG.categories[category] and "enabled" or "disabled"))
+    
+    return self.DEBUG.categories[category]
 end
 
 -- Print all debug categories and their status
@@ -698,6 +707,11 @@ seterrorhandler(TWRA_CaptureEarlyError)
 
 -- Add this function to be called from the main slash command handler in Core.lua
 function TWRA:HandleDebugCommand(args)
+    -- Initialize debug system if needed
+    if not self.DEBUG then
+        self:InitDebug()
+    end
+    
     -- Show help if no arguments
     if not args or table.getn(args) == 0 then
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug Commands|r:")
@@ -769,14 +783,8 @@ function TWRA:HandleDebugCommand(args)
         elseif args[2] == "off" then
             self:ToggleTimestamps(false)
         else
-            -- If "timestamp" with no on/off parameter, show timestamp information
-            if args[1] == "timestamp" then
-                -- Show timestamp information
-                local currentTime = time()
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Timestamp Information|r:")
-                DEFAULT_CHAT_FRAME:AddMessage("  Current date/time: " .. currentDateStr)
-            else
-            end
+            -- Toggle timestamps when no on/off param provided
+            self:ToggleTimestamps()
         end
         
     -- Category listing
@@ -807,29 +815,19 @@ function TWRA:HandleDebugCommand(args)
         -- Toggle the ui debug category
         self:ToggleDebugCategory("ui")
     elseif args[1] == "list" then
-        -- List all debug commands
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Debug Commands|r:")
-        DEFAULT_CHAT_FRAME:AddMessage("  nav - Toggle AutoNavigate debugging")
-        DEFAULT_CHAT_FRAME:AddMessage("  list - List all available debug commands")
-        DEFAULT_CHAT_FRAME:AddMessage("  guids - List all stored GUIDs and their sections")
-        DEFAULT_CHAT_FRAME:AddMessage("  target - Check current target for GUID mapping")
-        DEFAULT_CHAT_FRAME:AddMessage("  test - Test AutoNavigate with current target")
-        DEFAULT_CHAT_FRAME:AddMessage("  sync - Toggle sync debugging and show status")
-        DEFAULT_CHAT_FRAME:AddMessage("  ui - Toggle UI debugging")
-        DEFAULT_CHAT_FRAME:AddMessage("  osd - Toggle OSD debugging")
-        DEFAULT_CHAT_FRAME:AddMessage("  time on/off - Toggle timestamps in debug messages")
-        DEFAULT_CHAT_FRAME:AddMessage("  timestamp - Show timestamp information")
+        -- Just show all commands
+        self:HandleDebugCommand({})
     elseif args[1] == "guids" then
         -- List all stored GUIDs and their sections
-        if self.ListStoredGUIDs then
-            self:ListStoredGUIDs()
+        if self.ListAllGuids then
+            self:ListAllGuids()
         else
             self:Debug("error", "GUID listing function not available")
         end
     elseif args[1] == "target" then
         -- Check current target for GUID mapping
-        if self.CheckTargetGUID then
-            self:CheckTargetGUID()
+        if self.GetCurrentTargetGuid then
+            self:GetCurrentTargetGuid()
         else
             self:Debug("error", "Target GUID check function not available")
         end
@@ -848,23 +846,14 @@ function TWRA:HandleDebugCommand(args)
             self:Debug("error", "Message monitoring function not available")
         end
 
-    -- Category toggle - check if arg1 is a valid category name in DEBUG_CATEGORIES
-    -- THIS IS THE KEY ADDITION: Check DEBUG_CATEGORIES directly first
-    elseif self.DEBUG_CATEGORIES and self.DEBUG_CATEGORIES[args[1]] then
-        -- Direct category toggle using ToggleDebugCategory
-        self:ToggleDebugCategory(args[1])
-        
-    -- For backward compatibility, also check in DEBUG.categories
-    elseif self.DEBUG and self.DEBUG.categories and self.DEBUG.categories[args[1]] ~= nil then
-        if args[2] == "on" then
-            self:ToggleDebugCategory(args[1], true)
-        elseif args[2] == "off" then
-            self:ToggleDebugCategory(args[1], false)
-        else
-            self:ToggleDebugCategory(args[1])
-        end
+    -- Category toggle - check if arg1 is a valid category name
     else
-        DEFAULT_CHAT_FRAME:AddMessage("TWRA: Unknown debug command. Type '/twra debug' for help.")
+        -- First check if this is a valid category from our DEBUG_CATEGORIES definition
+        if self.DEBUG_CATEGORIES[args[1]] then
+            self:ToggleDebugCategory(args[1])
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Invalid debug category: " .. args[1])
+        end
     end
 end
 
@@ -881,49 +870,46 @@ function TWRA:InitializeDebug()
     self.DEBUG.showDetails = savedDebug and savedDebug.showDetails or false
     self.DEBUG.showTimestamps = savedDebug and savedDebug.timestamp or true
     
-    -- Define debug categories
+    -- Define master list of valid debug categories and their defaults
     self.DEBUG_CATEGORIES = {
-        ["general"] = true,  -- General debug messages
-        ["error"] = true,    -- Error messages (always shown if debug enabled)
-        ["warning"] = true,  -- Warning messages
-        ["ui"] = true,       -- UI-related messages
-        ["data"] = true,     -- Data-related messages
-        ["nav"] = true,      -- Navigation-related messages 
-        ["items"] = true,    -- Item-related messages
-        ["abilities"] = true, -- Ability-related messages
-        ["links"] = true,    -- CRITICAL: Enable link-related messages by default
-        ["osd"] = false,     -- OSD-related messages
-        ["sync"] = true,     -- Sync-related messages
-        ["perf"] = false,    -- Performance-related messages
-        ["whisper"] = false, -- Whisper-related messages
+        -- Core categories
+        ["general"] = { default = true, description = "General debugging messages" },
+        ["error"] = { default = true, description = "Error messages that need attention" },
+        ["ui"] = { default = false, description = "User interface debug messages" },
+        ["events"] = { default = false, description = "Event handling debug messages" },
+        ["nav"] = { default = false, description = "Navigation debug messages" },
+        ["sync"] = { default = false, description = "Sync system debug messages" },
+        ["data"] = { default = false, description = "Data processing debug messages" },
+        ["map"] = { default = false, description = "Encounter map debug messages" },
+        ["osd"] = { default = false, description = "OSD debug messages" },
+        ["tank"] = { default = false, description = "Tank detection debug messages" },
     }
     
-    -- Initialize categories from saved settings or defaults
+    -- Initialize categories from DEBUG_CATEGORIES master list and saved settings
     self.DEBUG.categories = {}
+    
+    -- First, set all categories based on their default settings from master list
+    for category, info in pairs(self.DEBUG_CATEGORIES) do
+        self.DEBUG.categories[category] = info.default
+    end
+    
+    -- Then override with saved settings if available
     if savedDebug and savedDebug.categories then
-        -- Copy saved categories
         for category, enabled in pairs(savedDebug.categories) do
-            self.DEBUG.categories[category] = enabled
-        end
-        
-        -- Add any missing categories from defaults
-        for category, enabled in pairs(self.DEBUG_CATEGORIES) do
-            if self.DEBUG.categories[category] == nil then
-                self.DEBUG.categories[category] = enabled
+            -- Only apply for categories that exist in our master list
+            if self.DEBUG_CATEGORIES[category] then
+                -- SPECIAL CASE: Always ensure 'error' is enabled regardless of saved setting
+                if category == "error" then
+                    self.DEBUG.categories[category] = true
+                else
+                    self.DEBUG.categories[category] = enabled
+                end
             end
-        end
-        
-        -- CRITICAL: Ensure the links category is enabled for debugging
-        self.DEBUG.categories["links"] = true
-    else
-        -- No saved categories, use defaults
-        for category, enabled in pairs(self.DEBUG_CATEGORIES) do
-            self.DEBUG.categories[category] = enabled
         end
     end
     
-    -- Make sure links category is enabled
-    self.DEBUG.categories["links"] = true
+    -- CRITICAL: Always force 'error' category to be enabled, regardless of saved settings
+    self.DEBUG.categories["error"] = true
     
     -- Log initialization
     if self.DEBUG.enabled then

@@ -1500,36 +1500,58 @@ function TWRA:CreateWarningRow(footerContainer, warningText, yOffset)
         self:Debug("osd", "Processed warning text with unified system")
     end
     
-    -- Create warning text using a SimpleHTML that supports clickable links and set to DIALOG strata
-    local warnText = CreateFrame("SimpleHTML", nil, footerContainer)
-    warnText:SetFrameStrata("DIALOG") -- Set higher strata than the clickable overlay
-    warnText:SetPoint("LEFT", warningIcon, "RIGHT", 5, 0)
-    warnText:SetPoint("RIGHT", warningBg, "RIGHT", -5, 0)
-    warnText:SetHeight(20) -- rowHeight
-    warnText:SetFontObject("GameFontNormal")
+    -- Create a container frame to better position the ScrollingMessageFrame
+    local textContainer = CreateFrame("Frame", nil, footerContainer)
+    textContainer:SetPoint("LEFT", warningIcon, "RIGHT", 5, 0)
+    textContainer:SetPoint("RIGHT", warningBg, "RIGHT", -5, 0)
+    textContainer:SetHeight(16) -- Slightly smaller than row height for better alignment
+    textContainer:SetPoint("TOP", warningBg, "TOP", 0, 1) -- Position 2px from top
     
-    -- Set HTML attributes to allow links to be clickable
-    warnText:SetHyperlinksEnabled(true)
-    warnText:SetScript("OnHyperlinkClick", function(self, link, text, button)
-        -- Handle link clicks
-        if IsShiftKeyDown() then
-            -- Insert into chat if shift is held down
-            if ChatFrameEditBox and ChatFrameEditBox:IsVisible() then
-                ChatFrameEditBox:Insert(text)
+    -- Create warning text using a ScrollingMessageFrame inside the container
+    local warnText = CreateFrame("ScrollingMessageFrame", nil, textContainer)
+    warnText:SetFrameLevel(footerContainer:GetFrameLevel() + 10) -- Higher frame level than the clickable overlay
+    warnText:SetAllPoints(textContainer) -- Fill the container frame
+    warnText:SetFontObject(GameFontNormal)
+    warnText:SetJustifyH("LEFT")
+    warnText:SetFading(false)
+    warnText:SetMaxLines(1)
+    warnText:SetTextColor(1, 1, 1) -- White text by default
+    
+    -- Set up hyperlink handler for both item and TWRA links
+    warnText:SetScript("OnHyperlinkClick", function()
+        if arg1 and arg2 then
+            if IsShiftKeyDown() then
+                -- Insert into chat if shift is held down
+                if ChatFrameEditBox and ChatFrameEditBox:IsVisible() then
+                    ChatFrameEditBox:Insert(arg2)
+                end
+            else
+                -- Handle different link types
+                if string.find(arg1, "^item:") or string.find(arg1, "^player:") or string.find(arg1, "^spell:") then
+                    -- Use standard WoW handler for basic link types
+                    SetItemRef(arg1, arg2, arg3)
+                elseif string.find(arg1, "^twra:") then
+                    -- Use our custom handler for TWRA ability links
+                    if self.LinkClickHandler and self.LinkClickHandler.OnLinkClick then
+                        self.LinkClickHandler:OnLinkClick(arg1, arg2, arg3)
+                    else
+                        -- Fallback if LinkClickHandler is not available
+                        SetItemRef(arg1, arg2, arg3)
+                    end
+                else
+                    -- Handle other link types as a fallback
+                    SetItemRef(arg1, arg2, arg3)
+                end
             end
-        else
-            -- Normal click - show tooltip or other default behavior
-            SetItemRef(link, text, button)
         end
     end)
     
     -- Measure and truncate text if needed
+    local containerWidth = footerContainer:GetParent():GetWidth() or 400
+    local availableWidth = containerWidth - 16 - 5 - 5 - 5
     local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     testString:SetText(processedText)
     testString:Hide()
-    
-    local containerWidth = footerContainer:GetParent():GetWidth() or 400
-    local availableWidth = containerWidth - 16 - 5 - 5 - 5
     local fullTextWidth = testString:GetStringWidth()
     
     if fullTextWidth > availableWidth then
@@ -1538,15 +1560,17 @@ function TWRA:CreateWarningRow(footerContainer, warningText, yOffset)
         fitChars = math.min(fitChars, string.len(processedText))
         
         local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
-        warnText:SetText(truncatedText)
+        warnText:AddMessage(truncatedText, 1, 1, 1) -- White text (r,g,b)
     else
-        warnText:SetText(processedText)
+        warnText:AddMessage(processedText, 1, 1, 1) -- White text (r,g,b)
     end
     
     -- Make the row clickable to announce to raid (only when Ctrl is pressed)
     local clickArea = CreateFrame("Button", nil, footerContainer)
     clickArea:SetAllPoints(warningBg)
-    clickArea:SetFrameStrata("MEDIUM") -- Lower strata than the text
+    clickArea:SetFrameLevel(footerContainer:GetFrameLevel()) -- Lower level than the text
+    
+    -- Rest of the function remains the same
     clickArea:SetScript("OnEnter", function()
         if IsControlKeyDown() then
             -- Only show highlight when CTRL is pressed
@@ -1646,20 +1670,58 @@ function TWRA:CreateNoteRow(footerContainer, noteText, yOffset)
         self:Debug("osd", "Processed note text with unified system")
     end
     
-    -- Create note text
-    local noteTextElement = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    noteTextElement:SetPoint("LEFT", noteIcon, "RIGHT", 5, 0)
-    noteTextElement:SetPoint("RIGHT", noteBg, "RIGHT", -5, 0)
-    noteTextElement:SetHeight(20) -- rowHeight
-    noteTextElement:SetJustifyH("LEFT")
+    -- Create a container frame to better position the ScrollingMessageFrame
+    local textContainer = CreateFrame("Frame", nil, footerContainer)
+    textContainer:SetPoint("LEFT", noteIcon, "RIGHT", 5, 0)
+    textContainer:SetPoint("RIGHT", noteBg, "RIGHT", -5, 0)
+    textContainer:SetHeight(16) -- Slightly smaller than row height for better alignment
+    textContainer:SetPoint("TOP", noteBg, "TOP", 0, 1) -- Use the same vertical alignment that worked for warnings
+    
+    -- Create note text using a ScrollingMessageFrame inside the container
+    local noteTextFrame = CreateFrame("ScrollingMessageFrame", nil, textContainer)
+    noteTextFrame:SetFrameLevel(footerContainer:GetFrameLevel() + 10) -- Higher frame level than the clickable overlay
+    noteTextFrame:SetAllPoints(textContainer) -- Fill the container frame
+    noteTextFrame:SetFontObject(GameFontNormal)
+    noteTextFrame:SetJustifyH("LEFT")
+    noteTextFrame:SetFading(false)
+    noteTextFrame:SetMaxLines(1)
+    noteTextFrame:SetTextColor(1, 1, 1) -- White text by default
+    
+    -- Set up hyperlink handler for both item and TWRA links
+    noteTextFrame:SetScript("OnHyperlinkClick", function()
+        if arg1 and arg2 then
+            if IsShiftKeyDown() then
+                -- Insert into chat if shift is held down
+                if ChatFrameEditBox and ChatFrameEditBox:IsVisible() then
+                    ChatFrameEditBox:Insert(arg2)
+                end
+            else
+                -- Handle different link types
+                if string.find(arg1, "^item:") or string.find(arg1, "^player:") or string.find(arg1, "^spell:") then
+                    -- Use standard WoW handler for basic link types
+                    SetItemRef(arg1, arg2, arg3)
+                elseif string.find(arg1, "^twra:") then
+                    -- Use our custom handler for TWRA ability links
+                    if self.LinkClickHandler and self.LinkClickHandler.OnLinkClick then
+                        self.LinkClickHandler:OnLinkClick(arg1, arg2, arg3)
+                    else
+                        -- Fallback if LinkClickHandler is not available
+                        SetItemRef(arg1, arg2, arg3)
+                    end
+                else
+                    -- Handle other link types as a fallback
+                    SetItemRef(arg1, arg2, arg3)
+                end
+            end
+        end
+    end)
     
     -- Measure and truncate text if needed
+    local containerWidth = footerContainer:GetParent():GetWidth() or 400
+    local availableWidth = containerWidth - 16 - 5 - 5 - 5
     local testString = footerContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     testString:SetText(processedText)
     testString:Hide()
-    
-    local containerWidth = footerContainer:GetParent():GetWidth() or 400
-    local availableWidth = containerWidth - 16 - 5 - 5 - 5
     local fullTextWidth = testString:GetStringWidth()
     
     if fullTextWidth > availableWidth then
@@ -1668,17 +1730,16 @@ function TWRA:CreateNoteRow(footerContainer, noteText, yOffset)
         fitChars = math.min(fitChars, string.len(processedText))
         
         local truncatedText = string.sub(processedText, 1, fitChars) .. "..."
-        noteTextElement:SetText(truncatedText)
+        noteTextFrame:AddMessage(truncatedText, 1, 1, 1) -- White text (r,g,b)
     else
-        noteTextElement:SetText(processedText)
+        noteTextFrame:AddMessage(processedText, 1, 1, 1) -- White text (r,g,b)
     end
-    
-    -- Set text color
-    noteTextElement:SetTextColor(1, 1, 1) -- Changed from light blue to white
     
     -- Make the row clickable to announce to raid chat
     local clickArea = CreateFrame("Button", nil, footerContainer)
     clickArea:SetAllPoints(noteBg)
+    clickArea:SetFrameLevel(footerContainer:GetFrameLevel()) -- Lower level than the text
+    
     clickArea:SetScript("OnEnter", function()
         noteBg:SetTexture(0.1, 0.1, 0.7, 0.3) -- Highlight on hover
         GameTooltip:SetOwner(clickArea, "ANCHOR_RIGHT")

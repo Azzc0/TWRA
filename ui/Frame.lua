@@ -37,23 +37,28 @@ function TWRA:SafeToString(value)
     end
 end
 
--- Process text for ability links in frame rows
+-- Helper function to process text for the frame with links support
 function TWRA:ProcessFrameText(text)
-    if not text or type(text) ~= "string" then
-        return text or ""
+    if not text then return "" end
+    
+    local processedText = text
+    
+    -- Process using our Links system if available
+    if self.Links and self.Links.ProcessAllLinks then
+        processedText = self.Links:ProcessAllLinks(processedText)
+    else
+        -- Process item links first
+        if self.Items and self.Items.ProcessText then
+            processedText = self.Items:ProcessText(processedText)
+        end
+        
+        -- Process consumable links
+        if self.Items and self.Items.ProcessConsumables then
+            processedText = self.Items:ProcessConsumables(processedText)
+        end
     end
     
-    -- First, process item links to ensure they have proper coloration
-    if self.Items and self.Items.ProcessText then
-        text = self.Items:ProcessText(text)
-    end
-    
-    -- Then process ability links, which will avoid modifying item links
-    if self.ProcessTextForAbilityLinks then
-        text = self:ProcessTextForAbilityLinks(text)
-    end
-    
-    return text
+    return processedText
 end
 
 -- Format row announcement with proper links
@@ -62,11 +67,6 @@ function TWRA:FormatRowAnnouncement(rowData, includeTimestamp)
     
     local message = ""
     
-    -- Add timestamp if requested
-    if includeTimestamp then
-        local timestamp = date("%H:%M:%S")
-        message = "|cffcccccc[" .. timestamp .. "]|r "
-    end
     
     -- Add any prefixes like [RL] tag
     if self.currentSection and self.currentSection["Section Header"] and self.currentSection["Section Header"][1] then
@@ -1265,10 +1265,8 @@ end
 
 -- Make sure CreateFooterElement creates visible elements with item link support
 function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
-    self:Debug("ui", "Creating footer element: " .. footerType .. " at y=" .. yOffset)
-    
     local footer = {}
-    
+
     -- Create background
     local bg = self.mainFrame:CreateTexture(nil, "BACKGROUND")
     if footerType == "Warning" then
@@ -1283,33 +1281,105 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     -- Create icon - use footerType directly instead of iconName
     local icon = nil
     local iconToUse = footerType  -- Use Warning or Note directly
-    
-    if TWRA.ICONS and TWRA.ICONS[iconToUse] then
+
+    if self.ICONS and self.ICONS[iconToUse] then
         icon = self.mainFrame:CreateTexture(nil, "OVERLAY")
         icon:SetPoint("TOPLEFT", bg, "TOPLEFT", 6, -5)
         icon:SetWidth(18)
         icon:SetHeight(18)
-        local iconInfo = TWRA.ICONS[iconToUse]
+        local iconInfo = self.ICONS[iconToUse]
         icon:SetTexture(iconInfo[1])
-        icon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+        if iconInfo[2] and iconInfo[3] and iconInfo[4] and iconInfo[5] then
+            icon:SetTexCoord(iconInfo[2], iconInfo[3], iconInfo[4], iconInfo[5])
+        end
     end
     
-    -- Process text with item links
-    local processedText = self:ProcessFrameText(text)
+    -- Process text using the SAME approach as in OSD.lua
+    local processedText = text
     
-    -- Create text element with item link support
-    local textElement = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    textElement:SetPoint("TOPLEFT", bg, "TOPLEFT", icon and 32 or 10, -6)  -- More space for larger icon
-    textElement:SetPoint("TOPRIGHT", bg, "TOPRIGHT", -10, -4)
-    textElement:SetText(processedText)
+    -- Process the text using correct sequence:
+    -- 1. First process actual item links (maintain their colors)
+    if self.Items and self.Items.ProcessText then
+        processedText = self.Items:ProcessText(processedText)
+    end
+    
+    -- 2. Then process for ability links (avoiding modifying item links)
+    if self.ProcessTextForAbilityLinks then
+        processedText = self:ProcessTextForAbilityLinks(processedText)
+    end
+    
+    -- 3. Use unified system only if available and previous steps didn't modify text
+    if processedText == text and self.Links and self.Links.ProcessAllLinks then
+        processedText = self.Links:ProcessAllLinks(processedText)
+    end
+    
+    -- Create a container frame to better position the text
+    local textContainer = CreateFrame("Frame", nil, self.mainFrame)
+    textContainer:SetPoint("TOPLEFT", bg, "TOPLEFT", icon and 32 or 10, -6)
+    textContainer:SetPoint("BOTTOMRIGHT", bg, "BOTTOMRIGHT", -10, 4)
+    
+    -- Generate a truly unique name for the ScrollingMessageFrame
+    local uniqueName = "TWRAFooter" .. tostring(math.floor(GetTime() * 1000)) .. tostring(math.random(1000, 9999))
+    
+    -- Create a ScrollingMessageFrame instead of FontString for better link handling
+    local textElement = CreateFrame("ScrollingMessageFrame", uniqueName, textContainer)
+    textElement:SetAllPoints()
+    textElement:SetFading(false)
+    textElement:SetMaxLines(1)
+    textElement:SetFontObject(GameFontNormal)
     textElement:SetJustifyH("LEFT")
+    textElement:EnableMouseWheel(false) -- Disable scrolling since we only have one line
     
     -- Set text color based on type
-    if footerType == "Warning" then
-        textElement:SetTextColor(1, 1, 1)  -- Changed from light red to white
-    else
-        textElement:SetTextColor(1, 1, 1)  -- Changed from light blue to white
-    end
+    local r, g, b = 1, 1, 1  -- White text for better visibility
+    textElement:SetTextColor(r, g, b)
+    
+    -- Add the processed text with hyperlinks support
+    textElement:AddMessage(processedText)
+    
+    -- Set up hyperlink handler for both item and TWRA links using the same handler as OSD.lua
+    textElement:SetScript("OnHyperlinkClick", function()
+        if arg1 and arg2 then
+            if IsShiftKeyDown() then
+                -- Insert into chat if shift is held down
+                if ChatFrameEditBox and ChatFrameEditBox:IsVisible() then
+                    ChatFrameEditBox:Insert(arg2)
+                end
+            else
+                -- Handle different link types
+                if string.find(arg1, "^item:") or string.find(arg1, "^player:") or string.find(arg1, "^spell:") then
+                    -- Use standard WoW handler for basic link types
+                    SetItemRef(arg1, arg2, arg3)
+                elseif string.find(arg1, "^twra:") then
+                    -- Use our custom handler for TWRA ability links
+                    if self.LinkClickHandler and self.LinkClickHandler.OnLinkClick then
+                        self.LinkClickHandler:OnLinkClick(arg1, arg2, arg3)
+                    else
+                        -- Fallback if LinkClickHandler is not available
+                        SetItemRef(arg1, arg2, arg3)
+                    end
+                else
+                    -- Handle other link types as a fallback
+                    SetItemRef(arg1, arg2, arg3)
+                end
+            end
+        end
+    end)
+    
+    -- Add hover handling for links
+    textElement:SetScript("OnHyperlinkEnter", function()
+        if arg1 and string.find(arg1, "^twra:") then
+            -- Show ability tooltip for TWRA links
+            if self.ShowAbilityTooltip then
+                self:ShowAbilityTooltip(arg1, textElement)
+            end
+        end
+    end)
+    
+    textElement:SetScript("OnHyperlinkLeave", function()
+        -- Hide tooltip
+        GameTooltip:Hide()
+    end)
     
     -- Create a clickable overlay for the entire footer element
     local clickFrame = CreateFrame("Button", nil, self.mainFrame)
@@ -1330,7 +1400,7 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
         GameTooltip:AddLine("Click to announce to raid")
         GameTooltip:Show()
     end)
-    
+
     clickFrame:SetScript("OnLeave", function()
         -- Restore normal color
         if footerType == "Warning" then
@@ -1345,23 +1415,21 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
     
     -- Add the click handler to send to chat with item links
     clickFrame:SetScript("OnClick", function()
-        -- Call the announce function with the footer text, processing item links
-        self:Debug("ui", "Announcing footer: " .. text)
-        
         -- Process the text with item links and ability links before sending
-        local announcementText = text
+        local announcementText = text or ""
         
-        -- Process item links first to maintain proper item coloration
-        if self.Items and self.Items.ProcessText then
-            announcementText = self.Items:ProcessText(announcementText)
-        end
-        
-        -- Then process for ability links, which will avoid modifying item links
+        -- Process text for announcements using the same approach as in OSD.lua
+        -- 1. First process ability links
         if self.ProcessTextForAbilityLinks then
             announcementText = self:ProcessTextForAbilityLinks(announcementText)
         end
         
-        -- Use specific channel logic based on footer type, ignoring channel settings
+        -- 2. Then process for item links
+        if self.Items and self.Items.ProcessText then
+            announcementText = self.Items:ProcessText(announcementText)
+        end
+        
+        -- Use specific channel logic based on footer type
         local success = false
         
         if footerType == "Warning" then
@@ -1396,11 +1464,12 @@ function TWRA:CreateFooterElement(text, iconName, footerType, yOffset)
             end
         end, 0.2)
     end)
-    
+
     -- Store all elements in the footer object
     footer.bg = bg
     footer.icon = icon
-    footer.text = textElement
+    footer.textContainer = textContainer
+    footer.text = textElement  -- Store the ScrollingMessageFrame instead of FontString
     footer.type = footerType
     footer.clickFrame = clickFrame
     
@@ -2053,10 +2122,8 @@ function TWRA:FormatRowAnnouncement(rowData)
         -- Find the section data
         if currentSection and TWRA_Assignments and TWRA_Assignments.data then
             for idx, section in pairs(TWRA_Assignments.data) do
-                if section["Section Name"] == currentSection then
-                    headerRow = section["Section Header"]
-                    break
-                end
+                headerRow = section["Section Header"]
+                break
             end
         end
     end
