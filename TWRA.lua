@@ -11,150 +11,99 @@ end
 -- Addon namespace
 TWRA = TWRA or {}
 
--- Navigate to a specific section index
+-- Navigate to a specific section by index or name
 function TWRA:NavigateToSection(index, source)
-    -- Debug entry with source tracking
+    -- Use a better debug level for navigation messages
     self:Debug("nav", "NavigateToSection called with index: " .. tostring(index) .. ", source: " .. tostring(source or "unknown"))
-    -- Handle legacy case where section is passed as a name instead of index
-    if type(index) == "string" then
-        -- Find the index for this name
-        for i, name in ipairs(self.navigation.handlers) do
-            if name == index then
-                index = i
-                self:Debug("nav", "Converted section name to index: " .. i)
-                break
-            end
-        end
+
+    -- Log the previous section name properly for debugging
+    if TWRA_Assignments and TWRA_Assignments.currentSectionName then
+        self:Debug("nav", "Previous Section name (TWRA_Assignments.currentSectionName): " .. TWRA_Assignments.currentSectionName)
     end
     
-    -- Perform validation checks
+    -- Check that navigation has been initialized
     if not self.navigation then
         self:Debug("error", "NavigateToSection: Navigation context not initialized")
         return false
     end
     
-    if not self.navigation.handlers or table.getn(self.navigation.handlers) == 0 then
+    -- Check that section handlers exist
+    if not self.navigation.handlers or not next(self.navigation.handlers) then
         self:Debug("error", "NavigateToSection: No section handlers available")
         return false
     end
     
-    -- Make sure index is a number within the valid range
-    if type(index) ~= "number" or index < 1 or index > table.getn(self.navigation.handlers) then
+    -- NEW: Handle string section names by converting them to indices
+    if type(index) == "string" then
+        local foundIndex = nil
+        
+        -- Search for the section name in the handlers array
+        for i, handlerName in ipairs(self.navigation.handlers) do
+            if handlerName == index then
+                foundIndex = i
+                self:Debug("nav", "Found section name '" .. index .. "' at index " .. i)
+                break
+            end
+        end
+        
+        -- If found, use that index, otherwise return an error
+        if foundIndex then
+            index = foundIndex
+        else
+            self:Debug("error", "NavigateToSection: Section name '" .. index .. "' not found in handlers")
+            return false
+        end
+    end
+    
+    -- Check for invalid index
+    if not index or (type(index) == "number" and (index < 1 or index > table.getn(self.navigation.handlers))) then
         self:Debug("error", "NavigateToSection: Invalid section index " .. tostring(index))
         return false
     end
     
-    -- Get the section name for this index
+    -- Get section name at that index
     local sectionName = self.navigation.handlers[index]
     if not sectionName then
         self:Debug("error", "NavigateToSection: No section name found at index " .. index)
         return false
     end
     
-    -- Simple compressed data handling with example exception
-    local missingCompressedData = false
-    local needsProcessing = false
-    
-    -- Check if compressed data is empty (existence is guaranteed)
-    if TWRA_CompressedAssignments.sections[index] == "" then
-        missingCompressedData = true
-        TWRA:Debug("nav", "Missing compressed data for section index: " .. index)
-    else
-        TWRA:Debug("nav", "Compressed data available for section index: " .. index)
-    end
-    
-    -- Example data overrides the need for compressed data
-    if TWRA_Assignments and TWRA_Assignments.isExample then
-        missingCompressedData = false
-        TWRA:Debug("nav", "Using example data, no compressed data needed")
-    end
-    
-    -- If data is missing, request it and exit
-    if missingCompressedData then
-        if self.SYNC then
-            self.SYNC.pendingSection = index
-        end
-        if self.RequestBulkSync then
-            self:Debug("nav", "Requesting section data for index: " .. index)
-            self:RequestBulkSync(index)
-        else
-            self:Debug("nav", "RequestSectionData function not available but data is missing")
-        end
-        -- return false -- We're no longer stopping, we're adding text to the frame to show the state instead.
-    end
-    
-    -- Check if section data needs processing
-    needsProcessing = TWRA_Assignments.data[index]["NeedsProcessing"] or false
-    if needsProcessing then
-        if self.ProcessSectionData and not missingCompressedData then
-            self:Debug("nav", "Processing section data for index: " .. index)
-            self:ProcessSectionData(index)
-        end
-    end
-    
-    -- Update the current index
+    -- Update navigation index
     self.navigation.currentIndex = index
+    self.navigation.currentSection = sectionName
     
-    -- Update the handler text in the UI
+    -- Update TWRA_Assignments.currentSection for persistence
+    TWRA_Assignments.currentSection = index
+    TWRA_Assignments.currentSectionName = sectionName
+    
+    -- IMPORTANT: Update the section title in the UI if it exists
+    -- This ensures the title is updated even if the window is open
     if self.navigation.handlerText then
         self.navigation.handlerText:SetText(sectionName)
+        self:Debug("nav", "Updated section title text to: " .. sectionName)
     end
     
-    -- Store the current section in the assignments table to persist across sessions
-    if TWRA_Assignments then
-        -- Save both index and name for compatibility
-        TWRA_Assignments.currentSection = index
-        TWRA_Assignments.currentSectionName = sectionName
+    -- Also update main title text if it exists
+    if self.mainFrame and self.mainFrame.titleText then
+        self.mainFrame.titleText:SetText("Raid Assignments - " .. sectionName)
+        self:Debug("nav", "Updated main frame title text")
     end
     
-    -- Find section data for this section
-    local sectionData = nil
-    if TWRA_Assignments and TWRA_Assignments.data then
-        for idx, section in pairs(TWRA_Assignments.data) do
-            if section["Section Name"] == sectionName then
-                sectionData = section
-                break
-            end
-        end
+    -- Display the current section
+    if self.FilterAndDisplayHandler then
+        self:FilterAndDisplayHandler(sectionName)
     end
     
-    -- Prepare navigation event data
-    local eventData = {
-        index = index,
-        sectionName = sectionName,
-        source = source or "unknown",
-        sectionData = sectionData
-    }
-    
-    -- Trigger the NAVIGATE_TO_SECTION event and get number of listeners that were called
-    local listenersCount = self:TriggerEvent("NAVIGATE_TO_SECTION", eventData)
-    
-    -- Trigger the SECTION_CHANGED event for components that listen to it
-    -- This is needed for OSD, Minimap, AutoTanks, and other modules
-    self:TriggerEvent("SECTION_CHANGED", sectionName, index, table.getn(self.navigation.handlers), source)
-    
-    -- Update Encounter Map for the new section
-    if self.UpdateEncounterMapForNavigation then
-        self:Debug("map", "Updating encounter map for section change")
-        self:UpdateEncounterMapForNavigation()
+    -- Fire the SECTION_CHANGED event
+    if self.TriggerEvent then
+        local totalSections = table.getn(self.navigation.handlers)
+        self:TriggerEvent("SECTION_CHANGED", sectionName, index, totalSections, source or "navigation")
     end
     
-    -- Update UI if main frame exists and is shown
-    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
-        -- Update main frame content
-        if previousIndex ~= index or source == "reload" then
-            if self.FilterAndDisplayHandler then
-                self:FilterAndDisplayHandler(sectionName)
-                self:Debug("nav", "Updated main frame content for section: " .. sectionName)
-            elseif self.DisplayCurrentSection then
-                self:DisplayCurrentSection()
-                self:Debug("nav", "Updated main frame content using DisplayCurrentSection for section: " .. sectionName)
-            end
-        end
-    end
+    -- Debug navigation
+    self:Debug("nav", "Navigated to section " .. index .. " (" .. sectionName .. ")" .. 
+               (source and (" from source: " .. source) or ""))
     
-    -- Final debug to confirm navigation is complete
-    self:Debug("nav", "Navigation complete: Section " .. index .. " (" .. sectionName .. ")")
     return true
 end
 
@@ -900,63 +849,6 @@ function TWRA:GetAnnouncementChannels()
     }
 end
 
--- Add slash command
-SLASH_TWRA1 = "/twra"
-SlashCmdList["TWRA"] = function(msg)
-    -- Parse the command
-    local command, arg = string.match(msg, "^(%S+)%s*(.*)$")
-    command = command and string.lower(command) or ""
-    
-    if command == "debug" then
-        -- Handle debug commands
-        if arg == "list" then
-            -- List all debug categories
-            TWRA:ListDebugCategories()
-        elseif arg == "all" or arg == "" then
-            -- Toggle all debug categories
-            TWRA:ToggleDebug()
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Debug mode " .. 
-                (TWRA.DEBUG.enabled and "enabled" or "disabled"))
-        elseif TWRA.DEBUG_CATEGORIES[arg] then
-            -- Toggle specific category
-            TWRA:ToggleDebugCategory(arg)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Unknown debug category: " .. arg)
-            TWRA:ListDebugCategories()
-        end
-    elseif command == "perf" or command == "performance" then
-        -- Handle performance commands by splitting remaining arguments
-        local args = {}
-        for word in string.gmatch(arg, "%S+") do
-            table.insert(args, word)
-        end
-        
-        -- Call the performance command handler if it exists
-        if TWRA.HandlePerfCommand then
-            TWRA:HandlePerfCommand(args)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Performance monitoring system not initialized")
-        end
-    elseif command == "guid" or command == "targetguid" then
-        -- Get current target GUID
-        if TWRA.GetCurrentTargetGuid then
-            TWRA:GetCurrentTargetGuid()
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: GetCurrentTargetGuid function not available")
-        end
-    elseif command == "listguids" then
-        -- List all stored GUIDs
-        if TWRA.ListAllGuids then
-            TWRA:ListAllGuids()
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: ListAllGuids function not available")
-        end
-    else
-        -- Default behavior - toggle main frame
-        TWRA:ToggleMainFrame()
-    end
-end
-
 -- Initialize UI at end of loading - THIS IS THE ONLY INITIALIZE CALL
 TWRA:Initialize()
 
@@ -1069,26 +961,43 @@ end
 
 -- Handle group composition changes
 function TWRA:OnGroupChanged()
-    self:Debug("general", "Group composition changed, updating player table and dynamic info")
-    
-    -- Update the player table with current group information
-    -- UpdatePlayerTable now checks TWRA_Assignments.isExample automatically
-    self:UpdatePlayerTable()
-    self:RefreshPlayerInfo()
-    -- Update UI if main frame exists and is shown
-    if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
-        -- Update main frame content
-        if previousIndex ~= index or source == "reload" then
-            if self.FilterAndDisplayHandler then
-                self:FilterAndDisplayHandler(sectionName)
-                self:Debug("nav", "Updated main frame content for section: " .. sectionName)
-            elseif self.DisplayCurrentSection then
-                self:DisplayCurrentSection()
-                self:Debug("nav", "Updated main frame content using DisplayCurrentSection for section: " .. sectionName)
+    -- First, call the proper implementation from Core.lua
+    if self.core and self.core.OnGroupChanged then
+        -- If we have a direct reference to the core implementation
+        return self.core.OnGroupChanged(self)
+    else
+        self:Debug("general", "Group composition changed, updating player table and dynamic info")
+        
+        -- Update the player table with current group information
+        self:UpdatePlayerTable()
+        
+        -- Refresh player info for all sections
+        self:RefreshPlayerInfo()
+        
+        -- Update UI if main frame exists and is shown
+        if self.mainFrame and self.mainFrame:IsShown() and self.currentView == "main" then
+            -- Get current section info
+            local currentSection = nil
+            if self.navigation and self.navigation.handlers and self.navigation.currentIndex then
+                currentSection = self.navigation.handlers[self.navigation.currentIndex]
+                
+                -- Update main frame content
+                if self.FilterAndDisplayHandler and currentSection then
+                    self:Debug("nav", "Updating main frame content for section: " .. currentSection)
+                    self:FilterAndDisplayHandler(currentSection)
+                elseif self.DisplayCurrentSection then
+                    self:Debug("nav", "Updating main frame using DisplayCurrentSection")
+                    self:DisplayCurrentSection()
+                end
             end
         end
+        
+        -- Ensure OSD is updated if visible
+        if self.OSD and self.OSD.isVisible then
+            self:Debug("osd", "Updating OSD after group change")
+            self:UpdateOSDWithPlayerInfo()
+        end
     end
-    TWRA:UpdateOSDContent(TWRA_Assignments.currentSectionName, TWRA_Assignments.currentSection)
 end
 
 -- Update the encounterButton visibility in DisplayCurrentSection
@@ -1133,4 +1042,45 @@ function TWRA:DisplayCurrentSection()
     
     -- Return success
     return true
+end
+
+-- Function called when WoW exits to save settings
+function TWRA:OnUnload()
+    self:Debug("general", "Saving settings on logout")
+    
+    -- Make sure TWRA_SavedVariables exists
+    if not TWRA_SavedVariables then
+        TWRA_SavedVariables = {}
+    end
+    
+    -- Save current options
+    TWRA_SavedVariables.options = TWRA_SavedVariables.options or {}
+    
+    -- Save current view state
+    TWRA_SavedVariables.currentView = self.currentView or "main"
+    
+    -- Save current assignments
+    TWRA_SavedVariables.assignments = {
+        data = TWRA_Assignments.data,
+        version = TWRA_Assignments.version,
+        timestamp = TWRA_Assignments.timestamp,
+        currentSection = TWRA_Assignments.currentSection,
+        currentSectionName = TWRA_Assignments.currentSectionName
+    }
+    
+    -- Save debug settings
+    if self.DEBUG then
+        TWRA_SavedVariables.debug = {
+            enabled = self.DEBUG.enabled,
+            level = self.DEBUG.level,
+            categories = self.DEBUG_CATEGORIES
+        }
+    end
+    
+    -- Save compression settings if they exist
+    if TWRA_CompressedAssignments then
+        TWRA_SavedVariables.compressedAssignments = TWRA_CompressedAssignments
+    end
+    
+    self:Debug("general", "Settings saved successfully")
 end

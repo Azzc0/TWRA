@@ -303,6 +303,20 @@ function TWRA:ExpandAbbreviations(data)
                     section["Section Name"] = self.ABBREVIATION_MAPPINGS[section["Section Name"]]
                     self:Debug("data", "Expanded section name: " .. section["Section Name"])
                 end
+                
+                -- CRITICAL ADDITION: Identify tank columns after abbreviations are expanded
+                -- This ensures the "T" columns have been expanded to "Tank" before identification
+                if section["Section Header"] and type(section["Section Header"]) == "table" then
+                    -- Ensure metadata table exists
+                    section["Section Metadata"] = section["Section Metadata"] or {}
+                    
+                    -- Find and store tank columns in metadata
+                    if self.FindTankRoleColumns then
+                        local tankCols = self:FindTankRoleColumns(section)
+                        self:Debug("tank", "Found " .. table.getn(tankCols) .. " tank columns in section " .. 
+                                  (section["Section Name"] or tostring(sectionIndex)) .. " during import")
+                    end
+                end
             end
         end
     else
@@ -480,10 +494,15 @@ function TWRA:HandleImportedData(processedData, syncTimestamp, noAnnounce)
                     self:Debug("sync", "Manual import detected, sending data to group")
                     -- Small delay to ensure the data is fully processed before sending
                     self:ScheduleTimer(function()
-                        self:SendAllSections()
+                        -- FIXED: Use SendBulkSyncToGroup instead of trying to parse import string again
+                        if self.SendBulkSyncToGroup then
+                            self:SendBulkSyncToGroup()
+                        else
+                            self:SendAllSections()
+                        end
                     end, 0.5)
                 else
-                    self:Debug("error", "SendAllSections function not available, can't share data")
+                    self:Debug("error", "Sync functions not available, can't share data")
                 end
             else
                 self:Debug("sync", "Not in a group, no need to send data after manual import")
@@ -523,16 +542,6 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return nil 
     end
     
-    -- CRITICAL FIX: Clear TWRA_CompressedAssignments completely at the beginning of the import
-    -- This ensures no stale compressed data persists across imports
-    TWRA_CompressedAssignments = {
-        sections = {},
-        structure = nil,
-        timestamp = nil,
-        useSectionCompression = true
-    }
-    self:Debug("data", "Completely reset TWRA_CompressedAssignments at start of decoding")
-    
     -- Check if this is compressed data
     if string.byte(base64Str, 1) == 241 then
         self:Debug("data", "Detected compressed data format, processing with decompression")
@@ -555,9 +564,17 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         self:StoreCompressedData(base64Str)
         
         -- Process player information
-        if self.ProcessPlayerInfo then
-            self:ProcessPlayerInfo()
-            self:Debug("data", "Player information processed")
+        if not syncTimestamp then
+            -- Mark we're processing during import to avoid duplicate work
+            self.processingPlayerInfoDuringImport = true
+            
+            if self.ProcessPlayerInfo then
+                self:ProcessPlayerInfo()
+                self:Debug("data", "Player information processed during initial import")
+            end
+            
+            -- Reset flag
+            self.processingPlayerInfoDuringImport = nil
         end
         
         -- Handle UI updates and data saving
@@ -690,6 +707,12 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                 return nil
             end
             
+            -- IMPROVED ERROR HANDLING: Check if TWRA_ImportString is defined
+            if not result then
+                self:Debug("error", "Import failed: TWRA_ImportString not defined after successful execution", true)
+                return nil
+            end
+            
             -- Get the result from environment
             if result and type(result) == "table" then
                 self:Debug("data", "Successfully parsed structure")
@@ -727,155 +750,13 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
                     self:Debug("error", "Failed to create compressed version of imported data")
                 end
                 
-                -- Process player-relevant information
-                if self.ProcessPlayerInfo then
-                    self:Debug("data", "Processing player-relevant information for imported data")
-                    
-                    -- Initialize Assignments if they don't exist
-                    if not TWRA_Assignments then
-                        TWRA_Assignments = {}
-                    end
-                    
-                    -- IMPORTANT: Clear existing data only once, right before we need it for processing
-                    -- This prevents multiple redundant clearing operations
-                    TWRA_Assignments.data = result.data
-                    
-                    -- Process player information
-                    self:ProcessPlayerInfo()
-                    self:Debug("data", "Player information processed")
-                    
-                    -- Get the processed data back from Assignments
-                    result.data = TWRA_Assignments.data
-                    
-                    -- Clear the data if this was just a validation and not a real import
-                    if not syncTimestamp then
-                        TWRA_Assignments.data = nil
-                    end
-                end
-                
-                -- Remove the special rows now that all processing is complete
-                self:Debug("data", "Removing special rows after all processing")
-                for sectionIdx, section in pairs(result.data) do
-                    if type(section) == "table" and section["Section Rows"] and section["_specialRowIndices"] then
-                        local sectionName = section["Section Name"] or tostring(sectionIdx)
-                        local rowsToRemove = section["_specialRowIndices"]
-                        
-                        -- Sort indices in descending order to maintain correct indices when removing
-                        table.sort(rowsToRemove, function(a, b) return a > b end)
-                        
-                        -- Remove the special rows
-                        for _, rowIdx in ipairs(rowsToRemove) do
-                            table.remove(section["Section Rows"], rowIdx)
-                            self:Debug("data", "Removed special row at index " .. rowIdx .. " from section " .. sectionName)
-                        end
-                        
-                        -- Clean up the temporary indices list
-                        section["_specialRowIndices"] = nil
-                    end
-                end
-                
-                -- IMPORTANT: Clear current data ONE TIME before final save
-                if not syncTimestamp then
-                    -- This is a manual import, use SaveAssignments to handle proper UI updates
-                    self:Debug("data", "Clearing current data before final save")
-                    if self.ClearData then
-                        self:ClearData()
-                    end
-                    
-                    -- Set up timestamp for this import
-                    local timestamp = time()
-                    
-                    -- Use SaveAssignments function which will handle UI resets and navigation building
-                    if self.SaveAssignments then
-                        -- IMPORTANT: Don't store the original source string to save memory
-                        self:SaveAssignments(result, "import", timestamp, noAnnounce)
-                        
-                        -- Explicitly ensure isExample is set to false for manual imports
-                        if TWRA_Assignments then
-                            TWRA_Assignments.isExample = false
-                            self:Debug("data", "Explicitly set isExample = false for manual import")
-                        end
-                        
-                        -- IMPORTANT: Reset UI state after import
-                        if self.ShowMainView then
-                            self:Debug("ui", "Resetting UI to main view after import")
-                            self:ShowMainView()
-                        end
-                        
-                        -- -- IMPORTANT: Make sure navigation is rebuilt
-                        -- if self.RebuildNavigation then
-                        --     self:Debug("nav", "Rebuilding navigation after import")
-                        --     self:RebuildNavigation()
-                        -- end
-                        
-                        -- -- IMPORTANT: Navigate to first section
-                        -- if self.NavigateToSection then
-                        --     self:Debug("nav", "Navigating to first section after import")
-                        --     self:NavigateToSection(1)
-                        -- end
-                        
-                        -- IMPORTANT: Clear import text box if it exists
-                        if self.importEditBox then
-                            self:Debug("ui", "Clearing import edit box")
-                            self.importEditBox:SetText("")
-                        end
-
-                        -- IMPORTANT: Auto-send data to group after manual import (if in a group)
-                        if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
-                            -- Check if we have the SendAllSections function
-                            if self.SendAllSections then
-                                self:Debug("sync", "Manual import detected, sending data to group")
-                                -- Small delay to ensure the data is fully processed before sending
-                                self:ScheduleTimer(function()
-                                    self:SendAllSections()
-                                end, 0.5)
-                            else
-                                self:Debug("error", "SendAllSections function not available, can't share data")
-                            end
-                        else
-                            self:Debug("sync", "Not in a group, no need to send data after manual import")
-                        end
-                    else
-                        self:Debug("error", "SaveAssignments function not found")
-                    end
-                else
-                    -- If this is a sync operation with timestamp, handle it directly
-                    self:Debug("data", "Setting up data for sync import")
-                    TWRA_Assignments = {
-                        data = result.data,
-                        timestamp = syncTimestamp,
-                        version = 2,
-                        -- Store compressed version for future sync
-                        compressed = compressedData
-                    }
-                    self:Debug("data", "Saved data to Assignments with timestamp: " .. syncTimestamp)
-                    
-                    -- Rebuild navigation after sync import
-                    if self.RebuildNavigation then
-                        self:Debug("nav", "Rebuilding navigation after sync import")
-                        self:RebuildNavigation()
-                    end
-                    
-                    -- Update dynamic player information after sync imports
-                    if self.RefreshPlayerInfo then
-                        self:RefreshPlayerInfo()
-                        self:Debug("data", "Processed dynamic player information after sync import")
-                    end
-                    
-                    -- Navigate to first section after sync import
-                    if self.NavigateToSection then
-                        self:Debug("nav", "Navigating to first section after sync import")
-                        self:NavigateToSection(1)
-                    end
-                end
-                
                 return result
             else
-                self:Debug("error", "Format parsed but TWRA_ImportString not found", true)
+                self:Debug("error", "Format parsed but invalid result (not a table)", true)
                 return nil
             end
         else
-            self:Debug("error", "Unrecognized import format", true)
+            self:Debug("error", "Unrecognized import format - does not start with TWRA_ImportString", true)
             return nil
         end
     end)
@@ -886,10 +767,21 @@ function TWRA:DecodeBase64(base64Str, syncTimestamp, noAnnounce)
         return nil
     end
     
+    -- Check if parseResult is nil (indicating an error was caught during parsing)
+    if not parseResult then
+        self:Debug("error", "Failed to import data - invalid format", true)
+        return nil
+    end
+    
     -- Track total operation time if possible
     if debugprofilestop then
         local totalTime = debugprofilestop() - startTime
         self:Debug("performance", "Total import processing completed in " .. totalTime .. "ms")
+    end
+    
+    -- Handle the imported data
+    if parseResult then
+        self:HandleImportedData(parseResult, syncTimestamp, noAnnounce)
     end
     
     return parseResult

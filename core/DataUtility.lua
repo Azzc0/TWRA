@@ -386,7 +386,7 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     -- Remember the current section name before we clear data
     local previousSectionName = nil
     previousSectionName = TWRA_Assignments.currentSectionName or nil
-    self:Debug("error", "Precious Section name (TWRA_Assignments.currentSectionName): " .. (previousSectionName or "nil"))
+    self:Debug("nav", "Previous Section name (TWRA_Assignments.currentSectionName): " .. (previousSectionName or "nil"))
 
     local currentSection = nil
     if self.navigation and self.navigation.currentIndex then
@@ -402,7 +402,6 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
         self:Debug("data", "Data cleared successfully")
     end
     
-        
     -- Make sure all rows have entries for all columns
     if self.EnsureCompleteRows then
         data = self:EnsureCompleteRows(data)
@@ -449,14 +448,6 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
     TWRA_Assignments.timestamp = timestamp or time()
     TWRA_Assignments.source = sourceString
     
-    -- -- Set current section to 1 if it doesn't already exist
-    -- if not self.navigation then
-    --     self.navigation = {}
-    -- end
-    -- if not self.navigation.currentIndex or self.navigation.currentIndex < 1 then
-    --     self.navigation.currentIndex = 1
-    -- end
-    
     -- Generate compressed data for sync if new format
     if data.data then
         self:Debug("data", "Generating segmented compressed data for future sync operations")
@@ -469,55 +460,6 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
         self:Debug("data", "Assigned new format data directly to SavedVariables")
     else
         self:Debug("data", "Assigned legacy format data directly to SavedVariables")
-    end
-    
-    -- IMPORTANT: Do NOT process player info here yet - we'll do it at the very end
-    -- First make sure our hooks run to restore all metadata
-    
-    -- Announce save to chat if enabled and not suppressed
-    -- local announceMessage = "Raid assignments " .. (sourceString or "unknown source") .. 
-    --                       " saved."
-    -- if self.db and self.db.char and not self.db.char.quietmode and not noAnnounce then
-    --     -- Check if player is in a party/raid before announcing
-    --     local inRaid = GetNumRaidMembers() > 0
-    --     local inParty = GetNumPartyMembers() > 0
-        
-    --     if inRaid or inParty then
-    --         self:Debug("general", "Import detected while in party/raid - suppressing announcement")
-    --     else
-    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r " .. announceMessage)
-    --     end
-    -- else
-    --     self:Debug("general", "Import detected while in party/raid - suppressing announcement")
-    -- end
-    
-    -- Trigger events for custom handlers
-    self:TriggerEvent("ASSIGNMENTS_SAVED", data)
-    
-    -- Rebuild navigation after save
-    if self.RebuildNavigation then
-        self:Debug("nav", "Rebuilding navigation after import")
-        self:RebuildNavigation()
-    end
-    
-    -- Try to find the previous section in the new navigation
-    if previousSectionName and self.navigation and self.navigation.handlers then
-        local targetSectionIndex = nil
-        for idx, name in ipairs(self.navigation.handlers) do
-            if name == previousSectionName then
-                targetSectionIndex = idx
-                self:Debug("nav", "Found previously active section in new data: " .. name .. " (index " .. idx .. ")")
-                break
-            end
-        end
-        
-        -- If we found the section, update the navigation index
-        if targetSectionIndex then
-            self.navigation.currentIndex = targetSectionIndex
-            -- Store the current section in TWRA_Assignments as well
-            TWRA_Assignments.currentSection = targetSectionIndex
-            self:Debug("nav", "Restored navigation to previous section: " .. previousSectionName)
-        end
     end
     
     -- MOVE METADATA RESTORATION HERE - if the hook exists, call it directly
@@ -543,14 +485,45 @@ function TWRA:SaveAssignments(data, sourceString, timestamp, noAnnounce)
         self:Debug("error", "ProcessPlayerInfo function not available")
     end
     
-    -- -- Navigate to first section if needed - but now we check if we have previously restored a section
-    -- if self.navigation and self.navigation.currentIndex and self.navigation.currentIndex < 1 then
-    --     if self.NavigateToSection then
-    --         self:Debug("nav", "Navigating to first section after import (no previous section found)")
-    --         self:NavigateToSection(1)
-    --     end
-    -- end
-    self:NavigateToSection(previousSectionName or 1)
+    -- Rebuild navigation after save
+    if self.RebuildNavigation then
+        self:Debug("nav", "Rebuilding navigation after import")
+        self:RebuildNavigation()
+    end
+    
+    -- Try to find the previous section in the new navigation
+    if previousSectionName and self.navigation and self.navigation.handlers then
+        -- IMPORTANT: Use NavigateToSection with section name instead of trying to find index manually
+        if self.NavigateToSection then
+            self:Debug("nav", "Attempting to restore previous section: " .. previousSectionName)
+            self:NavigateToSection(previousSectionName, "restore")
+        else
+            -- Fallback if NavigateToSection isn't available
+            local targetSectionIndex = nil
+            for idx, name in ipairs(self.navigation.handlers) do
+                if name == previousSectionName then
+                    targetSectionIndex = idx
+                    self:Debug("nav", "Found previously active section in new data: " .. name .. " (index " .. idx .. ")")
+                    break
+                end
+            end
+            
+            -- If we found the section, update the navigation index
+            if targetSectionIndex then
+                self.navigation.currentIndex = targetSectionIndex
+                -- Store the current section in TWRA_Assignments as well
+                TWRA_Assignments.currentSection = targetSectionIndex
+                TWRA_Assignments.currentSectionName = previousSectionName
+                self:Debug("nav", "Restored navigation to previous section: " .. previousSectionName)
+            end
+        end
+    else
+        -- Navigate to first section if needed and no previous section found
+        if self.navigation and self.NavigateToSection then
+            self:Debug("nav", "Navigating to first section (no previous section name available)")
+            self:NavigateToSection(1, "default")
+        end
+    end
     
     -- Return timestamp for calling functions
     return timestamp or time()
@@ -562,6 +535,41 @@ function TWRA:ProcessImportedData(data)
     
     -- First handle any shortened keys
     local processedData = TranslateKeyNames(data)
+    
+    -- IMPORTANT: Find and store tank columns for all sections after key translation
+    if processedData.data and type(processedData.data) == "table" then
+        for sectionIdx, section in pairs(processedData.data) do
+            -- Make sure section is a table and has the required components
+            if type(section) == "table" and section["Section Header"] then
+                -- Ensure section has metadata
+                section["Section Metadata"] = section["Section Metadata"] or {}
+                
+                -- Only identify tank columns if not already in metadata
+                if not section["Section Metadata"]["Tank Columns"] or 
+                   (type(section["Section Metadata"]["Tank Columns"]) == "table" and 
+                    table.getn(section["Section Metadata"]["Tank Columns"]) == 0) then
+                    
+                    local sectionName = section["Section Name"] or tostring(sectionIdx)
+                    self:Debug("data", "Import: Identifying tank columns for section " .. sectionName)
+                    
+                    -- Find and store tank columns in metadata
+                    if self.FindTankRoleColumns then
+                        local tankColumns = self:FindTankRoleColumns(section)
+                        self:Debug("data", "Import: Found " .. table.getn(tankColumns) .. " tank columns in section " .. sectionName)
+                        
+                        -- Store the tank columns explicitly in the metadata
+                        section["Section Metadata"]["Tank Columns"] = tankColumns
+                    else
+                        self:Debug("error", "FindTankRoleColumns function not available during import")
+                    end
+                else
+                    local sectionName = section["Section Name"] or tostring(sectionIdx)
+                    local count = table.getn(section["Section Metadata"]["Tank Columns"] or {})
+                    self:Debug("data", "Import: Section " .. sectionName .. " already has " .. count .. " tank columns in metadata")
+                end
+            end
+        end
+    end
     
     -- Return the processed data
     return processedData

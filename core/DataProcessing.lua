@@ -1343,3 +1343,89 @@ function TWRA:IsCellRelevantForPlayerGroup(cellText)
     -- No match found
     return false
 end
+
+-- Process imported data to handle shortened keys and fix special characters
+function TWRA:ProcessImportedData(data)
+    if not data or type(data) ~= "table" then
+        self:Debug("error", "ProcessImportedData: Invalid data structure")
+        return data
+    end
+    
+    self:Debug("data", "Processing imported data structure")
+    
+    -- Process each section
+    if data.data and type(data.data) == "table" then
+        for sectionIndex, section in pairs(data.data) do
+            -- Skip if not a table
+            if type(section) ~= "table" then
+                self:Debug("data", "Skipping non-table section: " .. tostring(sectionIndex))
+            else
+                -- Ensure section has metadata
+                section["Section Metadata"] = section["Section Metadata"] or {}
+                
+                -- IMPORTANT: Identify tank columns during import and store in metadata
+                -- This ensures they're available when needed later and aren't lost during sync
+                if self.FindTankRoleColumns then
+                    local tankColumns = self:FindTankRoleColumns(section)
+                    self:Debug("tank", "Import: Found " .. table.getn(tankColumns) .. " tank columns in section " .. 
+                              (section["Section Name"] or tostring(sectionIndex)))
+                    
+                    -- Store the tank columns explicitly in the metadata
+                    section["Section Metadata"]["Tank Columns"] = tankColumns
+                end
+                
+                -- Process short keys ("sn", "sh", "sr") into full keys
+                if section["sn"] then
+                    section["Section Name"] = section["sn"]
+                    section["sn"] = nil
+                end
+                
+                if section["sh"] and type(section["sh"]) == "table" then
+                    section["Section Header"] = section["sh"]
+                    section["sh"] = nil
+                end
+                
+                if section["sr"] and type(section["sr"]) == "table" then
+                    section["Section Rows"] = section["sr"]
+                    section["sr"] = nil
+                end
+                
+                -- Fix special characters in section name
+                if section["Section Name"] then
+                    section["Section Name"] = self:FixSpecialCharacters(section["Section Name"])
+                end
+                
+                -- Fix special characters in section header
+                if section["Section Header"] then
+                    for i, headerValue in pairs(section["Section Header"]) do
+                        if type(headerValue) == "string" then
+                            section["Section Header"][i] = self:FixSpecialCharacters(headerValue)
+                        end
+                    end
+                end
+                
+                -- Fix special characters in section rows
+                if section["Section Rows"] then
+                    for rowIndex, row in pairs(section["Section Rows"]) do
+                        if type(row) == "table" then
+                            for colIndex, value in pairs(row) do
+                                if type(value) == "string" then
+                                    row[colIndex] = self:FixSpecialCharacters(value)
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- Initialize Section Player Info if missing
+                if not section["Section Player Info"] then
+                    section["Section Player Info"] = {
+                        ["Relevant Rows"] = {}
+                    }
+                end
+            end
+        end
+    end
+    
+    return data
+end

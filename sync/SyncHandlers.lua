@@ -21,9 +21,6 @@ function TWRA:InitializeHandlerMap()
         VER = self.HandleVersionCommand, -- Version check handler
         BSEC = self.HandleBulkSectionCommand, -- Bulk section handler
         BSTR = self.HandleBulkStructureCommand, -- Bulk structure handler
-        MSREQ = self.HandleMissingSectionsRequestCommand, -- Missing sections request handler
-        MSACK = self.HandleMissingSectionsAckCommand, -- Missing sections acknowledgment handler
-        MSRES = self.HandleMissingSectionResponseCommand, -- Missing section response handler
         BSREQ = self.HandleBulkSyncRequestCommand, -- Bulk sync request handler
         BSACK = self.HandleBulkSyncAckCommand, -- Bulk sync acknowledgment handler
         
@@ -829,9 +826,9 @@ function TWRA:HandleBulkStructureCommand(timestamp, structureData, sender)
     else
         self:Debug("sync", "Still have " .. missingCount .. " missing sections, keeping bulkSyncTimestamp")
         
-        -- Request missing sections through whisper to sender
-        self:Debug("sync", "Requesting " .. missingCount .. " missing sections from " .. sender)
-        self:RequestMissingSectionsWhisper(sender, timestamp)
+        -- Request missing sections through group channel
+        self:Debug("sync", "Requesting " .. missingCount .. " missing sections")
+        self:RequestMissingSections(timestamp)
     end
     
     -- Clear structure reference if we successfully processed the structure
@@ -1376,4 +1373,89 @@ end
 function TWRA:CreateVersionMessage(versionString, isIncompatible)
     local suffix = isIncompatible and ":INCOMPATIBLE" or ""
     return self.SYNC.COMMANDS.VERSION .. ":" .. versionString .. suffix
+end
+
+-- Function to request missing sections using group channels
+function TWRA:RequestMissingSections(timestamp)
+    local channel = IsInRaid() and "RAID" or IsInGroup() and "PARTY" or nil
+    if not channel then
+        self:Debug("error", "Cannot request missing sections - not in a group")
+        return
+    end
+    
+    -- Validate missing sections against structure data
+    local validMissingSections = {}
+    local phantomSections = {}
+    local totalStructureSections = 0
+    
+    -- Count actual sections in the structure
+    if TWRA_CompressedAssignments and TWRA_CompressedAssignments.structure then
+        local success, decodedStructure = pcall(function()
+            return self:DecompressStructureData(TWRA_CompressedAssignments.structure)
+        end)
+        
+        if success and decodedStructure then
+            -- Count how many legitimate sections we have in the structure
+            for idx, _ in pairs(decodedStructure) do
+                if type(idx) == "number" then
+                    totalStructureSections = totalStructureSections + 1
+                end
+            end
+            
+            self:Debug("sync", "Structure contains " .. totalStructureSections .. " legitimate sections")
+            
+            -- Now validate each missing section against this count
+            if TWRA_CompressedAssignments.sections and TWRA_CompressedAssignments.sections.missing then
+                for idx, transferId in pairs(TWRA_CompressedAssignments.sections.missing) do
+                    if type(idx) == "number" then
+                        if idx <= totalStructureSections then
+                            -- This is a legitimate section, keep it
+                            validMissingSections[idx] = transferId
+                            self:Debug("sync", "Section " .. idx .. " is valid, keeping in missing list")
+                        else
+                            -- This is a phantom section, remove it
+                            phantomSections[idx] = transferId
+                            self:Debug("sync", "Section " .. idx .. " exceeds structure count, removing from missing list")
+                        end
+                    end
+                end
+            end
+        else
+            self:Debug("error", "Failed to decode structure data to validate missing sections")
+        end
+    end
+    
+    -- Report phantom sections for debugging
+    if next(phantomSections) then
+        local phantomList = ""
+        for idx, _ in pairs(phantomSections) do
+            phantomList = phantomList .. idx .. ", "
+        end
+        phantomList = string.sub(phantomList, 1, -3) -- Remove trailing comma and space
+        self:Debug("data", "WARNING: Removed " .. self:GetTableSize(phantomSections) .. " phantom sections from missing list: " .. phantomList)
+    end
+    
+    -- Update the missing sections table to only include valid sections
+    TWRA_CompressedAssignments.sections.missing = validMissingSections
+    
+    -- Count valid missing sections
+    local validMissingCount = self:GetTableSize(validMissingSections)
+    
+    -- Only request if we still have valid missing sections
+    if validMissingCount > 0 then
+        self:Debug("sync", "Requesting " .. validMissingCount .. " valid missing sections")
+        
+        -- Create a bulk sync request message
+        if self.RequestBulkSync then
+            self:Debug("sync", "Using bulk sync request instead of individual section requests")
+            self:RequestBulkSync(timestamp) -- This uses the proper group channel
+            return true
+        else
+            self:Debug("error", "RequestBulkSync function not available")
+            return false
+        end
+    else
+        self:Debug("sync", "No valid missing sections to request after validation")
+        return false
+    end
 end

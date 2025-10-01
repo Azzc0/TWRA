@@ -460,11 +460,11 @@ TWRA.DEFAULT_OSD_SETTINGS = {
 -- Export version information
 TWRA.VERSION = {
     MAJOR = 0,         -- Major version - increment for breaking changes
-    MINOR = 1,         -- Minor version - increment for new features
-    PATCH = 0,         -- Patch version - increment for bug fixes
-    DATE = "2025-05-11", -- Current date in YYYY-MM-DD format
-    DATA_COMPAT = 1,   -- Minimum compatible minor version for data structures
-    STRING = "0.1.0",  -- Version string in format "MAJOR.MINOR.PATCH"
+    MINOR = 2,         -- Minor version - increment for new features
+    PATCH = 6,         -- Patch version - increment for bug fixes
+    DATE = "2025-09-23", -- Current date in YYYY-MM-DD format
+    DATA_COMPAT = 4,   -- Minimum compatible minor version for data structures
+    STRING = "0.2.6",  -- Version string in format "MAJOR.MINOR.PATCH"
 }
 
 -- Export base64 character table for encoding/decoding
@@ -507,9 +507,11 @@ TWRA.ITEM_DATABASE = {
     ["Greater Arcane Protection Potion"] = {id = 13461, quality = "Common"},
     ["Greater Holy Protection Potion"] = {id = 13460, quality = "Common"},
     ["Holy Protection Potion"] = {id = 6051, quality = "Common"},
+    ["Frozen Rune"] = {id = 22682, quality = "Rare"},
     ["Flask of the Titans"] = {id = 13510, quality = "Common"},
     ["Major Mana Potion"] = {id = 13444, quality = "Common"},
     ["Elixir of Poison Resistance"] = {id = 3386, quality = "Common"},
+    ["Elixir of Demonslaying"] = {id = 9224, quality = "Common"},
     ["Free Action Potion"] = {id = 5634, quality = "Common"},
     ["Limited Invulnerability Potion"] = {id = 3387, quality = "Common"},
     ["Living Action Potion"] = {id = 20008, quality = "Common"},

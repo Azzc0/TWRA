@@ -2,7 +2,7 @@
 ## Title: TWRA - Turtle WoW Raid Assignments
 ## Notes: Raid assignment vieweing tool for Turtle WoW
 ## Author: Azzco
-## Version: 0.2
+## Version: 0.2.6
 ## SavedVariables: TWRA_SavedVariables, TWRA_Assignments, TWRA_CompressedAssignments
 
 # Keybindings (must load early)

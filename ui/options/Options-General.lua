@@ -244,29 +244,40 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
     table.insert(self.optionsElements, liveSync)
     table.insert(self.optionsElements, liveSyncText)
     
-    -- Tank Sync Option
-    local tankSyncCheckbox, tankSyncText = self:CreateCheckbox(leftColumn, "Tank Sync", "TOPLEFT", liveSync, "BOTTOMLEFT", 0, -3)
-    table.insert(self.optionsElements, tankSyncCheckbox)
-    table.insert(self.optionsElements, tankSyncText)
+    -- Tank Sync Label
+    local tankSyncLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tankSyncLabel:SetPoint("TOPLEFT", liveSync, "BOTTOMLEFT", 0, -3)
+    tankSyncLabel:SetText("Tank sync:")
+    table.insert(self.optionsElements, tankSyncLabel)
     
-    -- Add info icon for tank sync
+    -- oRA2 Tank Sync Option
+    local oRA2TankSync, oRA2TankSyncText = self:CreateCheckbox(leftColumn, "oRA2", "LEFT", tankSyncLabel, "RIGHT", 5, 0)
+    table.insert(self.optionsElements, oRA2TankSync)
+    table.insert(self.optionsElements, oRA2TankSyncText)
+    
+    -- pfUI Tank Sync Option
+    local pfUITankSync, pfUITankSyncText = self:CreateCheckbox(leftColumn, "pfUI", "LEFT", oRA2TankSync, "RIGHT", 35, 0)
+    table.insert(self.optionsElements, pfUITankSync)
+    table.insert(self.optionsElements, pfUITankSyncText)
+    
+    -- Add info icon for tank sync options
     local tankSyncIcon, tankSyncIconFrame = self.UI:CreateIconWithTooltip(
         leftColumn,
         "Interface\\TutorialFrame\\TutorialFrame-QuestionMark",
-        "Tank Sync (Requires oRA2)",
-        "When enabled, tanks will be automatically assigned in oRA2 based on the currently selected section.",
-        tankSyncText,
+        "Tank Sync Options",
+        "oRA2: Updates the oRA2 tank table and pushes to the raid\npfUI: Edits your local pfUI tanklist with current section tanks",
+        pfUITankSyncText,
         5, 22, 22
     )
     
     tankSyncIcon:ClearAllPoints()
-    tankSyncIcon:SetPoint("LEFT", tankSyncText, "RIGHT", 5, 0)
+    tankSyncIcon:SetPoint("LEFT", pfUITankSyncText, "RIGHT", 5, 0)
     
     table.insert(self.optionsElements, tankSyncIcon)
     table.insert(self.optionsElements, tankSyncIconFrame)
     
     -- AutoNavigate Option
-    local autoNavigate, autoNavigateText = self:CreateCheckbox(leftColumn, "AutoNavigate", "TOPLEFT", tankSyncCheckbox, "BOTTOMLEFT", 0, -3)
+    local autoNavigate, autoNavigateText = self:CreateCheckbox(leftColumn, "AutoNavigate", "TOPLEFT", tankSyncLabel, "BOTTOMLEFT", 0, -20)
     table.insert(self.optionsElements, autoNavigate)
     table.insert(self.optionsElements, autoNavigateText)
     
@@ -286,154 +297,154 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
     table.insert(self.optionsElements, autoNavIcon)
     table.insert(self.optionsElements, autoNavIconFrame)
     
-    -- Add keybinding options header
-    local keybindHeader = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    keybindHeader:SetPoint("TOPLEFT", autoNavigate, "BOTTOMLEFT", 0, -5)
-    keybindHeader:SetText("Keybindings:")
-    table.insert(self.optionsElements, keybindHeader)
+    -- -- Add keybinding options header
+    -- local keybindHeader = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    -- keybindHeader:SetPoint("TOPLEFT", autoNavigate, "BOTTOMLEFT", 0, -5)
+    -- keybindHeader:SetText("Keybindings:")
+    -- table.insert(self.optionsElements, keybindHeader)
     
-    -- Define label width for uniform presentation
-    local labelWidth = 100
+    -- -- Define label width for uniform presentation
+    -- local labelWidth = 100
     
-    -- ==== TOGGLE FRAME KEYBINDING ====
-    -- Create keybinding label for Toggle Frame
-    local toggleFrameLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    toggleFrameLabel:SetPoint("TOPLEFT", keybindHeader, "BOTTOMLEFT", 5, -5)
-    toggleFrameLabel:SetText("Toggle Frame:")
-    toggleFrameLabel:SetWidth(labelWidth)
-    toggleFrameLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, toggleFrameLabel)
+    -- -- ==== TOGGLE FRAME KEYBINDING ====
+    -- -- Create keybinding label for Toggle Frame
+    -- local toggleFrameLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- toggleFrameLabel:SetPoint("TOPLEFT", keybindHeader, "BOTTOMLEFT", 5, -5)
+    -- toggleFrameLabel:SetText("Toggle Frame:")
+    -- toggleFrameLabel:SetWidth(labelWidth)
+    -- toggleFrameLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, toggleFrameLabel)
     
-    -- Get current binding for Toggle Frame
-    local currentBinding = GetBindingKey("TWRA_TOGGLE")
+    -- -- Get current binding for Toggle Frame
+    -- local currentBinding = GetBindingKey("TWRA_TOGGLE")
     
-    -- Create keybinding button for Toggle Main Frame (smaller size)
-    local toggleFrameKey = CreateFrame("Button", "TWRA_ToggleFrameKeyButton", leftColumn, "UIPanelButtonTemplate")
-    toggleFrameKey:SetWidth(80)
-    toggleFrameKey:SetHeight(20)
-    toggleFrameKey:SetPoint("LEFT", toggleFrameLabel, "RIGHT", 5, 0)
-    toggleFrameKey:SetText(currentBinding or "Not bound")
-    toggleFrameKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, toggleFrameKey)
+    -- -- Create keybinding button for Toggle Main Frame (smaller size)
+    -- local toggleFrameKey = CreateFrame("Button", "TWRA_ToggleFrameKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- toggleFrameKey:SetWidth(80)
+    -- toggleFrameKey:SetHeight(20)
+    -- toggleFrameKey:SetPoint("LEFT", toggleFrameLabel, "RIGHT", 5, 0)
+    -- toggleFrameKey:SetText(currentBinding or "Not bound")
+    -- toggleFrameKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, toggleFrameKey)
     
-    -- Add handler for the keybinding button
-    toggleFrameKey:SetScript("OnClick", function()
-        -- Use the keybinding system from Bindings.lua
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Toggle function")
-            self:StartKeyBinding("TOGGLE", "Toggle Frame", function(key)
-                -- No need to update here, UpdateKeyBindingDisplay will handle it
-            end)
-        else
-            -- Fallback if Bindings.lua hasn't been loaded
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- toggleFrameKey:SetScript("OnClick", function()
+    --     -- Use the keybinding system from Bindings.lua
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Toggle function")
+    --         self:StartKeyBinding("TOGGLE", "Toggle Frame", function(key)
+    --             -- No need to update here, UpdateKeyBindingDisplay will handle it
+    --         end)
+    --     else
+    --         -- Fallback if Bindings.lua hasn't been loaded
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
     
-    -- ==== NEXT SECTION KEYBINDING ====
-    -- Create keybinding label for Next Section
-    local nextSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    nextSectionLabel:SetPoint("TOPLEFT", toggleFrameKey, "BOTTOMLEFT", -labelWidth-5, -5)
-    nextSectionLabel:SetText("Next Section:")
-    nextSectionLabel:SetWidth(labelWidth)
-    nextSectionLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, nextSectionLabel)
+    -- -- ==== NEXT SECTION KEYBINDING ====
+    -- -- Create keybinding label for Next Section
+    -- local nextSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- nextSectionLabel:SetPoint("TOPLEFT", toggleFrameKey, "BOTTOMLEFT", -labelWidth-5, -5)
+    -- nextSectionLabel:SetText("Next Section:")
+    -- nextSectionLabel:SetWidth(labelWidth)
+    -- nextSectionLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, nextSectionLabel)
     
-    -- Get current binding for Next Section
-    local nextBinding = GetBindingKey("TWRA_NEXT")
+    -- -- Get current binding for Next Section
+    -- local nextBinding = GetBindingKey("TWRA_NEXT")
     
-    -- Create keybinding button for Next Section
-    local nextSectionKey = CreateFrame("Button", "TWRA_NextSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
-    nextSectionKey:SetWidth(80)
-    nextSectionKey:SetHeight(20)
-    nextSectionKey:SetPoint("LEFT", nextSectionLabel, "RIGHT", 5, 0)
-    nextSectionKey:SetText(nextBinding or "Not bound")
-    nextSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, nextSectionKey)
+    -- -- Create keybinding button for Next Section
+    -- local nextSectionKey = CreateFrame("Button", "TWRA_NextSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- nextSectionKey:SetWidth(80)
+    -- nextSectionKey:SetHeight(20)
+    -- nextSectionKey:SetPoint("LEFT", nextSectionLabel, "RIGHT", 5, 0)
+    -- nextSectionKey:SetText(nextBinding or "Not bound")
+    -- nextSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, nextSectionKey)
     
-    -- Add handler for the keybinding button
-    nextSectionKey:SetScript("OnClick", function()
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Next function")
-            self:StartKeyBinding("NEXT", "Next Section", function(key)
-                -- No need to update here, UpdateKeyBindingDisplay will handle it
-            end)
-        else
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- nextSectionKey:SetScript("OnClick", function()
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Next function")
+    --         self:StartKeyBinding("NEXT", "Next Section", function(key)
+    --             -- No need to update here, UpdateKeyBindingDisplay will handle it
+    --         end)
+    --     else
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
     
-    -- ==== PREVIOUS SECTION KEYBINDING ====
-    -- Create keybinding label for Previous Section
-    local prevSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    prevSectionLabel:SetPoint("TOPLEFT", nextSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
-    prevSectionLabel:SetText("Previous Section:")
-    prevSectionLabel:SetWidth(labelWidth)
-    prevSectionLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, prevSectionLabel)
+    -- -- ==== PREVIOUS SECTION KEYBINDING ====
+    -- -- Create keybinding label for Previous Section
+    -- local prevSectionLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- prevSectionLabel:SetPoint("TOPLEFT", nextSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
+    -- prevSectionLabel:SetText("Previous Section:")
+    -- prevSectionLabel:SetWidth(labelWidth)
+    -- prevSectionLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, prevSectionLabel)
     
-    -- Get current binding for Previous Section
-    local prevBinding = GetBindingKey("TWRA_PREV")
+    -- -- Get current binding for Previous Section
+    -- local prevBinding = GetBindingKey("TWRA_PREV")
     
-    -- Create keybinding button for Previous Section
-    local prevSectionKey = CreateFrame("Button", "TWRA_PrevSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
-    prevSectionKey:SetWidth(80)
-    prevSectionKey:SetHeight(20)
-    prevSectionKey:SetPoint("LEFT", prevSectionLabel, "RIGHT", 5, 0)
-    prevSectionKey:SetText(prevBinding or "Not bound")
-    prevSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, prevSectionKey)
+    -- -- Create keybinding button for Previous Section
+    -- local prevSectionKey = CreateFrame("Button", "TWRA_PrevSectionKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- prevSectionKey:SetWidth(80)
+    -- prevSectionKey:SetHeight(20)
+    -- prevSectionKey:SetPoint("LEFT", prevSectionLabel, "RIGHT", 5, 0)
+    -- prevSectionKey:SetText(prevBinding or "Not bound")
+    -- prevSectionKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, prevSectionKey)
     
-    -- Add handler for the keybinding button
-    prevSectionKey:SetScript("OnClick", function()
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Previous function")
-            self:StartKeyBinding("PREV", "Previous Section", function(key)
-                -- Update the displayed text with the new keybind
-                prevSectionKey:SetText(key or "Not bound")
-            end)
-        else
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- prevSectionKey:SetScript("OnClick", function()
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Previous function")
+    --         self:StartKeyBinding("PREV", "Previous Section", function(key)
+    --             -- Update the displayed text with the new keybind
+    --             prevSectionKey:SetText(key or "Not bound")
+    --         end)
+    --     else
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
     
-    -- ==== TOGGLE OSD KEYBINDING ====
-    -- Create keybinding label for Toggle OSD
-    local toggleOSDLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    toggleOSDLabel:SetPoint("TOPLEFT", prevSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
-    toggleOSDLabel:SetText("Toggle OSD:")
-    toggleOSDLabel:SetWidth(labelWidth)
-    toggleOSDLabel:SetJustifyH("LEFT")
-    table.insert(self.optionsElements, toggleOSDLabel)
+    -- -- ==== TOGGLE OSD KEYBINDING ====
+    -- -- Create keybinding label for Toggle OSD
+    -- local toggleOSDLabel = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    -- toggleOSDLabel:SetPoint("TOPLEFT", prevSectionKey, "BOTTOMLEFT", -labelWidth-5, -5)
+    -- toggleOSDLabel:SetText("Toggle OSD:")
+    -- toggleOSDLabel:SetWidth(labelWidth)
+    -- toggleOSDLabel:SetJustifyH("LEFT")
+    -- table.insert(self.optionsElements, toggleOSDLabel)
     
-    -- Get current binding for Toggle OSD
-    local osdBinding = GetBindingKey("TWRA_TOGGLE_OSD")
+    -- -- Get current binding for Toggle OSD
+    -- local osdBinding = GetBindingKey("TWRA_TOGGLE_OSD")
     
-    -- Create keybinding button for Toggle OSD
-    local toggleOSDKey = CreateFrame("Button", "TWRA_ToggleOSDKeyButton", leftColumn, "UIPanelButtonTemplate")
-    toggleOSDKey:SetWidth(80)
-    toggleOSDKey:SetHeight(20)
-    toggleOSDKey:SetPoint("LEFT", toggleOSDLabel, "RIGHT", 5, 0)
-    toggleOSDKey:SetText(osdBinding or "Not bound")
-    toggleOSDKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
-    table.insert(self.optionsElements, toggleOSDKey)
+    -- -- Create keybinding button for Toggle OSD
+    -- local toggleOSDKey = CreateFrame("Button", "TWRA_ToggleOSDKeyButton", leftColumn, "UIPanelButtonTemplate")
+    -- toggleOSDKey:SetWidth(80)
+    -- toggleOSDKey:SetHeight(20)
+    -- toggleOSDKey:SetPoint("LEFT", toggleOSDLabel, "RIGHT", 5, 0)
+    -- toggleOSDKey:SetText(osdBinding or "Not bound")
+    -- toggleOSDKey:SetTextColor(1, 0.82, 0, 1) -- Gold color for key bindings
+    -- table.insert(self.optionsElements, toggleOSDKey)
     
-    -- Add handler for the keybinding button
-    toggleOSDKey:SetScript("OnClick", function()
-        if self.StartKeyBinding then
-            self:Debug("general", "Starting key binding for Toggle OSD function")
-            self:StartKeyBinding("TOGGLE_OSD", "Toggle OSD", function(key)
-                -- Update the displayed text with the new keybind
-                toggleOSDKey:SetText(key or "Not bound")
-            end)
-        else
-            self:Debug("error", "StartKeyBinding function not found")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
-        end
-    end)
+    -- -- Add handler for the keybinding button
+    -- toggleOSDKey:SetScript("OnClick", function()
+    --     if self.StartKeyBinding then
+    --         self:Debug("general", "Starting key binding for Toggle OSD function")
+    --         self:StartKeyBinding("TOGGLE_OSD", "Toggle OSD", function(key)
+    --             -- Update the displayed text with the new keybind
+    --             toggleOSDKey:SetText(key or "Not bound")
+    --         end)
+    --     else
+    --         self:Debug("error", "StartKeyBinding function not found")
+    --         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA:|r Keybinding system not available.")
+    --     end
+    -- end)
 
     -- ====================== LOAD SAVED VALUES ======================
     -- Get saved options and apply them to the UI elements
@@ -446,12 +457,19 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
     end
     liveSync:SetChecked(liveSyncEnabled)
     
-    -- Tank Sync checkbox
-    local tankSyncEnabled = self.SYNC and self.SYNC.tankSync or false
-    if options.tankSync ~= nil then
-        tankSyncEnabled = options.tankSync
+    -- oRA2 Tank Sync checkbox
+    local oRA2TankSyncEnabled = self.SYNC and self.SYNC.oRA2TankSync or false
+    if options.oRA2TankSync ~= nil then
+        oRA2TankSyncEnabled = options.oRA2TankSync
     end
-    tankSyncCheckbox:SetChecked(tankSyncEnabled)
+    oRA2TankSync:SetChecked(oRA2TankSyncEnabled)
+    
+    -- pfUI Tank Sync checkbox
+    local pfUITankSyncEnabled = self.SYNC and self.SYNC.pfUITankSync or false
+    if options.pfUITankSync ~= nil then
+        pfUITankSyncEnabled = options.pfUITankSync
+    end
+    pfUITankSync:SetChecked(pfUITankSyncEnabled)
     
     -- AutoNavigate checkbox
     local autoNavEnabled = self.AUTONAVIGATE and self.AUTONAVIGATE.enabled or false
@@ -476,22 +494,47 @@ function TWRA:CreateOptionsGeneralColumn(leftColumn)
         self:Debug("sync", "Option 'Live Section Sync' set to " .. (isChecked and "ON" or "OFF"))
     end)
     
-    -- Tank Sync checkbox behavior
-    tankSyncCheckbox:SetScript("OnClick", function()
+    -- oRA2 Tank Sync checkbox behavior
+    oRA2TankSync:SetScript("OnClick", function()
         local isChecked = (this:GetChecked() == 1)
-        TWRA_SavedVariables.options.tankSync = isChecked
+        TWRA_SavedVariables.options.oRA2TankSync = isChecked
         
         -- Update memory value
         if self.SYNC then
-            self.SYNC.tankSync = isChecked
+            self.SYNC.oRA2TankSync = isChecked
+        end
+        
+        -- Update overall tank sync status
+        self.SYNC.tankSync = (TWRA_SavedVariables.options.oRA2TankSync or TWRA_SavedVariables.options.pfUITankSync)
+        
+        -- Debug output
+        self:Debug("tank", "Option 'oRA2 Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
+        
+        -- Initialize tank sync functionality
+        if self.InitializeTankSync then
+            self:InitializeTankSync()
+            
+            -- Force an update of tanks for the current section
+            self:UpdateTanks()
+        end
+    end)
+    
+    -- pfUI Tank Sync checkbox behavior
+    pfUITankSync:SetScript("OnClick", function()
+        local isChecked = (this:GetChecked() == 1)
+        TWRA_SavedVariables.options.pfUITankSync = isChecked
+        
+        -- Update memory value
+        if self.SYNC then
+            self.SYNC.pfUITankSync = isChecked
         end
         
         -- Debug output
-        self:Debug("tank", "Option 'Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
+        self:Debug("tank", "Option 'pfUI Tank Sync' set to " .. (isChecked and "ON" or "OFF"))
         
-        -- Initialize tank sync if it was just enabled
-        if isChecked and self.InitializeTankSync then
-            self:InitializeTankSync()
+        -- Initialize pfUI tank sync if it was just enabled
+        if isChecked and self.InitializepfUITankSync then
+            self:InitializepfUITankSync()
         end
     end)
     

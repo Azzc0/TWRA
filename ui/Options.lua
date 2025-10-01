@@ -258,7 +258,7 @@ function TWRA:ApplyInitialSettings()
     self:Debug("general", "Applying initial settings from saved variables")
     
     -- Get saved options
-    local options = TWRA_SavedVariables.options
+    local options = TWRA_SavedVariables.options or {}
     if not options then
         self:Debug("general", "No saved options found, using defaults")
         return
@@ -289,12 +289,12 @@ function TWRA:ApplyInitialSettings()
         end
     end
 
-    -- Apply Tank Sync setting
-    if options.tankSync then
-        self:Debug("tank", "Initializing Tank Sync: ENABLED")
+    -- Apply oRA2 Tank Sync setting
+    if options.oRA2TankSync then
+        self:Debug("tank", "Initializing oRA2 Tank Sync: ENABLED")
         -- Make sure SYNC module exists
         self.SYNC = self.SYNC or {} 
-        self.SYNC.tankSync = true
+        self.SYNC.oRA2TankSync = true
         
         if self:IsORA2Available() then
             self:Debug("tank", "oRA2 available, Tank Sync active")
@@ -302,7 +302,33 @@ function TWRA:ApplyInitialSettings()
             self:Debug("tank", "oRA2 not available, Tank Sync will activate when available")
         end
     else
-        self:Debug("tank", "Tank Sync disabled in settings")
+        self:Debug("tank", "oRA2 Tank Sync disabled in settings")
+    end
+    
+    -- Apply pfUI Tank Sync setting
+    if options.pfUITankSync then
+        self:Debug("tank", "Initializing pfUI Tank Sync: ENABLED")
+        -- Make sure SYNC module exists
+        self.SYNC = self.SYNC or {} 
+        self.SYNC.pfUITankSync = true
+        
+        if self:IsPfUIAvailable() then
+            self:Debug("tank", "pfUI available, Tank Sync active")
+        else
+            self:Debug("tank", "pfUI not available, Tank Sync will activate when available")
+        end
+    else
+        self:Debug("tank", "pfUI Tank Sync disabled in settings")
+    end
+    
+    -- Set overall tank sync flag if either is enabled
+    if self.SYNC then
+        self.SYNC.tankSync = (options.oRA2TankSync or options.pfUITankSync)
+    end
+    
+    -- Initialize tank sync if either option is enabled
+    if (options.oRA2TankSync or options.pfUITankSync) and self.InitializeTankSync then
+        self:InitializeTankSync()
     end
     
     -- Apply AutoNavigate setting

@@ -352,23 +352,6 @@ SlashCmdList["TWRA"] = function(msg)
         i = i + 1
     end
     
-    -- Check for performance command first
-    if args[1] == "perf" then
-        -- Remove the first argument (perf) and pass the rest to HandlePerfCommand
-        local perfArgs = {}
-        for j = 2, i-1 do
-            perfArgs[j-1] = args[j]
-        end
-        
-        -- Call the performance command handler
-        if TWRA.HandlePerfCommand then
-            TWRA:HandlePerfCommand(perfArgs)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Performance monitoring system not initialized")
-        end
-        return
-    end
-    
     -- Check for debug command
     if args[1] == "debug" then
         -- Remove the first argument (debug) and pass the rest to HandleDebugCommand
@@ -386,8 +369,74 @@ SlashCmdList["TWRA"] = function(msg)
         return
     end
     
+    -- Check for OSD-related commands
+    if args[1] == "osd" then
+        -- Get the subcommand (if any)
+        local subCommand = args[2] or ""
+        
+        if subCommand == "reset" then
+            -- Reset OSD position
+            if TWRA.ResetOSDPosition then
+                TWRA:ResetOSDPosition()
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD position has been reset to center")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: ResetOSDPosition function not available")
+            end
+        elseif subCommand == "disable" then
+            -- Globally disable OSD functionality
+            if TWRA.OSD then
+                TWRA.OSD.disabled = true
+                -- Save setting to saved variables
+                if TWRA_SavedVariables and TWRA_SavedVariables.options then
+                    if not TWRA_SavedVariables.options.osd then
+                        TWRA_SavedVariables.options.osd = {}
+                    end
+                    TWRA_SavedVariables.options.osd.disabled = true
+                end
+                -- Hide OSD if it's currently visible
+                if TWRA.HideOSD and TWRA.OSD.isVisible then
+                    TWRA:HideOSD()
+                end
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD functionality globally disabled")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD system not initialized")
+            end
+        elseif subCommand == "enable" then
+            -- Globally enable OSD functionality
+            if TWRA.OSD then
+                TWRA.OSD.disabled = false
+                -- Save setting to saved variables
+                if TWRA_SavedVariables and TWRA_SavedVariables.options then
+                    if not TWRA_SavedVariables.options.osd then
+                        TWRA_SavedVariables.options.osd = {}
+                    end
+                    TWRA_SavedVariables.options.osd.disabled = false
+                end
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD functionality globally enabled")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD system not initialized")
+            end
+        elseif subCommand == "toggle" or subCommand == "" then
+            -- Toggle OSD visibility
+            if TWRA.ToggleOSD then
+                local visible = TWRA:ToggleOSD()
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD " .. (visible and "shown" or "hidden"))
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD system not initialized")
+            end
+        else
+            -- Show OSD help
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA OSD Commands|r:")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra osd - Toggle OSD visibility")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra osd reset - Reset OSD position to center")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra osd enable - Globally enable OSD functionality")
+            DEFAULT_CHAT_FRAME:AddMessage("  /twra osd disable - Globally disable OSD functionality")
+        end
+        return
+    end
+    
     -- Check for GUID-related commands
-    if args[1] == "guid" or args[1] == "targetguid" then
+    if args[1] == "guid" then
         -- Get current target GUID
         if TWRA.GetCurrentTargetGuid then
             TWRA:GetCurrentTargetGuid()
@@ -395,77 +444,16 @@ SlashCmdList["TWRA"] = function(msg)
             DEFAULT_CHAT_FRAME:AddMessage("TWRA: GetCurrentTargetGuid function not available")
         end
         return
-    elseif args[1] == "listguids" then
-        -- List all stored GUIDs
-        if TWRA.ListAllGuids then
-            TWRA:ListAllGuids()
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: ListAllGuids function not available")
-        end
-        return
     end
     
-    -- Check for decursive commands
-    if args[1] == "decursive" then
-        -- Get the subcommand (if any)
-        local subCommand = args[2] or ""
-        
-        if subCommand == "auto" then
-            -- Toggle auto feature
-            if TWRA_SavedVariables and TWRA_SavedVariables.options then
-                local currentValue = TWRA_SavedVariables.options.decursivePrio or false
-                TWRA_SavedVariables.options.decursivePrio = not currentValue
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Auto Decursive feature " .. 
-                    (TWRA_SavedVariables.options.decursivePrio and "enabled" or "disabled"))
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Could not save settings - SavedVariables not available")
-            end
-            return
-        elseif subCommand == "on" then
-            -- Turn on auto feature
-            if TWRA_SavedVariables and TWRA_SavedVariables.options then
-                TWRA_SavedVariables.options.decursivePrio = true
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Auto Decursive feature enabled")
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Could not save settings - SavedVariables not available")
-            end
-            return
-        elseif subCommand == "off" then
-            -- Turn off auto feature
-            if TWRA_SavedVariables and TWRA_SavedVariables.options then
-                TWRA_SavedVariables.options.decursivePrio = false
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Auto Decursive feature disabled")
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Could not save settings - SavedVariables not available")
-            end
-            return
-        elseif subCommand == "update" then
-            -- Update priority list without changing auto setting
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Updating Decursive priority list...")
-            if TWRA.UpdateDecursivePriorityList then
-                TWRA:UpdateDecursivePriorityList()
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("TWRA: Decursive priority feature not initialized")
-            end
-            return
+    -- Check for reset command
+    if args[1] == "reset" then
+        -- Reset main frame position
+        if TWRA.ResetFramePosition then
+            TWRA:ResetFramePosition()
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: Main frame position has been reset to center")
         else
-            -- Show decursive help (this now runs when subCommand is empty or not recognized)
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Decursive Commands|r:")
-            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive auto - Toggle automatic updates")
-            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive on - Enable automatic updates")
-            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive off - Disable automatic updates")
-            DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive update - Update priority list now")
-            return
-        end
-    end
-    
-    -- Command to toggle OSD visibility
-    if msg == "osd" then
-        if TWRA.ToggleOSD then
-            local visible = TWRA:ToggleOSD()
-            TWRA:Debug("osd", "OSD visibility toggled: " .. (visible and "shown" or "hidden"))
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("TWRA: OSD system not initialized")
+            DEFAULT_CHAT_FRAME:AddMessage("TWRA: ResetFramePosition function not available")
         end
         return
     end
@@ -514,57 +502,25 @@ SlashCmdList["TWRA"] = function(msg)
         TWRA.mainFrame:Show()
         TWRA:ShowOptionsView()
         TWRA:Debug("ui", "Options panel opened")
-    -- Command to explicitly show the main frame
-    elseif msg == "show" then
-        if TWRA.mainFrame and not TWRA.mainFrame:IsShown() then
-            TWRA.mainFrame:Show()
-            TWRA:Debug("ui", "Window shown")
-        elseif not TWRA.mainFrame then
-            TWRA:CreateMainFrame()
-            TWRA.mainFrame:Show()
-            TWRA:Debug("ui", "Window created and shown")
-        else
-            TWRA:Debug("ui", "Window is already visible")
-        end
-    -- Command to explicitly hide the main frame
-    elseif msg == "hide" then
-        if TWRA.mainFrame and TWRA.mainFrame:IsShown() then
-            TWRA.mainFrame:Hide()
-            TWRA:Debug("ui", "Window hidden")
-        else
-            TWRA:Debug("ui", "Window is already hidden")
-        end
-    -- Command to reset UI to main view
-    elseif msg == "resetview" then
-        if TWRA.mainFrame then
-            if TWRA.currentView == "options" then
-                TWRA:ShowMainView()
-            end
-            TWRA:Debug("ui", "UI view reset to main view")
-        end
-    -- Command to toggle the main frame
-    elseif msg == "toggle" or msg == "" then
+        return
+    -- Command to toggle the main frame (default command with no arguments)
+    elseif msg == "" then
         TWRA:ToggleMainFrame()
+        return
     else
-        -- Show help message
+        -- Show help message with streamlined command list
         DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99TWRA Commands|r:")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra - Toggle main window")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra show - Show main window")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra hide - Hide main window")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra osd - Toggle on-screen display")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra perf - Performance monitoring commands")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra options - Open options panel")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra resetview - Reset to main view")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra osd - Toggle on-screen display")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra osd reset - Reset OSD position to center")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra osd enable - Enable OSD functionality")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra osd disable - Disable OSD functionality")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra next - Go to next section")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra prev - Go to previous section")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra # - Go to specific section number")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra debug - Access debug commands")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra decursive - Decursive priority list commands")
         DEFAULT_CHAT_FRAME:AddMessage("  /twra guid - Get current target GUID")
-        DEFAULT_CHAT_FRAME:AddMessage("  /twra listguids - List all stored GUIDs")
-        DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra perf' for performance monitoring options")
-        DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra debug' for detailed debug options")
-        DEFAULT_CHAT_FRAME:AddMessage("  Use '/twra decursive' for Decursive priority list options")
+        DEFAULT_CHAT_FRAME:AddMessage("  /twra version - Show addon version")
     end
 end
 
@@ -818,6 +774,7 @@ end
 -- Function to handle group composition changes
 function TWRA:OnGroupChanged()
     self:Debug("sync", "Group composition changed")
+    TWRA:RefreshPlayerInfo()
     
     -- Check if we're in a group now
     local inGroup = (GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0)

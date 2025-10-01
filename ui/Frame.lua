@@ -48,7 +48,19 @@ function TWRA:CreateMainFrame()
     self.mainFrame = CreateFrame("Frame", "TWRAMainFrame", UIParent)
     self.mainFrame:SetWidth(800)
     self.mainFrame:SetHeight(300)
-    self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    
+    -- Restore saved position or default to center
+    if TWRA_SavedVariables and TWRA_SavedVariables.options and TWRA_SavedVariables.options.frame then
+        local framePos = TWRA_SavedVariables.options.frame
+        if framePos.point and framePos.xOffset and framePos.yOffset then
+            self.mainFrame:SetPoint(framePos.point, UIParent, framePos.point, framePos.xOffset, framePos.yOffset)
+            self:Debug("ui", "Restored frame position: " .. framePos.point .. ", " .. framePos.xOffset .. ", " .. framePos.yOffset)
+        else
+            self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        end
+    else
+        self.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
     
     -- Store default width for proper resizing
     self.defaultFrameWidth = 800
@@ -84,25 +96,40 @@ function TWRA:CreateMainFrame()
     self.mainFrame:EnableMouse(true)
     self.mainFrame:RegisterForDrag("LeftButton")
     self.mainFrame:SetScript("OnDragStart", function() self.mainFrame:StartMoving() end)
-    self.mainFrame:SetScript("OnDragStop", function() self.mainFrame:StopMovingOrSizing() end)
+    self.mainFrame:SetScript("OnDragStop", function() 
+        self.mainFrame:StopMovingOrSizing()
+        -- Save position
+        local point, _, _, xOffset, yOffset = self.mainFrame:GetPoint()
+        
+        -- Store position in saved variables
+        if TWRA_SavedVariables and TWRA_SavedVariables.options then
+            if not TWRA_SavedVariables.options.frame then
+                TWRA_SavedVariables.options.frame = {}
+            end
+            TWRA_SavedVariables.options.frame.point = point
+            TWRA_SavedVariables.options.frame.xOffset = xOffset
+            TWRA_SavedVariables.options.frame.yOffset = yOffset
+            self:Debug("ui", "Saved frame position: " .. point .. ", " .. xOffset .. ", " .. yOffset)
+        end
+    end)
 
     local titleText = self.mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     titleText:SetPoint("TOP", 0, -15)
     titleText:SetText("Raid Assignments")
     
-    -- Add Sync All button in the top left corner
-    local syncAllButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
-    syncAllButton:SetWidth(70)
-    syncAllButton:SetHeight(20)
-    syncAllButton:SetPoint("TOPLEFT", 20, -15)
-    syncAllButton:SetText("Sync All")
-    syncAllButton:SetScript("OnClick", function() 
-        -- Close dropdown when syncing
-        self:CloseDropdownMenu()
-        self:SendAllSections()
-    end)
-    self.syncAllButton = syncAllButton  -- Store reference
-    syncAllButton:Hide()  -- Hide the Sync All button by default
+    -- -- Add Sync All button in the top left corner
+    -- local syncAllButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
+    -- syncAllButton:SetWidth(70)
+    -- syncAllButton:SetHeight(20)
+    -- syncAllButton:SetPoint("TOPLEFT", 20, -15)
+    -- syncAllButton:SetText("Sync All")
+    -- syncAllButton:SetScript("OnClick", function() 
+    --     -- Close dropdown when syncing
+    --     self:CloseDropdownMenu()
+    --     self:SendAllSections()
+    -- end)
+    -- self.syncAllButton = syncAllButton  -- Store reference
+    -- syncAllButton:Hide()  -- Hide the Sync All button by default
 
     -- Options button
     local optionsButton = CreateFrame("Button", nil, self.mainFrame, "UIPanelButtonTemplate")
@@ -2062,4 +2089,31 @@ function TWRA:FormatRowAnnouncement(rowData)
     end
     
     return message
+end
+
+-- Reset the main frame position to default center values
+function TWRA:ResetFramePosition()
+    -- Default position values
+    local defaultPoint = "CENTER"
+    local defaultXOffset = 0
+    local defaultYOffset = 0
+    
+    -- Update position settings
+    if TWRA_SavedVariables and TWRA_SavedVariables.options then
+        if not TWRA_SavedVariables.options.frame then
+            TWRA_SavedVariables.options.frame = {}
+        end
+        TWRA_SavedVariables.options.frame.point = defaultPoint
+        TWRA_SavedVariables.options.frame.xOffset = defaultXOffset
+        TWRA_SavedVariables.options.frame.yOffset = defaultYOffset
+    end
+    
+    -- Apply new position if frame exists
+    if self.mainFrame then
+        self.mainFrame:ClearAllPoints()
+        self.mainFrame:SetPoint(defaultPoint, UIParent, defaultPoint, defaultXOffset, defaultYOffset)
+        self:Debug("ui", "Main frame position reset to default center position")
+    end
+    
+    return true
 end
